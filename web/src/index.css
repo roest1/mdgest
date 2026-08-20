@@ -1,0 +1,98 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+@import "@fontsource/geist-sans/400.css";
+@import "@fontsource/geist-sans/500.css";
+@import "@fontsource/geist-sans/600.css";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource-variable/literata/opsz.css";
+
+@theme {
+  --font-sans: "Geist Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: "Literata Variable", Georgia, serif;
+  --color-brand-green: #6cc04a;
+
+  /* warm neutral surfaces: ground → chrome → raised → edge → edge-strong */
+  --color-ground: #14120f;
+  --color-chrome: #1b1815;
+  --color-raised: #242018;
+  --color-edge: #2f2a23;
+  --color-edge-strong: #453d32;
+
+  /* warm neutral text: ink → muted → faint */
+  --color-ink: #ece7dd;
+  --color-muted: #a2988a;
+  --color-faint: #776e62;
+}
+
+html, body, #root { height: 100%; }
+body {
+  @apply m-0 p-0 font-sans antialiased text-ink;
+  background-color: var(--color-ground);
+  background-image: radial-gradient(ellipse at 20% 0%, rgba(108,192,74,0.06), transparent 55%),
+                    radial-gradient(ellipse at 100% 100%, rgba(255,158,22,0.05), transparent 50%);
+  overflow: hidden;
+}
+* { box-sizing: border-box; }
+
+/* lucide draws for a 24px grid; at 12–14px the default 2px stroke muddies — thin it once, everywhere */
+svg.lucide { stroke-width: 1.75; }
+
+/* thin warm scrollbars */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: rgba(162,152,138,0.25); border-radius: 8px; }
+*::-webkit-scrollbar-thumb:hover { background: rgba(162,152,138,0.45); }
+*::-webkit-scrollbar-track { background: transparent; }
+
+.glass { @apply bg-chrome/80 backdrop-blur-xl border border-edge; }
+
+/* buttons: one base, sized and toned by variant — no !px overrides at call sites */
+.btn { @apply inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 border border-edge bg-raised text-ink hover:bg-edge hover:border-edge-strong transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer select-none; }
+.btn-sm { @apply px-2 py-1; }
+.btn-icon { @apply px-1.5 py-1; }
+.btn-active { @apply bg-edge border-edge-strong shadow-[inset_0_1px_3px_rgba(0,0,0,0.45)]; }
+.btn-danger { @apply border-red-800/60 bg-red-950/40 text-red-200 hover:bg-red-900/40 hover:border-red-700/60; }
+.btn-primary { @apply bg-emerald-600/25 border-emerald-600/60 text-emerald-200 hover:bg-emerald-600/35 hover:border-emerald-500/60; }
+
+/* ghost: borderless icon/text button for low-stakes actions */
+.ghost { @apply inline-flex items-center gap-1.5 px-1.5 py-1 rounded-md text-xs text-muted whitespace-nowrap shrink-0 bg-transparent border border-transparent hover:bg-raised hover:text-ink transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer select-none; }
+
+/* chip: an independent boolean — no chrome when off, filled when on */
+.chip { @apply inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap shrink-0 border border-transparent text-muted hover:text-ink hover:bg-raised transition-colors cursor-pointer select-none; }
+.chip-on { @apply bg-raised border-edge-strong text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]; }
+.chip .chip-key { @apply font-mono text-[11px] text-faint; }
+.chip-on .chip-key { @apply text-muted; }
+
+/* segmented control: one-of-N */
+.seg { @apply inline-flex items-center rounded-md border border-edge bg-ground/60 p-0.5 gap-0.5 shrink-0; }
+.seg-item { @apply px-2 py-0.5 rounded text-xs text-muted cursor-pointer select-none whitespace-nowrap transition-colors hover:text-ink; }
+.seg-item-on { @apply bg-raised text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]; }
+
+.kbd { @apply font-mono text-[11px] px-1 py-0.5 rounded border border-edge bg-ground text-muted; }
+
+/* visible keyboard focus for a tool driven by keys */
+.btn:focus-visible, .chip:focus-visible, .ghost:focus-visible, .seg-item:focus-visible,
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid rgba(96,165,250,0.7);
+  outline-offset: 1px;
+}
+
+@keyframes fade-in { from { opacity: 0; transform: translateY(4px);} to { opacity: 1; transform: none; } }
+.animate-fade-in { animation: fade-in .15s ease-out; }
+
+/* toasts slide in and settle; the stack animates because each entry pushes the rest */
+@keyframes toast-in { from { opacity: 0; transform: translateX(24px) scale(0.97); } to { opacity: 1; transform: none; } }
+.animate-toast-in { animation: toast-in .2s cubic-bezier(0.2, 0.8, 0.3, 1); }
+
+/* a counter acknowledging its change */
+@keyframes tick { from { opacity: 0; transform: translateY(0.55em); } to { opacity: 1; transform: none; } }
+.animate-tick { animation: tick .25s cubic-bezier(0.2, 0.8, 0.3, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in, .animate-toast-in, .animate-tick { animation: none; }
+}
+
+/* the drop caret while dragging blocks */
+@keyframes drop-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+.drop-line { @apply absolute bg-blue-400 rounded-full pointer-events-none z-20; animation: drop-pulse 0.9s ease-in-out infinite; box-shadow: 0 0 6px rgba(96,165,250,0.8); }
+.drop-caret { @apply absolute w-0 h-0 pointer-events-none z-20; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid rgb(96 165 250); filter: drop-shadow(0 0 3px rgba(96,165,250,0.9)); }

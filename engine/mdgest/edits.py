@@ -1,0 +1,157 @@
+"""What a person decided about a document — the only precious file.
+
+`analysis.json` regenerates from the PDF; `edits.json` does not. It records
+role/level/nesting/emphasis overrides per block, the reading order per page,
+joins, hidden blocks, and text a person inserted (flagged as such, because it
+is the one thing here that is not on the page). Every mutation pushes the
+previous state onto an undo stack.
+"""
+
+from __future__ import annotations
+
+import copy
+import json
+from pathlib import Path
+
+VERSION = 1
+UNDO_DEPTH = 100
+BLOCK_FIELDS = ("role", "level", "depth", "bold", "italic", "hidden", "break_before", "break_after")
+
+
+def blank() -> dict:
+    return {
+        "version": VERSION,
+        "blocks": {},  # id -> {role, level, depth, bold, italic, hidden}
+        "order": {},  # page -> [ids]
+        "inserts": [],  # {id, page, after, text}
+        "joins": {},  # child id -> parent id
+        "base": None,  # the saved version this working copy continues from (None = the original)
+        "undo": [],  # previous states (without their own undo stacks)
+        "redo": [],
+    }
+
+
+def load(path: Path) -> dict:
+    if not path.exists():
+        return blank()
+    data = json.loads(path.read_text("utf-8"))
+    base = blank()
+    base.update({k: v for k, v in data.items() if k in base})
+    return base
+
+
+def save(path: Path, edits: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(edits, indent=1, ensure_ascii=False), "utf-8")
+    tmp.replace(path)
+
+
+def _snapshot(edits: dict) -> dict:
+    return {k: copy.deepcopy(v) for k, v in edits.items() if k not in ("undo", "redo")}
+
+
+CONTENT_KEYS = ("blocks", "order", "inserts", "joins")
+
+
+def content(edits: dict) -> dict:
+    """Just the decisions — what a version stores and what `is_dirty` compares."""
+    return {k: copy.deepcopy(edits.get(k, blank()[k])) for k in CONTENT_KEYS}
+
+
+def is_empty(edits: dict) -> bool:
+    return not any(edits.get(k) for k in CONTENT_KEYS)
+
+
+def checkpoint(edits: dict) -> None:
+    """Call before mutating: remembers the current state for undo."""
+    edits["undo"].append(_snapshot(edits))
+    del edits["undo"][:-UNDO_DEPTH]
+    edits["redo"] = []
+
+
+def undo(edits: dict) -> bool:
+    if not edits["undo"]:
+        return False
+    edits["redo"].append(_snapshot(edits))
+    edits.update(edits["undo"].pop())
+    return True
+
+
+def redo(edits: dict) -> bool:
+    if not edits["redo"]:
+        return False
+    edits["undo"].append(_snapshot(edits))
+    edits.update(edits["redo"].pop())
+    return True
+
+
+def set_block(edits: dict, block_id: str, **fields) -> dict:
+    entry = edits["blocks"].setdefault(block_id, {})
+    for k, v in fields.items():
+        if k not in BLOCK_FIELDS:
+            raise ValueError(f"unknown block field {k!r}")
+        if v is None:
+            entry.pop(k, None)
+        else:
+            entry[k] = v
+    if not entry:
+        edits["blocks"].pop(block_id, None)
+    return entry
+
+
+def clear_block(edits: dict, block_id: str) -> None:
+    edits["blocks"].pop(block_id, None)
+
+
+def set_order(edits: dict, page: int, order: list[str] | None) -> None:
+    if order is None:
+        edits["order"].pop(str(page), None)
+    else:
+        edits["order"][str(page)] = list(order)
+
+
+def add_insert(edits: dict, page: int, after: str | None, text: str) -> dict:
+    n = 1 + max(
+        [int(i["id"].split("-")[1]) for i in edits["inserts"] if i["id"].startswith("ins-")] or [0]
+    )
+    entry = {"id": f"ins-{n}", "page": page, "after": after, "text": text}
+    edits["inserts"].append(entry)
+    return entry
+
+
+def update_insert(edits: dict, insert_id: str, text: str) -> bool:
+    for entry in edits["inserts"]:
+        if entry["id"] == insert_id:
+            entry["text"] = text
+            return True
+    return False
+
+
+def remove_insert(edits: dict, insert_id: str) -> bool:
+    before = len(edits["inserts"])
+    edits["inserts"] = [i for i in edits["inserts"] if i["id"] != insert_id]
+    for page, order in list(edits["order"].items()):
+        edits["order"][page] = [i for i in order if i != insert_id]
+    return len(edits["inserts"]) < before
+
+
+def join(edits: dict, child: str, parent: str) -> None:
+    if child == parent:
+        raise ValueError("a block cannot be joined to itself")
+    edits["joins"][child] = parent
+
+
+def split(edits: dict, child: str) -> bool:
+    return edits["joins"].pop(child, None) is not None
+
+
+def summary(edits: dict) -> dict:
+    return {
+        "blocks": len(edits["blocks"]),
+        "pages_reordered": len(edits["order"]),
+        "inserts": len(edits["inserts"]),
+        "joins": len(edits["joins"]),
+        "undo": len(edits["undo"]),
+        "redo": len(edits["redo"]),
+    }
