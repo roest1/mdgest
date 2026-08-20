@@ -84,7 +84,8 @@ engine-bin: ## package the engine into src-tauri/binaries (PyInstaller)
 
 # (the tauri CLI only finds src-tauri when run from the repo root; the `tauri`
 # script in web/package.json cds up while keeping node_modules/.bin on PATH)
-desktop-dev: engine-bin ## run the desktop app against the vite dev server
+desktop-dev: ## run the desktop app against the vite dev server
+	@ls $(ROOT)/src-tauri/binaries/mdgest-engine-* >/dev/null 2>&1 || $(MAKE) engine-bin
 	$(BUN) run tauri dev
 
 desktop-build: engine-bin ## build the installable bundles for this OS

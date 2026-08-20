@@ -48,6 +48,7 @@ leftover processes.
 | found | fix |
 |---|---|
 | tauri CLI won't find `src-tauri/` from `web/` | `"tauri": "cd .. && tauri"` script in web/package.json (keeps .bin on PATH, cross-platform) |
+| vite bound `localhost`, which resolved to `::1` only — tauri polls IPv4 `127.0.0.1:5173` and waits forever (caught on the first human run) | `server.host: "127.0.0.1"` in vite.config.ts |
 | linuxdeploy's bundled `strip` chokes on Fedora 44's `.relr.dyn` sections | `NO_STRIP=1` (locally and in CI); plus a static `patchelf` on PATH locally |
 | PyInstaller needs ≥ 6.16 for Python 3.14 | floor pinned in the `build` extra |
 | `readEntries` drained once — folders over ~100 entries silently truncated **in the browser today** | drain loop in DropZone (the plan's day-2 bug, fixed) |

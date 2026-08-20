@@ -11,6 +11,9 @@ export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   plugins: [react(), tailwindcss()],
   server: {
+    // pin IPv4: `localhost` can resolve to ::1 only, and the tauri shell
+    // polls (and devUrl names) http://127.0.0.1:5173
+    host: "127.0.0.1",
     port: Number(process.env.WEB_PORT ?? 5173),
     proxy: {
       "/api": {
