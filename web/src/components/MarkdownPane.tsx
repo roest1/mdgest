@@ -4,11 +4,28 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../api";
+import { isDesktop, saveTextFile } from "../lib/desktop";
 import { hitBlock, useDrag } from "../lib/drag";
 import { listMarkers } from "../lib/order";
 import { roleColor } from "../lib/roles";
 import { useStore } from "../store";
 import type { Block, DocView, Page } from "../types";
+
+/** navigator.clipboard needs a secure context; the webview's isn't always one. */
+async function copyText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+}
 
 /**
  * The output, beside the page it came from. Two views of the same list of
@@ -108,7 +125,7 @@ export function MarkdownPane({ docId, view }: { docId: string; view: DocView }) 
           className="ghost"
           title="Copy markdown"
           onClick={async () => {
-            await navigator.clipboard.writeText(view.markdown);
+            await copyText(view.markdown);
             setCopied(true);
             setTimeout(() => setCopied(false), 1200);
             toast("markdown copied", "success");
@@ -116,9 +133,26 @@ export function MarkdownPane({ docId, view }: { docId: string; view: DocView }) 
         >
           {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
         </button>
-        <a className="ghost" href={api.markdownUrl(docId)} download={`${view.doc.name}.md`} title="Download .md">
-          <Download className="w-3.5 h-3.5" />
-        </a>
+        {isDesktop ? (
+          // the webview has no download UI — save through the native dialog
+          <button
+            className="ghost"
+            title="Save .md"
+            onClick={async () => {
+              try {
+                if (await saveTextFile(`${view.doc.name}.md`, view.markdown)) toast("markdown saved", "success");
+              } catch (e) {
+                toast(`save failed: ${(e as Error).message}`, "error");
+              }
+            }}
+          >
+            <Download className="w-3.5 h-3.5" />
+          </button>
+        ) : (
+          <a className="ghost" href={api.markdownUrl(docId)} download={`${view.doc.name}.md`} title="Download .md">
+            <Download className="w-3.5 h-3.5" />
+          </a>
+        )}
       </div>
       <div ref={ref} className="flex-1 overflow-auto font-sans" onDragStart={(e) => e.preventDefault()}>
         {editing ? (

@@ -132,6 +132,31 @@ def test_api_smoke(tmp_path):
     assert c.get("/api/index/k").status_code == 200
 
 
+def test_token_gate_and_add_paths(tmp_path, monkeypatch):
+    monkeypatch.setenv("MDGEST_TOKEN", "s3cret")
+    app = api.create_app(tmp_path / "ws")
+    c = TestClient(app)
+    assert c.get("/api/tree").status_code == 401
+    assert c.get("/api/tree", headers={"x-mdgest-token": "wrong"}).status_code == 401
+    assert c.get("/api/tree?t=s3cret").status_code == 200  # <img src> carries ?t=
+    h = {"x-mdgest-token": "s3cret"}
+    # the desktop drop hands over paths; a directory tree keeps its hierarchy
+    src = tmp_path / "drive" / "unit-1"
+    src.mkdir(parents=True)
+    (src / "Lesson One.pdf").write_bytes(blank_pdf())
+    (tmp_path / "drive" / "flat.pdf").write_bytes(blank_pdf())
+    r = c.post(
+        "/api/add-paths",
+        headers=h,
+        json={"paths": [str(tmp_path / "drive")], "folder": "course"},
+    )
+    assert r.status_code == 200, r.text
+    assert sorted(r.json()["added"]) == ["course/flat", "course/unit-1/lesson-one"]
+    # a bogus path reports an error instead of failing the whole batch
+    r = c.post("/api/add-paths", headers=h, json={"paths": [str(tmp_path / "nope.pdf")]})
+    assert r.json()["added"] == [] and len(r.json()["errors"]) == 1
+
+
 def test_group_move_keeps_page_order(ws):
     pdf = SAMPLE.read_bytes() if SAMPLE.exists() else blank_pdf()
     doc = ws.add_pdf(pdf, "g.pdf", "x")

@@ -1,4 +1,4 @@
-# mdgest2
+# The app, in detail
 
 **pdf → markdown, page by page, with a UI and a CLI that do the same things.**
 
@@ -13,10 +13,11 @@ document in a small `edits.json`; the markdown is rewritten on every change
 into a tree that mirrors the PDFs'.
 
 ```
-mdgest2/
+mdgest/
   engine/    python (uv)   — mdgest: pagemap → structure → emit, FastAPI, typer CLI
   web/       react (bun)   — vite + tailwind 4; the UI
-  Makefile                 — one entry point for both
+  src-tauri/ rust (cargo)  — the desktop shell (see desktop.md)
+  Makefile                 — one entry point for all of it
   workspace/               — default data dir (gitignored); set WS=… / MDGEST_WORKSPACE=…
 ```
 

@@ -1,12 +1,17 @@
-# mdgest2 — pdf -> markdown, with a UI and a CLI that do the same things.
+# mdgest — pdf -> markdown, with a UI and a CLI that do the same things.
 #
 #   make setup     install everything (uv for the engine, bun for the web app)
 #   make dev       engine on :8770 + vite on :5173 (proxying /api)
 #   make serve     build the web app and serve it from the engine on :8770
 #   make add SRC=<pdf|zip|dir> [TO=<folder>]
 #
+#   make engine-bin     package the engine (PyInstaller -> src-tauri/binaries)
+#   make desktop-dev    the desktop app against the vite dev server
+#   make desktop-build  installable bundles (AppImage / deb / rpm / dmg / nsis)
+#
 # The workspace (sources/, markdown/, .mdgest/) defaults to ./workspace; set
 # WS=... or MDGEST_WORKSPACE=... to point anywhere (a client's drive, say).
+# The desktop app defaults to <app data>/workspace instead — same override.
 
 SHELL := /bin/bash
 ROOT  := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
@@ -22,7 +27,8 @@ MDGEST := $(UV) mdgest
 export MDGEST_WORKSPACE := $(WS)
 
 .DEFAULT_GOAL := help
-.PHONY: help setup dev serve build api web add ls show md index test lint fmt typecheck check clean
+.PHONY: help setup dev serve build api web add ls show md index test lint fmt typecheck check clean \
+        engine-bin desktop-dev desktop-build
 
 help: ## list these targets
 	@echo "mdgest2 — make <target> [VAR=value]"; echo
@@ -71,7 +77,20 @@ md: ## print DOC's markdown
 index: ## build INDEX.md over FOLDER (default: whole workspace)
 	$(MDGEST) index "$(FOLDER)"
 
-# ---- working on mdgest2 --------------------------------------------------
+# ---- the desktop app -----------------------------------------------------
+
+engine-bin: ## package the engine into src-tauri/binaries (PyInstaller)
+	cd $(ROOT)/engine && uv run --extra build python $(ROOT)/scripts/build_engine.py
+
+# (the tauri CLI only finds src-tauri when run from the repo root; the `tauri`
+# script in web/package.json cds up while keeping node_modules/.bin on PATH)
+desktop-dev: engine-bin ## run the desktop app against the vite dev server
+	$(BUN) run tauri dev
+
+desktop-build: engine-bin ## build the installable bundles for this OS
+	$(BUN) run tauri build
+
+# ---- working on mdgest ---------------------------------------------------
 
 test: ## engine tests
 	cd $(ROOT)/engine && uv run pytest -q

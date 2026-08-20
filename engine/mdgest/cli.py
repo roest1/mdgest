@@ -53,7 +53,22 @@ def serve(host: str = "127.0.0.1", port: int = 8770, reload: bool = False):
     import uvicorn
 
     typer.echo(f"mdgest serving workspace {default_workspace()} on http://{host}:{port}")
-    uvicorn.run("mdgest.api:app", host=host, port=port, reload=reload)
+    if reload:
+        uvicorn.run("mdgest.api:app", host=host, port=port, reload=True)
+    else:
+        # by object, not import string — works inside the frozen desktop binary too
+        from .api import app as asgi
+
+        uvicorn.run(asgi, host=host, port=port)
+
+
+@app.command()
+def sidecar(host: str = "127.0.0.1", port: int = 0):
+    """Run the engine for the desktop app: bind an ephemeral port and announce it
+    on stdout, require $MDGEST_TOKEN on /api, exit when stdin reaches EOF."""
+    from .sidecar import run
+
+    run(host, port)
 
 
 @app.command()

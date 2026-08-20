@@ -46,3 +46,20 @@ Formatting that can be added:
 - **bold** / _italics_
 - bullet lists: (`-`, `a.`, `1.`, `i.`)
 - insert page break: ---
+
+---
+
+## Desktop app
+
+The same product as one double-clickable install — a Rust (tauri) shell that
+carries the engine inside it as a packaged binary. No Python, bun, or network
+on the target machine.
+
+```bash
+make desktop-dev     # run it (packages the engine first)
+make desktop-build   # AppImage / deb / rpm on Linux; dmg / nsis via CI
+```
+
+How the shell, the sidecar and the UI fit together: [docs/desktop.md](docs/desktop.md).
+The app in detail (blocks, rules, versions, CLI mirror): [docs/app.md](docs/app.md).
+

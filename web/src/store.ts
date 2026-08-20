@@ -19,6 +19,11 @@ interface State {
   loadTree: () => Promise<void>;
   setSelectedFolder: (p: string) => void;
 
+  // desktop: a native OS drag is over the window; drops arrive as paths
+  nativeDragOver: boolean;
+  setNativeDragOver: (v: boolean) => void;
+  addPaths: (paths: string[]) => Promise<void>;
+
   // documents
   openDocs: string[];
   activeDoc: string | null;
@@ -98,6 +103,24 @@ export const useStore = create<State>((set, get) => ({
     }
   },
   setSelectedFolder: (p) => set({ selectedFolder: p }),
+
+  nativeDragOver: false,
+  setNativeDragOver: (v) => set({ nativeDragOver: v }),
+  addPaths: async (paths) => {
+    if (!paths.length) return;
+    const { selectedFolder, toast, loadTree, openDoc } = get();
+    try {
+      const r = await api.addPaths(paths, selectedFolder);
+      for (const e of r.errors) toast(e, "error");
+      if (r.added.length || !r.errors.length) {
+        toast(`${r.added.length} document${r.added.length === 1 ? "" : "s"} added`, r.added.length ? "success" : "info");
+      }
+      await loadTree();
+      if (r.added.length === 1) openDoc(r.added[0]);
+    } catch (e) {
+      toast(`add failed: ${(e as Error).message}`, "error");
+    }
+  },
 
   openDocs: [],
   activeDoc: null,

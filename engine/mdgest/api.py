@@ -5,6 +5,7 @@ which is also what the CLI calls — so anything the UI does, the shell does.
 from __future__ import annotations
 
 import os
+import secrets
 import threading
 import traceback
 from pathlib import Path, PurePosixPath
@@ -34,6 +35,21 @@ def create_app(workspace: Path | None = None) -> FastAPI:
         if request.url.path.startswith("/api"):
             response.headers["Cache-Control"] = "no-cache"
         return response
+
+    # When supervised by the desktop app, a per-launch token gates every /api
+    # request — otherwise any local process could drive the engine (it can read
+    # arbitrary paths via /api/add-paths). Sent as a header, or as ?t= for the
+    # URLs that end up in <img src>.
+    token = os.environ.get("MDGEST_TOKEN") or ""
+    if token:
+
+        @app.middleware("http")
+        async def require_token(request: Request, call_next):
+            if request.url.path.startswith("/api"):
+                supplied = request.headers.get("x-mdgest-token") or request.query_params.get("t") or ""
+                if not secrets.compare_digest(supplied, token):
+                    return JSONResponse({"detail": "missing or bad engine token"}, status_code=401)
+            return await call_next(request)
 
     def fail(exc: Exception, status: int = 400):
         raise HTTPException(status_code=status, detail=str(exc) or exc.__class__.__name__)
@@ -119,6 +135,23 @@ def create_app(workspace: Path | None = None) -> FastAPI:
                 fail(exc)
         analyze_async(added)
         return {"added": added}
+
+    @app.post("/api/add-paths")
+    def add_paths(payload: dict = Body(...)):
+        """The desktop app hands over absolute paths (a pdf, a zip, or a whole
+        directory tree — native drops carry paths, not bytes); the browser
+        keeps POSTing the bytes themselves to /api/upload."""
+        folder = payload.get("folder", "")
+        added: list[str] = []
+        errors: list[str] = []
+        for raw in payload.get("paths") or []:
+            p = Path(raw).expanduser()
+            try:
+                added.extend(ws.add_path(p, folder))
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{p.name}: {exc}")
+        analyze_async(added)
+        return {"added": added, "errors": errors}
 
     # ---- documents ------------------------------------------------------
 

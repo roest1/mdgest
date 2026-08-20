@@ -1,9 +1,25 @@
 import type { DocView, RuleLevel, TreeResponse, VersionsSummary } from "./types";
 
-const BASE = "/api";
+// In the browser the API is same-origin under /api. In the desktop app the
+// engine sits on its own ephemeral port behind a per-launch token, and
+// main.tsx points us at it before anything renders.
+let BASE = "/api";
+let TOKEN: string | null = null;
+
+export function configureApi(base: string, token?: string | null) {
+  BASE = base;
+  TOKEN = token || null;
+}
+
+/** A full request URL. The token rides as ?t= so plain <img src> works too. */
+function url(path: string): string {
+  const u = `${BASE}${path}`;
+  if (!TOKEN) return u;
+  return u + (u.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(TOKEN);
+}
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, init);
+  const res = await fetch(url(path), init);
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -36,8 +52,11 @@ export const api = {
     fd.append("folder", folder);
     return req<{ added: string[] }>("/upload", { method: "POST", body: fd });
   },
+  // the desktop drop: absolute paths (a pdf, a zip, or a whole directory tree)
+  addPaths: (paths: string[], folder: string) =>
+    req<{ added: string[]; errors: string[] }>("/add-paths", json("POST", { paths, folder })),
   doc: async (id: string): Promise<DocView> => {
-    const res = await fetch(`${BASE}/docs/${id}`);
+    const res = await fetch(url(`/docs/${id}`));
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? res.statusText);
     const data = await res.json();
     if (res.status === 202) return { ...data, pending: true };
@@ -73,8 +92,8 @@ export const api = {
   deleteVersion: (id: string, v: string) => req<VersionsSummary>(`/docs/${id}/versions/${v}`, { method: "DELETE" }),
   buildIndex: (folder: string) => req<{ markdown: string }>("/index", json("POST", { folder })),
   index: (folder: string) => req<string>("/index/" + folder),
-  markdownUrl: (id: string) => `${BASE}/docs/${id}/markdown`,
-  pageUrl: (id: string, n: number) => `${BASE}/docs/${id}/page/${n}.png`,
-  thumbUrl: (id: string, n: number) => `${BASE}/docs/${id}/thumb/${n}.png`,
-  assetUrl: (id: string, name: string) => `${BASE}/docs/${id}/assets/${name}`,
+  markdownUrl: (id: string) => url(`/docs/${id}/markdown`),
+  pageUrl: (id: string, n: number) => url(`/docs/${id}/page/${n}.png`),
+  thumbUrl: (id: string, n: number) => url(`/docs/${id}/thumb/${n}.png`),
+  assetUrl: (id: string, name: string) => url(`/docs/${id}/assets/${name}`),
 };

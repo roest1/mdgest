@@ -1,15 +1,55 @@
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DocTabs } from "./components/DocTabs";
 import { DocumentView } from "./components/DocumentView";
 import { Explorer } from "./components/Explorer";
 import { StatusBar } from "./components/StatusBar";
 import { Toasts } from "./components/Toasts";
+import { isDesktop, onFileDrop, openExternal } from "./lib/desktop";
 import { useStore } from "./store";
+
+/** Desktop-only window plumbing: OS drags land here as native events with
+ * absolute paths (the webview never sees an HTML5 drop), and links in
+ * rendered markdown leave through the system browser instead of navigating
+ * the app away from itself. */
+function useDesktopWindow() {
+  const setNativeDragOver = useStore((s) => s.setNativeDragOver);
+  const addPaths = useStore((s) => s.addPaths);
+  useEffect(() => {
+    if (!isDesktop) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    onFileDrop({
+      over: () => setNativeDragOver(true),
+      leave: () => setNativeDragOver(false),
+      drop: (paths) => {
+        setNativeDragOver(false);
+        addPaths(paths);
+      },
+    }).then((un) => {
+      if (disposed) un();
+      else unlisten = un;
+    });
+    const onClick = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement).closest?.("a[href]") as HTMLAnchorElement | null;
+      if (a && /^https?:\/\//.test(a.href)) {
+        e.preventDefault();
+        openExternal(a.href);
+      }
+    };
+    document.addEventListener("click", onClick, true);
+    return () => {
+      disposed = true;
+      unlisten?.();
+      document.removeEventListener("click", onClick, true);
+    };
+  }, [setNativeDragOver, addPaths]);
+}
 
 export default function App() {
   const activeDoc = useStore((s) => s.activeDoc);
   const [sidebar, setSidebar] = useState(true);
+  useDesktopWindow();
   return (
     <div className="h-full flex flex-col">
       <header className="h-11 flex items-center gap-3 px-3 bg-chrome shrink-0">
