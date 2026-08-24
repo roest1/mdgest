@@ -5,6 +5,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+pnpm-debug.log*
 
 # database
 *.sqlite
@@ -95,7 +96,8 @@ __pycache__/
 
 # Nuxt.js build / generate output
 .nuxt
-dist
+dist/
+dist-ssr/
 
 # Gatsby files
 .cache/
@@ -126,3 +128,14 @@ target/
 binaries/
 schemas/
 .pyinstaller/
+
+*.local
+.vscode/*
+~.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
