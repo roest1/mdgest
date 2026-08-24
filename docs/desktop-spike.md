@@ -78,8 +78,10 @@ leftover processes.
 - **Signing**: unsigned macOS builds are blocked by Gatekeeper, Windows by
   SmartScreen. Shipping to clients means Apple Developer ($99/yr) + an
   Authenticode OV cert (~$200–400/yr). Known, deferred, unavoidable.
-- Engine shutdown is SIGKILL; a mid-write `edits.json` could in principle
-  tear. Renders already write temp-then-replace; edits should too, later.
+- Engine shutdown is SIGKILL, so a file being truncated in place at that
+  moment tears. **This bullet was wrong when written** — `edits.json` already
+  wrote temp-then-replace; the exposed files are `analysis.json` and the
+  emitted markdown. Corrected and tracked in [known-issues.md](known-issues.md).
 
 ## Kill-criteria review
 

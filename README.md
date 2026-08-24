@@ -62,4 +62,5 @@ make desktop-build   # AppImage / deb / rpm on Linux; dmg / nsis via CI
 
 How the shell, the sidecar and the UI fit together: [docs/desktop.md](docs/desktop.md).
 The app in detail (blocks, rules, versions, CLI mirror): [docs/app.md](docs/app.md).
+What has to be fixed before this branch lands: [docs/known-issues.md](docs/known-issues.md).
 
