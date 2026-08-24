@@ -49,9 +49,15 @@ build/Release
 # Dependency directories
 node_modules/
 jspm_packages/
+.venv/
 
 # TypeScript v1 declaration files
 typings/
+
+# Python
+__pycache__/
+.pytest_cache/
+.ruff_cache/
 
 # TypeScript cache
 *.tsbuildinfo
@@ -111,3 +117,12 @@ dist
 
 # TernJS port file
 .tern-port
+
+# pdf workspace
+workspace/
+
+# Tauri
+target/
+binaries/
+schemas/
+.pyinstaller/
