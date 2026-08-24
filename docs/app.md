@@ -125,6 +125,8 @@ Not built yet (in order of value):
    rows" as a rule instead of a permutation (v1's readings).
 2. **mdask / mdcite** — ask a question against a folder's `INDEX.md` + sections
    with checked `[[doc:…#anchor]]` citations through LiteLLM (`LLM_HOST`,
-   `LLM_API_KEY`, `LLM_MODEL` as in v1; see `engine/.env.example`).
+   `LLM_API_KEY`, `LLM_MODEL` as in v1; see `engine/.env.example`). Start from
+   `codegig-br/mdgest` — that is the thing being turned into `mdask` — and give
+   it a `make ask` target alongside the rest.
 3. **Block splitting** by line (today a block can be joined to another, not cut).
 4. A relationship graph view over the folder hierarchy + indexes.
