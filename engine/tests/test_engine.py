@@ -1,4 +1,4 @@
-"""End-to-end over a real PDF when one is available, synthetic otherwise."""
+"""End-to-end over the committed fixture corpus."""
 
 from pathlib import Path
 
@@ -9,10 +9,18 @@ from mdgest import api, emit, ops
 from mdgest import edits as E
 from mdgest.store import Workspace
 
-SAMPLE = Path("/home/riley/sandbox/kinesics-drive/results-review/body-regions/arms.pdf")
+FIXTURES = Path(__file__).parent / "fixtures"
+# Two synthetic documents built by fixtures/make_fixtures.py. They share a
+# shape -- headings at two sizes over a body size, a paragraph whose lines
+# have to be joined, nested bullets, numbered and lettered items, an image,
+# a bold run-in label and a repeated footer -- so one can learn a rule the
+# other inherits. Nothing here comes from a real document.
+SAMPLE = FIXTURES / "doc-a.pdf"
+LEGS = FIXTURES / "doc-b.pdf"
 
 
 def blank_pdf() -> bytes:
+    """A page with nothing on it -- for tests about paths, not parsing."""
     import pypdfium2 as pdfium
 
     doc = pdfium.PdfDocument.new()
@@ -30,24 +38,23 @@ def ws(tmp_path):
 
 
 def test_hierarchy_and_markdown_mirror(ws):
-    pdf = SAMPLE.read_bytes() if SAMPLE.exists() else blank_pdf()
-    doc = ws.add_pdf(pdf, "Arms.pdf", "kinesics/results-review/body-regions")
-    assert doc == "kinesics/results-review/body-regions/arms"
+    pdf = SAMPLE.read_bytes()
+    doc = ws.add_pdf(pdf, "Doc A.pdf", "acme/manuals/widgets")
+    assert doc == "acme/manuals/widgets/doc-a"
     ops.analyze(ws, doc)
     assert ws.md_path(doc).exists()
-    assert ws.md_path(doc).parent == ws.markdown / "kinesics/results-review/body-regions"
+    assert ws.md_path(doc).parent == ws.markdown / "acme/manuals/widgets"
     tree = ws.tree()
-    assert tree["folders"][0]["name"] == "kinesics"
+    assert tree["folders"][0]["name"] == "acme"
 
 
 def test_edits_roundtrip_and_undo(ws):
-    pdf = SAMPLE.read_bytes() if SAMPLE.exists() else blank_pdf()
+    pdf = SAMPLE.read_bytes()
     doc = ws.add_pdf(pdf, "a.pdf", "x")
     ops.analyze(ws, doc)
     v = ops.view(ws, doc)
     blocks = v["pages"][0]["blocks"]
-    if len(blocks) < 3:
-        pytest.skip("blank page")
+    assert len(blocks) >= 3
     first = blocks[0]["id"]
     ops.set_block(ws, doc, first, role="heading", level=3)
     v2 = ops.view(ws, doc)
@@ -103,10 +110,10 @@ def test_emit_numbering_resets():
 def test_api_smoke(tmp_path):
     app = api.create_app(tmp_path / "ws")
     c = TestClient(app)
-    pdf = SAMPLE.read_bytes() if SAMPLE.exists() else blank_pdf()
+    pdf = SAMPLE.read_bytes()
     r = c.post(
         "/api/upload",
-        files=[("files", ("arms.pdf", pdf, "application/pdf"))],
+        files=[("files", ("doc-a.pdf", pdf, "application/pdf"))],
         data={"folder": "k/sub"},
     )
     assert r.status_code == 200, r.text
@@ -124,10 +131,9 @@ def test_api_smoke(tmp_path):
     assert c.get(f"/api/docs/{doc}/page/1.png").status_code == 200
     assert c.get(f"/api/docs/{doc}/thumb/1.png").status_code == 200
     assert c.get("/api/tree").json()["tree"]["folders"][0]["name"] == "k"
-    if v["pages"][0]["blocks"]:
-        b = v["pages"][0]["blocks"][0]["id"]
-        assert c.patch(f"/api/docs/{doc}/blocks/{b}", json={"bold": True}).status_code == 200
-        assert c.post(f"/api/docs/{doc}/undo").json()["undone"] is True
+    b = v["pages"][0]["blocks"][0]["id"]
+    assert c.patch(f"/api/docs/{doc}/blocks/{b}", json={"bold": True}).status_code == 200
+    assert c.post(f"/api/docs/{doc}/undo").json()["undone"] is True
     assert c.post("/api/index", json={"folder": "k"}).status_code == 200
     assert c.get("/api/index/k").status_code == 200
 
@@ -158,12 +164,11 @@ def test_token_gate_and_add_paths(tmp_path, monkeypatch):
 
 
 def test_group_move_keeps_page_order(ws):
-    pdf = SAMPLE.read_bytes() if SAMPLE.exists() else blank_pdf()
+    pdf = SAMPLE.read_bytes()
     doc = ws.add_pdf(pdf, "g.pdf", "x")
     ops.analyze(ws, doc)
     blocks = ops.view(ws, doc)["pages"][0]["blocks"]
-    if len(blocks) < 6:
-        pytest.skip("blank page")
+    assert len(blocks) >= 6
     ids = [b["id"] for b in blocks]
     # move 2nd..4th (given out of order) after the 6th
     r = ops.move_block(ws, doc, [ids[3], ids[1], ids[2]], target=ids[5], place="after")
@@ -176,7 +181,7 @@ def test_group_move_keeps_page_order(ws):
 def test_api_group_move(tmp_path):
     app = api.create_app(tmp_path / "ws")
     c = TestClient(app)
-    pdf = SAMPLE.read_bytes() if SAMPLE.exists() else blank_pdf()
+    pdf = SAMPLE.read_bytes()
     doc = c.post(
         "/api/upload", files=[("files", ("a.pdf", pdf, "application/pdf"))], data={"folder": "k"}
     ).json()["added"][0]
@@ -188,8 +193,7 @@ def test_api_group_move(tmp_path):
             break
         time.sleep(0.05)
     blocks = r.json()["pages"][0]["blocks"]
-    if len(blocks) < 6:
-        pytest.skip("blank page")
+    assert len(blocks) >= 6
     ids = [b["id"] for b in blocks]
     r = c.post(
         f"/api/docs/{doc}/blocks/{ids[1]}/move",
@@ -199,58 +203,43 @@ def test_api_group_move(tmp_path):
     assert r.json()["order"][:6] == [ids[0], ids[4], ids[5], ids[1], ids[2], ids[3]]
 
 
-LEGS = Path("/home/riley/sandbox/kinesics-drive/results-review/body-regions/legs.pdf")
-
-
-@pytest.mark.skipif(not (SAMPLE.exists() and LEGS.exists()), reason="needs the kinesics samples")
 def test_rules_carry_to_the_next_document(ws):
-    arms = ws.add_pdf(SAMPLE.read_bytes(), "arms.pdf", "kinesics/results-review/body-regions")
-    ops.analyze(ws, arms)
-    v = ops.view(ws, arms)
-    # the bold item labels ("Primary Joints:") are bullets by default; say they are H3s, learned in body-regions
-    target = next(b for b in v["pages"][0]["blocks"] if b["text"].startswith("Primary Joints"))
-    r = ops.set_block(
-        ws,
-        arms,
-        target["id"],
-        learn="kinesics/results-review/body-regions",
-        role="heading",
-        level=3,
-    )
-    assert r["learned"]["shape"]["fields"]["role"] == "heading"
+    a = ws.add_pdf(SAMPLE.read_bytes(), "doc-a.pdf", "acme/manuals/widgets")
+    ops.analyze(ws, a)
+    v = ops.view(ws, a)
+    # the bold run-in labels ("Key Points:") read as H3s by default; say they are
+    # ordinary paragraphs, and learn that for everything under widgets/
+    target = next(b for b in v["pages"][0]["blocks"] if b["text"].startswith("Key Points"))
+    assert target["role"] == "heading"
+    r = ops.set_block(ws, a, target["id"], learn="acme/manuals/widgets", role="para")
+    assert r["learned"]["shape"]["fields"]["role"] == "para"
     # and hide the copyright footer, learned at the client level
     foot = next(b for b in v["pages"][0]["blocks"] if "Copyright" in b["text"])
-    ops.set_block(ws, arms, foot["id"], learn="kinesics", hidden=True)
-    legs = ws.add_pdf(LEGS.read_bytes(), "legs.pdf", "kinesics/results-review/body-regions")
-    a = ops.analyze(ws, legs)
-    assert a["rules_applied"] >= 2
-    lv = ops.view(ws, legs)
-    blocks = lv["pages"][0]["blocks"]
-    pj = next(b for b in blocks if b["text"].startswith("Primary Joints"))
-    assert (
-        pj["role"] == "heading"
-        and pj["level"] == 3
-        and pj["rule"]["folder"].endswith("body-regions")
-    )
-    assert next(b for b in blocks if "Copyright" in b["text"])["hidden"] is True
-    # a doc outside body-regions gets the client-level hide rule but not the body-regions shape rule
-    other = ws.add_pdf(SAMPLE.read_bytes(), "arms.pdf", "kinesics/results-review/joint-regions")
+    ops.set_block(ws, a, foot["id"], learn="acme", hidden=True)
+
+    b = ws.add_pdf(LEGS.read_bytes(), "doc-b.pdf", "acme/manuals/widgets")
+    applied = ops.analyze(ws, b)
+    assert applied["rules_applied"] >= 2
+    blocks = ops.view(ws, b)["pages"][0]["blocks"]
+    kp = next(x for x in blocks if x["text"].startswith("Key Points"))
+    assert kp["role"] == "para" and kp["rule"]["folder"].endswith("widgets")
+    assert next(x for x in blocks if "Copyright" in x["text"])["hidden"] is True
+    # a doc outside widgets/ inherits the client-level hide but not the shape rule
+    other = ws.add_pdf(SAMPLE.read_bytes(), "doc-a.pdf", "acme/manuals/gadgets")
     ops.analyze(ws, other)
-    ov = ops.view(ws, other)
-    ob = ov["pages"][0]["blocks"]
-    assert next(b for b in ob if "Copyright" in b["text"])["hidden"] is True
-    assert next(b for b in ob if b["text"].startswith("Primary Joints"))["role"] != "heading"
-    stack = ops.list_rules(ws, legs)
-    assert [s["folder"] for s in stack][-1] == "kinesics/results-review/body-regions"
+    ob = ops.view(ws, other)["pages"][0]["blocks"]
+    assert next(x for x in ob if "Copyright" in x["text"])["hidden"] is True
+    assert next(x for x in ob if x["text"].startswith("Key Points"))["role"] == "heading"
+    stack = ops.list_rules(ws, b)
+    assert [s["folder"] for s in stack][-1] == "acme/manuals/widgets"
 
 
 def test_versions_chain_and_go_back(ws):
-    pdf = SAMPLE.read_bytes() if SAMPLE.exists() else blank_pdf()
+    pdf = SAMPLE.read_bytes()
     doc = ws.add_pdf(pdf, "v.pdf", "x")
     ops.analyze(ws, doc)
     blocks = ops.view(ws, doc)["pages"][0]["blocks"]
-    if len(blocks) < 3:
-        pytest.skip("blank page")
+    assert len(blocks) >= 3
     b0, b1 = blocks[0]["id"], blocks[1]["id"]
     ops.set_block(ws, doc, b0, bold=True)
     v1 = ops.save_version(ws, doc, "bold first")
@@ -276,14 +265,13 @@ def test_versions_chain_and_go_back(ws):
 
 
 def test_apply_markdown_diff(ws):
-    pdf = SAMPLE.read_bytes() if SAMPLE.exists() else blank_pdf()
+    pdf = SAMPLE.read_bytes()
     doc = ws.add_pdf(pdf, "e.pdf", "x")
     ops.analyze(ws, doc)
     v = ops.view(ws, doc)
     md = v["markdown"]
     lines = md.split("\n")
-    if len(lines) < 10:
-        pytest.skip("blank page")
+    assert len(lines) >= 10
     # 1) change the first H2 into an H3 (same words) -> shape change
     i2 = next(i for i, l in enumerate(lines) if l.startswith("## "))
     lines[i2] = "#" + lines[i2]
