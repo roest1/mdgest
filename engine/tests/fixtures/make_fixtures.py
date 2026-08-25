@@ -9,9 +9,12 @@ The content is invented (a fictional widget manual) and shares nothing with
 any real document. It exists to exercise the parts of the engine that a blank
 page cannot: two heading sizes over a body size, a multi-line paragraph that
 has to be joined, printed bullets at two indents, numbered and lettered
-items, a bold run-in label, a repeated footer, and one image with real drawn
-bounds. Both documents carry the same label and footer so the rule-learning
-test has something to carry from one to the other.
+items, a bold run-in label, one image with real drawn bounds, and the three
+kinds of page furniture: a running header and a copyright footer (identical in
+both documents and set the same way as each other, so hiding one is evidence
+about the other) and a page number (same band, different indent, different
+wording per page). Both documents carry the same label and furniture so the
+rule-learning tests have something to carry from one to the other.
 
 Base-14 fonts only (no embedding), hand-assembled objects (no writer library):
 pypdfium2 renders, it does not author.
@@ -122,6 +125,21 @@ def write(path: Path, title: str, page1: Content, page2: Content) -> None:
     path.write_bytes(pdf.build(root))
 
 
+#: A running header and footer, identical in both documents and set the same
+#: way as each other -- so hiding one is evidence about the other, which is
+#: what `occurrences.suggest` learns from. Page numbers sit in the same band
+#: but are indented differently and change page to page.
+HEADER = "Widget Corp - Internal Use Only"
+FOOTER = "Copyright 2026 Fixture Press. Synthetic test data."
+
+
+def furniture(page: Content, number: int) -> None:
+    """What every page carries that is not the document."""
+    page.text(LEFT, 772, SMALL, HEADER)  # clear of the 20pt title's ascent
+    page.text(LEFT, 72, SMALL, FOOTER)
+    page.text(300, 56, SMALL, f"Page {number}")
+
+
 def manual(subject: str, verb: str) -> tuple[Content, Content]:
     """Both fixtures share a shape and differ in wording."""
     p1 = Content()
@@ -155,7 +173,7 @@ def manual(subject: str, verb: str) -> tuple[Content, Content]:
         ],
     )
     p1.image(LEFT, 250, 144, 108)
-    p1.text(LEFT, 72, SMALL, "Copyright 2026 Fixture Press. Synthetic test data.")
+    furniture(p1, 1)
 
     p2 = Content()
     p2.text(LEFT, 740, H2, "Verification", bold=True)
@@ -180,7 +198,7 @@ def manual(subject: str, verb: str) -> tuple[Content, Content]:
             "seating problem, not a calibration problem.",
         ],
     )
-    p2.text(LEFT, 72, SMALL, "Copyright 2026 Fixture Press. Synthetic test data.")
+    furniture(p2, 2)
     return p1, p2
 
 

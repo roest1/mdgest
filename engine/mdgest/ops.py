@@ -262,6 +262,28 @@ def hide(
     return _mutate(ws, doc_id, fn)
 
 
+def suggest_hides(ws: Workspace, doc_or_folder: str = "") -> dict:
+    """What else looks like the boilerplate this person has already hidden.
+
+    Deliberately learned-only: with nothing hidden yet there is nothing to
+    learn from and nothing is proposed. mdgest never decides on its own that
+    wording is furniture — it notices that *you* keep hiding things set a
+    certain way, and asks about the others.
+    """
+    folder = doc_or_folder
+    doc = ""
+    if ws.source_path(doc_or_folder).exists():
+        doc = ws.check_doc(doc_or_folder)
+        folder = _folder_of(doc)
+    index = occurrences.Index.over(ws, folder)
+    return {
+        "folder": folder,
+        "doc": doc,
+        "learned_from": index.hidden_signatures(),
+        "suggestions": index.suggest(doc),
+    }
+
+
 def list_rules(ws: Workspace, doc_or_folder: str) -> list[dict]:
     """Every rule that applies on the path, root first."""
     out = []

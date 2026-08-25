@@ -30,6 +30,16 @@ def _added(ws, pdf: Path) -> str:
     return doc
 
 
+def _block(ws, doc: str, starts_with: str) -> str:
+    """Pick a block by its wording — block ids shift when the fixture changes."""
+    return next(
+        blk["id"]
+        for page in ws.read_analysis(doc)["pages"]
+        for blk in page["blocks"]
+        if blk.get("text", "").startswith(starts_with)
+    )
+
+
 def _score(ws, doc: str) -> fidelity.Report:
     return fidelity.check(ws.read_analysis(doc), E.load(ws.edits_path(doc)))
 
@@ -50,13 +60,12 @@ def test_hiding_is_not_losing(ws):
     """A hidden block leaves the markdown *and* the expectation. Coverage that
     fell when someone hid a running header would train people to ignore it."""
     doc = _added(ws, DOC_A)
-    block = next(b for b in ops.view(ws, doc)["pages"][0]["blocks"] if b.get("text"))
-    ops.set_block(ws, doc, block["id"], hidden=True)
+    ops.set_block(ws, doc, _block(ws, doc, "Required Parts"), hidden=True)
 
     report = _score(ws, doc)
     assert report.coverage == pytest.approx(1.0)
     assert report.passed
-    assert block["text"] not in ws.md_path(doc).read_text()
+    assert "Required Parts" not in ws.md_path(doc).read_text()
 
 
 def test_hidden_wording_that_survives_elsewhere_is_not_a_leak(ws):
@@ -93,9 +102,10 @@ def test_a_heading_joined_across_the_page_is_untraceable(ws):
     wording appears on no page in that order. Coverage cannot see this — every
     word is still present — which is exactly why the check exists."""
     doc = _added(ws, DOC_A)
-    blocks = [b for b in ops.view(ws, doc)["pages"][0]["blocks"] if b.get("text")]
-    ops.join_blocks(ws, doc, blocks[3]["id"], blocks[0]["id"])
-    ops.set_block(ws, doc, blocks[0]["id"], role="heading", level=2)
+    title = _block(ws, doc, "Widget Assembly Manual")
+    parts = _block(ws, doc, "Required Parts")
+    ops.join_blocks(ws, doc, parts, title)
+    ops.set_block(ws, doc, title, role="heading", level=2)
 
     report = _score(ws, doc)
     assert report.coverage == pytest.approx(1.0)
@@ -108,11 +118,12 @@ def test_a_heading_joined_from_neighbouring_lines_stays_traceable(ws):
     blocks that *are* printed one after another read as one heading on the
     page, so joining them is honest and must not be flagged."""
     doc = _added(ws, DOC_A)
-    blocks = [b for b in ops.view(ws, doc)["pages"][0]["blocks"] if b.get("text")]
-    ops.join_blocks(ws, doc, blocks[1]["id"], blocks[0]["id"])
-    ops.set_block(ws, doc, blocks[0]["id"], role="heading", level=2)
+    title = _block(ws, doc, "Widget Assembly Manual")
+    overview = _block(ws, doc, "Overview")
+    ops.join_blocks(ws, doc, overview, title)
+    ops.set_block(ws, doc, title, role="heading", level=2)
 
-    joined = blocks[0]["text"] + " " + blocks[1]["text"]
+    joined = "Widget Assembly Manual Overview"
     assert joined in ws.md_path(doc).read_text()
     report = _score(ws, doc)
     assert report.untraceable_headings == []
@@ -214,9 +225,9 @@ def test_verify_folder_reports_worst_first(ws):
     """The shape CI wants: every document under a folder, failures at the top."""
     good = _added(ws, DOC_B)
     bad = _added(ws, DOC_A)
-    blocks = [b for b in ops.view(ws, bad)["pages"][0]["blocks"] if b.get("text")]
-    ops.join_blocks(ws, bad, blocks[3]["id"], blocks[0]["id"])
-    ops.set_block(ws, bad, blocks[0]["id"], role="heading", level=2)
+    title = _block(ws, bad, "Widget Assembly Manual")
+    ops.join_blocks(ws, bad, _block(ws, bad, "Required Parts"), title)
+    ops.set_block(ws, bad, title, role="heading", level=2)
 
     result = ops.verify_folder(ws, "")
     assert result["documents"] == 2
@@ -236,9 +247,9 @@ def test_verify_exits_nonzero_so_ci_can_gate(ws, monkeypatch):
 
     assert runner.invoke(app, ["verify"]).exit_code == 0
 
-    blocks = [b for b in ops.view(ws, doc)["pages"][0]["blocks"] if b.get("text")]
-    ops.join_blocks(ws, doc, blocks[3]["id"], blocks[0]["id"])
-    ops.set_block(ws, doc, blocks[0]["id"], role="heading", level=2)
+    title = _block(ws, doc, "Widget Assembly Manual")
+    ops.join_blocks(ws, doc, _block(ws, doc, "Required Parts"), title)
+    ops.set_block(ws, doc, title, role="heading", level=2)
 
     result = runner.invoke(app, ["verify"])
     assert result.exit_code == 1
@@ -284,8 +295,7 @@ def test_a_hide_decided_on_this_document_is_not_reported_as_inherited(ws):
     """Hiding a block here, without learning a rule, is this document's own
     decision — it must not show up as something a folder rule did."""
     doc = _added(ws, DOC_A)
-    block = next(b for b in ops.view(ws, doc)["pages"][0]["blocks"] if b.get("text"))
-    ops.set_block(ws, doc, block["id"], hidden=True)
+    ops.set_block(ws, doc, _block(ws, doc, "Required Parts"), hidden=True)
 
     report = _score(ws, doc)
     assert report.hidden_words > 0

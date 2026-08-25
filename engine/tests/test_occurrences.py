@@ -177,3 +177,58 @@ def test_margin_is_judged_per_page_height(ws):
     assert footer.in_margin
     body = index.evidence(next(k for k in index.by_key if k.startswith("key points")))
     assert not body.in_margin
+
+
+# ---- learned-only suggestions -------------------------------------------------
+
+
+def test_nothing_is_suggested_until_something_has_been_hidden(ws):
+    """The whole point. mdgest never decides on its own that wording is
+    furniture — repetition is not evidence, a person's decision is."""
+    a, _ = _corpus(ws)
+    result = ops.suggest_hides(ws, "manuals")
+    assert result["learned_from"] == {}
+    assert result["suggestions"] == []
+
+
+def test_hiding_the_footer_suggests_the_header_set_the_same_way(ws):
+    """The fixtures print a header and a footer in the same size and face, in
+    opposite margins. Hiding one is evidence about the other — and the pattern
+    is how they are *set*, so it carries without keying on anyone's words."""
+    a, b = _corpus(ws)
+    ops.hide(ws, a, _block(ws, a, "Copyright"), scope="folder")
+
+    suggestions = ops.suggest_hides(ws, "manuals")["suggestions"]
+    assert [s["text"] for s in suggestions] == ["Widget Corp - Internal Use Only"]
+    only = suggestions[0]
+    assert only["scope"] == "folder"  # margin furniture on several pages
+    assert only["margin"]
+    assert only["occurrences"] == 4  # both pages of both documents
+    assert not only["flagged"]
+
+
+def test_what_is_already_hidden_is_not_suggested_again(ws):
+    a, _ = _corpus(ws)
+    ops.hide(ws, a, _block(ws, a, "Copyright"), scope="folder")
+    ops.hide(ws, a, _block(ws, a, "Widget Corp"), scope="folder")
+
+    assert ops.suggest_hides(ws, "manuals")["suggestions"] == []
+
+
+def test_hiding_body_text_does_not_propose_the_page_furniture(ws):
+    """A pattern learned from a bold run-in label says nothing about an 8pt
+    footer. Suggestions follow the setting, not mere repetition."""
+    a, _ = _corpus(ws)
+    ops.hide(ws, a, _block(ws, a, "Key Points"), scope="document")
+
+    texts = [s["text"] for s in ops.suggest_hides(ws, "manuals")["suggestions"]]
+    assert not any("Copyright" in t or "Widget Corp" in t for t in texts)
+
+
+def test_suggestions_never_apply_themselves(ws):
+    a, b = _corpus(ws)
+    ops.hide(ws, a, _block(ws, a, "Copyright"), scope="folder")
+    before = ws.md_path(b).read_text()
+    ops.suggest_hides(ws, "manuals")
+    assert ws.md_path(b).read_text() == before
+    assert "Widget Corp" in ws.md_path(b).read_text()

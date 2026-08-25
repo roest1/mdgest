@@ -78,6 +78,7 @@ you can do in a shell, and vice versa.
 | undo / redo / reset | `mdgest undo` `redo` `reset` | `POST …/undo` `/redo` `/reset` |
 | Build index on a folder | `mdgest index <folder>` | `POST /api/index` |
 | — (not in the UI yet) | `mdgest hide <doc> <block> [--scope …]` | — |
+| — (not in the UI yet) | `mdgest suggest [doc\|folder]` | — |
 | — (not in the UI yet) | `mdgest verify [doc\|folder]` | — |
 
 `mdgest --help` lists them all; `make help` lists the make targets.
@@ -143,6 +144,23 @@ margin furniture still records a folder rule, and hiding body wording hides
 the block you clicked but *declines* to generalize, saying why. That is the
 one case where the gate cannot help afterwards — hiding removes the
 expectation along with the content, so coverage stays at 100% either way.
+
+## What else looks like what you hid
+
+`mdgest suggest` proposes further boilerplate — and proposes nothing until you
+have hidden something first. mdgest never decides on its own that wording is
+furniture: repetition is not evidence, a person's decision is. Once there is
+one, the pattern it learns is how the hidden blocks are *set* — the same key
+`rules.py` uses for a shape rule, so it carries across documents without
+keying on anyone's words.
+
+Hide the copyright footer and the running header set the same way is proposed,
+with the scope its own evidence supports. Hide a bold run-in label and the
+footer is not proposed, because a pattern learned from body type says nothing
+about an 8pt margin line.
+
+Suggestions are proposals and nothing else; `--apply` walks them one at a
+time, asking. Nothing is hidden without a person saying so.
 
 ## The gate: `mdgest verify`
 

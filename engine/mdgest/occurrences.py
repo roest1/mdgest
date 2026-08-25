@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .rules import text_key
+from .rules import signature, text_key
 from .store import Workspace
 
 #: Share of page height counted as the header/footer band.
@@ -63,6 +63,10 @@ class Occurrence:
     block: str
     text: str
     margin: bool
+    #: how the block is set, keyed as `rules.signature` keys a shape rule —
+    #: so "things set like the ones you already hid" is answerable
+    signature: str = ""
+    hidden: bool = False
 
 
 @dataclass
@@ -111,7 +115,10 @@ class Index:
     documents: list[str] = field(default_factory=list)
 
     @classmethod
-    def build(cls, analyses: dict[str, dict]) -> Index:
+    def build(cls, analyses: dict[str, dict], hidden: dict[str, set[str]] | None = None) -> Index:
+        """`hidden` names the blocks a person hid per document (from each
+        document's `edits.json`), which the analysis alone does not know."""
+        hidden = hidden or {}
         index = cls(documents=sorted(analyses))
         for doc in index.documents:
             for page in analyses[doc]["pages"]:
@@ -131,6 +138,8 @@ class Index:
                             block=blk["id"],
                             text=blk.get("text") or "",
                             margin=top > page["height"] - band or bottom < band,
+                            signature=signature(blk),
+                            hidden=bool(blk.get("hidden")) or blk["id"] in hidden.get(doc, set()),
                         )
                     )
         return index
@@ -139,10 +148,16 @@ class Index:
     def over(cls, ws: Workspace, folder: str = "") -> Index:
         """Every analyzed document under a folder. Unanalyzed ones are skipped
         rather than read — a preview must not trigger minutes of work."""
-        analyses = {
-            doc: ws.read_analysis(doc) for doc in ws.docs(folder) if ws.has_analysis(doc)
-        }
-        return cls.build(analyses)
+        from . import edits as E
+
+        analyses, hidden = {}, {}
+        for doc in ws.docs(folder):
+            if not ws.has_analysis(doc):
+                continue
+            analyses[doc] = ws.read_analysis(doc)
+            overrides = E.load(ws.edits_path(doc)).get("blocks", {})
+            hidden[doc] = {b for b, ov in overrides.items() if ov.get("hidden")}
+        return cls.build(analyses, hidden)
 
     def evidence(self, key: str) -> Evidence:
         return self.by_key.get(key, Evidence(key=key))
@@ -183,6 +198,63 @@ class Index:
             "is very often a section heading, so this stays narrow",
             flagged=True,
         )
+
+    # ---- learning what *this* person calls boilerplate ----------------------
+
+    def hidden_signatures(self) -> dict[str, int]:
+        """How a person sets the things they hide: signature -> how many
+        distinct wordings they have hidden that are set that way."""
+        by_signature: dict[str, set[str]] = {}
+        for evidence in self.by_key.values():
+            for o in evidence.occurrences:
+                if o.hidden and o.signature:
+                    by_signature.setdefault(o.signature, set()).add(evidence.key)
+        return {sig: len(keys) for sig, keys in by_signature.items()}
+
+    def suggest(self, doc: str = "") -> list[dict]:
+        """Wordings that look like the ones already hidden, and are not.
+
+        Nothing is proposed until a person has hidden something: the pattern is
+        learned from what *they* excluded, never from repetition alone. What is
+        learned is how the hidden blocks are *set* — the same key `rules.py`
+        uses for a shape rule — so it carries across documents without keying
+        on anyone's words.
+
+        A suggestion is a proposal and nothing else. It is never applied here.
+        """
+        known = self.hidden_signatures()
+        if not known:
+            return []
+        out: list[dict] = []
+        for key, evidence in self.by_key.items():
+            live = [o for o in evidence.occurrences if not o.hidden]
+            if not live or len(live) != len(evidence.occurrences):
+                continue  # already hidden, wholly or in part — not a discovery
+            if doc and not any(o.doc == doc for o in live):
+                continue
+            sigs = {o.signature for o in live if o.signature} & set(known)
+            if not sigs:
+                continue
+            example = next(o for o in live if o.signature in sigs)
+            proposal = self.propose(key, doc or example.doc)
+            out.append(
+                {
+                    "key": key,
+                    "text": example.text,
+                    "scope": proposal.scope,
+                    "why": proposal.why,
+                    "flagged": proposal.flagged,
+                    "margin": evidence.in_margin,
+                    "signature": example.signature,
+                    "like": known[example.signature],
+                    "doc": example.doc,
+                    "block": example.block,
+                    "occurrences": len(live),
+                }
+            )
+        # furniture first: what is in a margin, then what recurs most
+        out.sort(key=lambda s: (not s["margin"], -s["occurrences"], s["text"]))
+        return out
 
     def would_touch(self, key: str, doc: str, scope: str) -> list[Occurrence]:
         """Exactly which printings a hide at this scope would govern."""

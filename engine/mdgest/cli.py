@@ -11,6 +11,7 @@ mdgest move <doc> <block> --to N          reorder
 mdgest insert <doc> --page N --after <block> "text"
 mdgest join / split / undo / redo / reset
 mdgest hide <doc> <block> [--scope ...]   hide, and say how far it reaches
+mdgest suggest [doc|folder]               what else looks like what you hid
 mdgest index <folder>                     build the corpus index
 mdgest verify [doc|folder]                check the markdown against the page
 """
@@ -443,6 +444,38 @@ def hide(
     if not yes and not typer.confirm(f"{'unhide' if show else 'hide'} at {chosen} scope?"):
         raise typer.Abort()
     _echo(ops.hide(ws, doc, block, scope=chosen, hidden=not show))
+
+
+@app.command()
+def suggest(
+    target: str = typer.Argument("", help="a document or a folder (default: everything)"),
+    apply: bool = typer.Option(False, "--apply", help="hide each one, asking first"),
+):
+    """What else looks like the boilerplate you have already hidden.
+
+    Nothing is proposed until you have hidden something — the pattern comes
+    from what *you* excluded, not from repetition. mdgest never decides on its
+    own that wording is furniture.
+    """
+    ws = _ws()
+    result = ops.suggest_hides(ws, target)
+    if not result["learned_from"]:
+        typer.echo("nothing hidden yet, so nothing to learn from.")
+        typer.echo("hide a running header or footer first: mdgest hide <doc> <block>")
+        return
+    if not result["suggestions"]:
+        typer.echo(f"nothing else is set like the {len(result['learned_from'])} pattern(s) you hid.")
+        return
+    for s in result["suggestions"]:
+        where = "in a page margin" if s["margin"] else "in the body of the page"
+        typer.echo(f'"{s["text"][:70]}"')
+        typer.echo(f"  {where}, {s['occurrences']} printing(s); set like {s['like']} you hid")
+        typer.echo(f"  would hide at {s['scope']} scope — {s['why']}")
+        if s["flagged"]:
+            typer.echo("  ⚠ body wording that repeats is very often a section heading")
+        if apply and typer.confirm(f"  hide it at {s['scope']} scope?"):
+            ops.hide(ws, s["doc"], s["block"], scope=s["scope"])
+            typer.echo("  hidden.")
 
 
 @app.command()

@@ -13,7 +13,7 @@ stream
 endstream
 endobj
 4 0 obj
-<<  /Length 1418 >>
+<<  /Length 1533 >>
 stream
 BT /F2 20 Tf 1 0 0 1 72 740 Tm (Widget Maintenance Manual) Tj ET
 BT /F2 14 Tf 1 0 0 1 72 705 Tm (Overview) Tj ET
@@ -33,14 +33,16 @@ BT /F2 10 Tf 1 0 0 1 72 434 Tm (Key Points:) Tj ET
 BT /F1 10 Tf 1 0 0 1 72 418 Tm (A hand-thread that binds means the plate is not seated. Back it out) Tj ET
 BT /F1 10 Tf 1 0 0 1 72 406 Tm (and start the stage again rather than forcing the bolt.) Tj ET
 q 144 0 0 108 72 250 cm /Im1 Do Q
+BT /F1 8 Tf 1 0 0 1 72 772 Tm (Widget Corp - Internal Use Only) Tj ET
 BT /F1 8 Tf 1 0 0 1 72 72 Tm (Copyright 2026 Fixture Press. Synthetic test data.) Tj ET
+BT /F1 8 Tf 1 0 0 1 300 56 Tm (Page 1) Tj ET
 endstream
 endobj
 5 0 obj
 << /Type /Page /Parent 8 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> /XObject << /Im1 3 0 R >> >> /Contents 4 0 R >>
 endobj
 6 0 obj
-<<  /Length 875 >>
+<<  /Length 990 >>
 stream
 BT /F2 14 Tf 1 0 0 1 72 740 Tm (Verification) Tj ET
 BT /F1 10 Tf 1 0 0 1 72 718 Tm (Verify the assembly cold, before the first run. A warm frame hides) Tj ET
@@ -52,7 +54,9 @@ BT /F2 14 Tf 1 0 0 1 72 606 Tm (Troubleshooting) Tj ET
 BT /F2 10 Tf 1 0 0 1 72 584 Tm (Key Points:) Tj ET
 BT /F1 10 Tf 1 0 0 1 72 568 Tm (A reading that drifts between the first and second torque pass is a) Tj ET
 BT /F1 10 Tf 1 0 0 1 72 556 Tm (seating problem, not a calibration problem.) Tj ET
+BT /F1 8 Tf 1 0 0 1 72 772 Tm (Widget Corp - Internal Use Only) Tj ET
 BT /F1 8 Tf 1 0 0 1 72 72 Tm (Copyright 2026 Fixture Press. Synthetic test data.) Tj ET
+BT /F1 8 Tf 1 0 0 1 300 56 Tm (Page 2) Tj ET
 endstream
 endobj
 7 0 obj
@@ -74,14 +78,14 @@ xref
 0000000112 00000 n 
 0000000214 00000 n 
 0000000369 00000 n 
-0000001840 00000 n 
-0000002002 00000 n 
-0000002929 00000 n 
-0000003091 00000 n 
-0000003154 00000 n 
-0000003210 00000 n 
+0000001955 00000 n 
+0000002117 00000 n 
+0000003159 00000 n 
+0000003321 00000 n 
+0000003384 00000 n 
+0000003440 00000 n 
 trailer
 << /Size 11 /Root 10 0 R >>
 startxref
-3260
+3490
 %%EOF
