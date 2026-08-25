@@ -1,12 +1,11 @@
 import { AlertTriangle, Check, Copy, Download, GripVertical, Pencil, PencilLine, Stamp, Trash2, Undo2, X } from "lucide-react";
 import { Modal } from "./Modal";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../api";
 import { isDesktop, saveTextFile } from "../lib/desktop";
-import { hitBlock, useDrag } from "../lib/drag";
-import { listMarkers } from "../lib/order";
+import { badgeState, hitBlock, useBlockDrag, useDrag } from "../lib/drag";
 import { roleColor } from "../lib/roles";
 import { useStore } from "../store";
 import type { Block, DocView, Page } from "../types";
@@ -39,6 +38,7 @@ export function MarkdownPane({ docId, view }: { docId: string; view: DocView }) 
   const scrollRequest = useStore((s) => s.scrollRequest);
   const toast = useStore((s) => s.toast);
   const applyMarkdown = useStore((s) => s.applyMarkdown);
+  const learnScope = useStore((s) => s.learnScope);
   const busy = useStore((s) => s.busy);
   const ref = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
@@ -112,6 +112,7 @@ export function MarkdownPane({ docId, view }: { docId: string; view: DocView }) 
             </button>
             <span className="text-xs text-faint ml-1 hidden xl:inline truncate">
               same words, new markup → reshaped · removed line → deleted · new words → inserted as yours
+              {learnScope !== null && " · reshapes and deletions are learned"}
             </span>
           </>
         )}
@@ -222,12 +223,9 @@ function PageRows({ docId, page }: { docId: string; page: Page }) {
   const selection = useStore((s) => s.selection);
   const selected = useStore((s) => s.selected);
   const hover = useStore((s) => s.hover);
-  const select = useStore((s) => s.select);
-  const selectRange = useStore((s) => s.selectRange);
+  const selectFrom = useStore((s) => s.selectFrom);
   const setSelected = useStore((s) => s.setSelected);
   const setHover = useStore((s) => s.setHover);
-  const scrollTo = useStore((s) => s.scrollTo);
-  const moveBlock = useStore((s) => s.moveBlock);
   const updateInsert = useStore((s) => s.updateInsert);
   const sweeping = useRef(false); // a drag-select just happened: swallow the click that follows
 
@@ -239,6 +237,8 @@ function PageRows({ docId, page }: { docId: string; page: Page }) {
       if ((e.target as HTMLElement).closest("button, textarea, input, a")) return;
       const sx = e.clientX;
       const sy = e.clientY;
+      // held with the toggle key the sweep adds to what is already selected
+      const keep = e.metaKey || e.ctrlKey ? useStore.getState().selected : [];
       let moved = false;
       const ids = page.blocks.map((x) => x.id);
       const onMove = (ev: PointerEvent) => {
@@ -254,7 +254,8 @@ function PageRows({ docId, page }: { docId: string; page: Page }) {
         const i = ids.indexOf(b.id);
         if (j < 0 || i < 0) return;
         const [lo, hi] = i < j ? [i, j] : [j, i];
-        setSelected(ids.slice(lo, hi + 1));
+        const set = new Set([...keep, ...ids.slice(lo, hi + 1)]);
+        setSelected(ids.filter((x) => set.has(x)));
       };
       const onUp = () => {
         window.removeEventListener("pointermove", onMove);
@@ -269,58 +270,9 @@ function PageRows({ docId, page }: { docId: string; page: Page }) {
   const removeInsert = useStore((s) => s.removeInsert);
   const patchBlock = useStore((s) => s.patchBlock);
   const drag = useDrag((s) => s.drag);
-  const markers = useMemo(() => listMarkers(page.blocks), [page.blocks]);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
 
-  const onHandleDown = useCallback(
-    (e: React.PointerEvent, b: Block) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const sx = e.clientX;
-      const sy = e.clientY;
-      const shift = e.shiftKey;
-      let dragging = false;
-      const cur = useStore.getState().selected;
-      const group = cur.includes(b.id) && cur.length > 1 ? cur : [b.id];
-      const onMove = (ev: PointerEvent) => {
-        if (shift) return;
-        if (!dragging && Math.hypot(ev.clientX - sx, ev.clientY - sy) > 4) {
-          dragging = true;
-          useDrag.getState().start(b.id, page.n, group.length > 1 ? `${group.length} blocks` : `#${b.n}`, ev.clientX, ev.clientY, group);
-          if (group.length === 1) select(b.id);
-          document.body.style.cursor = "grabbing";
-        }
-        if (!dragging) return;
-        const hit = hitBlock(ev.clientX, ev.clientY, "md");
-        let target: string | null = null;
-        let place: "before" | "after" = "before";
-        if (hit && !group.includes(hit.id) && page.blocks.some((x) => x.id === hit.id)) {
-          target = hit.id;
-          const r = hit.el.getBoundingClientRect();
-          place = ev.clientY < r.top + r.height / 2 ? "before" : "after";
-        }
-        useDrag.getState().update(ev.clientX, ev.clientY, target, place, page.blocks);
-      };
-      const onUp = () => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-        document.body.style.cursor = "";
-        if (dragging) {
-          const d = useDrag.getState().end();
-          if (d?.target) moveBlock(d.ids, { target: d.target, place: d.place });
-        } else if (shift) {
-          selectRange(b.id);
-        } else {
-          select(b.id);
-          scrollTo(b.id, "pdf");
-        }
-      };
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-    },
-    [page.blocks, page.n, select, selectRange, scrollTo, moveBlock],
-  );
+  const onHandleDown = useBlockDrag("md", page);
 
   return (
     <div>
@@ -328,8 +280,7 @@ function PageRows({ docId, page }: { docId: string; page: Page }) {
         const c = roleColor(b);
         const isSel = selection === b.id || selected.includes(b.id);
         const isHover = hover === b.id;
-        const previewN = drag?.numbers?.get(b.id);
-        const affected = drag?.affected.has(b.id);
+        const badge = badgeState(b, drag, isSel);
         const isTarget = drag?.target === b.id;
         const breakRow = (
           <div className="flex items-center text-[11px] text-faint font-mono select-none">
@@ -349,12 +300,7 @@ function PageRows({ docId, page }: { docId: string; page: Page }) {
             onPointerDown={(e) => onRowDown(e, b)}
             onClick={(e) => {
               if (sweeping.current) return;
-              if (e.shiftKey) {
-                selectRange(b.id);
-                return;
-              }
-              select(b.id);
-              scrollTo(b.id, "pdf");
+              selectFrom(e, b.id, "pdf");
             }}
             className={`relative flex items-stretch group select-none ${isSel ? "bg-blue-500/15" : isHover && !drag ? "bg-white/[0.04]" : ""} ${
               drag?.ids.includes(b.id) ? "opacity-35" : ""
@@ -375,16 +321,14 @@ function PageRows({ docId, page }: { docId: string; page: Page }) {
               <GripVertical className={`w-3 h-3 mt-[1px] text-faint ${isHover && !drag ? "opacity-100" : "opacity-0"} transition-opacity`} />
               {/* fill says what the block is; the ring says what's happening to it */}
               <span
-                className={`px-1 min-w-[20px] text-center rounded-sm text-[11px] font-mono font-semibold leading-[16px] transition-all ${c.badge} ${
-                  affected ? "ring-2 ring-amber-400" : isSel ? "ring-2 ring-blue-400" : ""
-                } ${b.hidden ? "line-through opacity-60" : ""}`}
+                className={`px-1 min-w-[20px] text-center rounded-sm text-[11px] font-mono font-semibold leading-[16px] transition-all ${c.badge} ${badge.ring} ${badge.dim}`}
               >
-                {previewN ?? b.n}
+                {badge.label}
               </span>
             </div>
             {/* the block */}
             <div className={`flex-1 min-w-0 px-3 py-[3px] ${b.hidden ? "opacity-40 line-through" : ""}`}>
-              <BlockContent docId={docId} page={page} b={b} marker={markers.get(b.id)} />
+              <BlockContent docId={docId} page={page} b={b} />
               {b.kind === "insert" && (
                 <div className="flex items-center gap-1 mt-1">
                   <span className="text-[11px] text-pink-300/80 uppercase tracking-wider">inserted · not on the page</span>
@@ -432,7 +376,9 @@ function PageRows({ docId, page }: { docId: string; page: Page }) {
   );
 }
 
-function BlockContent({ docId, page, b, marker }: { docId: string; page: Page; b: Block; marker?: string }) {
+function BlockContent({ docId, page, b }: { docId: string; page: Page; b: Block }) {
+  // the engine hands over the marker it will write; a bullet reads better as one
+  const marker = b.role === "bullet" ? "\u2022" : b.list_marker;
   const inline = (text: string) => {
     let node: React.ReactNode = text;
     if (b.bold) node = <strong>{node}</strong>;
@@ -485,10 +431,8 @@ function Source({ view }: { view: DocView }) {
   const selection = useStore((s) => s.selection);
   const selected = useStore((s) => s.selected);
   const hover = useStore((s) => s.hover);
-  const select = useStore((s) => s.select);
-  const selectRange = useStore((s) => s.selectRange);
+  const selectFrom = useStore((s) => s.selectFrom);
   const setHover = useStore((s) => s.setHover);
-  const scrollTo = useStore((s) => s.scrollTo);
   return (
     <div className="font-mono [font-variant-ligatures:none] text-[12.5px] leading-[1.45] pb-24">
       {view.md_lines.map((l, i) => {
@@ -503,15 +447,7 @@ function Source({ view }: { view: DocView }) {
             className={`flex ${isSel ? "bg-blue-500/15" : isHover ? "bg-white/[0.04]" : ""} ${l.block ? "cursor-pointer" : ""}`}
             onMouseEnter={() => l.block && setHover(l.block)}
             onMouseLeave={() => setHover(null)}
-            onClick={(e) => {
-              if (!l.block) return;
-              if (e.shiftKey) {
-                selectRange(l.block);
-                return;
-              }
-              select(l.block);
-              scrollTo(l.block, "pdf");
-            }}
+            onClick={(e) => l.block && selectFrom(e, l.block, "pdf")}
           >
             <span className={`w-12 shrink-0 text-right pr-2 select-none border-r border-edge ${isSel ? "text-blue-300" : "text-faint"}`}>{l.n ?? ""}</span>
             <span className={`pl-3 whitespace-pre-wrap break-words ${l.page_break ? "text-faint" : l.text.startsWith("#") ? "text-blue-200" : l.text.startsWith("![") ? "text-amber-200" : "text-ink/90"}`}>

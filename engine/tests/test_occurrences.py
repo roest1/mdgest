@@ -125,8 +125,8 @@ def test_learning_a_hide_on_margin_furniture_still_generalizes(ws):
     document in a folder and every later one arrives with it gone."""
     a, b = _corpus(ws)
     result = ops.set_block(ws, a, _block(ws, a, "Copyright"), hidden=True, learn="manuals")
-    assert result["learned"]["hide"]["key"]
-    assert not result["learned"]["hide"].get("declined")
+    assert result["learned"][0]["hide"]["key"]
+    assert not result["learned"][0]["hide"].get("declined")
 
     ops.analyze(ws, b, force=True)
     assert "Copyright" not in ws.md_path(b).read_text()
@@ -137,7 +137,7 @@ def test_learning_a_hide_on_body_wording_declines_the_generalization(ws):
     declined is letting it reach documents they have not looked at."""
     a, b = _corpus(ws)
     result = ops.set_block(ws, a, _block(ws, a, "Key Points"), hidden=True, learn="manuals")
-    hide = result["learned"]["hide"]
+    hide = result["learned"][0]["hide"]
     assert hide["declined"] is True
     assert hide["scope"] == "document"
     assert "section heading" in hide["why"]
@@ -154,7 +154,7 @@ def test_unhiding_is_never_declined(ws):
     block = _block(ws, a, "Copyright")
     ops.set_block(ws, a, block, hidden=True, learn="manuals")
     result = ops.set_block(ws, a, block, hidden=False, learn="manuals")
-    assert result["learned"]["hide"].get("removed") is True
+    assert result["learned"][0]["hide"].get("removed") is True
 
 
 # ---- the index itself --------------------------------------------------------

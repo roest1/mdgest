@@ -2,6 +2,9 @@ import { create } from "zustand";
 import { api } from "./api";
 import type { Block, DocView, Job, TreeNode } from "./types";
 
+/** Just the modifier keys — a React event, a native one, or a remembered copy. */
+export type Mods = { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean };
+
 export type Overlays = { text: boolean; images: boolean; numbers: boolean; lines: boolean };
 
 interface Toast {
@@ -35,7 +38,7 @@ interface State {
 
   // view state
   selection: string | null; // the anchor
-  selected: string[]; // the range (anchor + shift-click extent), in page order
+  selected: string[]; // the group the next operation acts on, in page order
   hover: string | null;
   currentPage: number;
   overlays: Overlays;
@@ -44,6 +47,8 @@ interface State {
   zoom: number;
   select: (id: string | null) => void;
   selectRange: (id: string) => void; // shift-click: everything between the anchor and id
+  toggleSelected: (id: string) => void; // ctrl/cmd-click: add or drop one, neighbor or not
+  selectFrom: (mods: Mods, id: string, scroll?: "pdf" | "md") => void; // the click, whatever was held
   setSelected: (ids: string[]) => void; // marquee / drag-capture: an explicit set, in page order
   setHover: (id: string | null) => void;
   setCurrentPage: (n: number) => void;
@@ -198,6 +203,35 @@ export const useStore = create<State>((set, get) => ({
     const [lo, hi] = i < j ? [i, j] : [j, i];
     set({ selected: ids.slice(lo, hi + 1) });
   },
+  // The gesture, once. It was written out in four places -- both panes, the
+  // gutter handles, the source view -- so adding ctrl-click meant finding all
+  // four, and finding three of them is a bug nobody notices until they click.
+  selectFrom: (mods, id, scroll) => {
+    const s = get();
+    if (mods.shiftKey) return s.selectRange(id);
+    if (mods.metaKey || mods.ctrlKey) return s.toggleSelected(id);
+    s.select(id);
+    if (scroll) s.scrollTo(id, scroll);
+  },
+  toggleSelected: (id) => {
+    const { activeDoc, docs, selected, selection } = get();
+    const view = activeDoc ? docs[activeDoc] : undefined;
+    const here = findBlock(view, id);
+    const anchor = findBlock(view, selected[0] ?? null);
+    // Every operation on a group -- move above all -- is a page's operation.
+    // Reaching onto another page starts a new selection rather than building
+    // one the engine will refuse.
+    if (!here || (anchor && anchor.pageIndex !== here.pageIndex)) {
+      set({ selection: id, selected: [id] });
+      return;
+    }
+    const had = selected.includes(id);
+    const keep = new Set(selected);
+    if (had) keep.delete(id);
+    else keep.add(id);
+    const ids = view!.pages[here.pageIndex].blocks.filter((b) => keep.has(b.id)).map((b) => b.id);
+    set({ selected: ids, selection: had ? (selection === id ? (ids[ids.length - 1] ?? null) : selection) : id });
+  },
   setHover: (id) => set({ hover: id }),
   setCurrentPage: (n) => set({ currentPage: n }),
   toggleOverlay: (k) => set((s) => ({ overlays: { ...s.overlays, [k]: !s.overlays[k] } })),
@@ -232,9 +266,7 @@ export const useStore = create<State>((set, get) => ({
   patchBlock: async (block, fields) =>
     mutate(get, set, (id) => api.patchBlock(id, block, withLearn(get(), fields))),
   patchBlocks: async (blocks, fields) =>
-    mutate(get, set, async (id) => {
-      for (const b of blocks) await api.patchBlock(id, b, withLearn(get(), fields));
-    }),
+    mutate(get, set, (id) => api.patchBlocks(id, blocks, withLearn(get(), fields))),
   resetBlock: async (block) => mutate(get, set, (id) => api.resetBlock(id, block)),
   moveBlock: async (block, body) =>
     mutate(get, set, async (id) => {
@@ -250,13 +282,14 @@ export const useStore = create<State>((set, get) => ({
   insertText: async (page, after, text) => mutate(get, set, (id) => api.insert(id, page, after, text)),
   applyMarkdown: async (text) =>
     mutate(get, set, async (id) => {
-      const r = await api.putMarkdown(id, text);
+      const r = await api.putMarkdown(id, text, get().learnScope);
       const parts = [
         r.shaped && `${r.shaped} reshaped`,
         r.hidden && `${r.hidden} deleted`,
         r.inserted && `${r.inserted} inserted`,
         r.updated && `${r.updated} updated`,
         r.removed && `${r.removed} removed`,
+        r.learned && `${r.learned} learned`,
       ].filter(Boolean);
       get().toast(parts.length ? `applied — ${parts.join(", ")}` : "no changes", parts.length ? "success" : "info");
     }),

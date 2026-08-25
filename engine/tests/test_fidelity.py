@@ -236,6 +236,21 @@ def test_verify_folder_reports_worst_first(ws):
     assert result["reports"][1]["doc"] == good
 
 
+def test_verify_takes_a_folder_as_a_folder(ws, monkeypatch):
+    """`verify <folder>` is how CI asks the question, and it used to go looking
+    for `<folder>.pdf`: an id inside the workspace is not the same as a document
+    that exists."""
+    from typer.testing import CliRunner
+
+    from mdgest.cli import app
+
+    monkeypatch.setenv("MDGEST_WORKSPACE", str(ws.root))
+    _added(ws, DOC_A)
+    result = CliRunner().invoke(app, ["verify", "x"])
+    assert result.exit_code == 0, result.output
+    assert "PASS" in result.output
+
+
 def test_verify_exits_nonzero_so_ci_can_gate(ws, monkeypatch):
     from typer.testing import CliRunner
 

@@ -15,7 +15,8 @@ export interface Block {
   marker: string;
   size: number;
   picture: number;
-  n: number; // 1-based number on the page, in reading order
+  n: number | null; // 1-based number on the page in reading order; null when hidden
+  list_marker: string; // the marker the markdown will carry: "-", "2.", "b.", "iii."
   hidden?: boolean;
   edited?: boolean;
   origin?: "page" | "person";

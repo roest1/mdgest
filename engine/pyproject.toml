@@ -1,7 +1,7 @@
 [project]
 name = "mdgest"
 version = "0.2.0"
-description = "pdf -> reviewable markdown, with a UI and a CLI that do the same things"
+description = "pdf -> reviewable markdown: a page-by-page editor, and a gate that checks the result"
 requires-python = ">=3.11"
 dependencies = [
     "pypdfium2>=4.30",

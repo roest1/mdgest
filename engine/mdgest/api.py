@@ -245,7 +245,8 @@ def create_app(workspace: Path | None = None) -> FastAPI:
     @app.patch("/api/docs/{doc_id:path}/blocks/{block_id}")
     def patch_block(doc_id: str, block_id: str, payload: dict = Body(...)):
         learn = payload.pop("learn", None)  # folder to record the decision in, or absent
-        return edit(lambda: ops.set_block(ws, doc_id, block_id, learn=learn, **payload))
+        blocks = payload.pop("blocks", None) or block_id  # a group is one edit, so one undo
+        return edit(lambda: ops.set_block(ws, doc_id, blocks, learn=learn, **payload))
 
     # ---- rules & versions ------------------------------------------------
 
@@ -332,7 +333,11 @@ def create_app(workspace: Path | None = None) -> FastAPI:
     @app.put("/api/docs/{doc_id:path}/markdown")
     def put_markdown(doc_id: str, payload: dict = Body(...)):
         """A freely edited markdown; the difference becomes edits (one undo step)."""
-        return edit(lambda: ops.apply_markdown(ws, doc_id, payload.get("text", "")))
+        return edit(
+            lambda: ops.apply_markdown(
+                ws, doc_id, payload.get("text", ""), learn=payload.get("learn")
+            )
+        )
 
     @app.post("/api/docs/{doc_id:path}/undo")
     def undo(doc_id: str):

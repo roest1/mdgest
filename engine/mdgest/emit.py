@@ -140,9 +140,43 @@ def resolve_page(page: dict, edits: dict) -> list[dict]:
             blk["level"] = 2
 
     blocks = _arrange(blocks, edits.get("order", {}).get(str(page["n"]), []))
-    for n, blk in enumerate(blocks, start=1):
+    # A deleted block keeps its place -- it is there to be restored -- but not
+    # its number: numbering what the markdown does not carry makes "move to 9"
+    # a count of things the person cannot see.
+    n = 0
+    counters: dict[tuple[str, int], int] = {}
+    for blk in blocks:
+        if blk.get("hidden"):
+            blk["n"] = None
+            blk["list_marker"] = ""
+            continue
+        n += 1
         blk["n"] = n
+        blk["list_marker"] = _marker(blk, counters)
     return blocks
+
+
+def _marker(blk: dict, counters: dict[tuple[str, int], int]) -> str:
+    """The marker this block will be written with, `2.` / `b.` / `iii.` / `-`.
+
+    Here rather than in `page_markdown` because the panel draws the same list
+    and would otherwise count it again, in TypeScript: two encodings of "a
+    paragraph resets the numbering, coming back up a level resets the deeper
+    ones", drifting apart the first time one of them is fixed.
+    """
+    role = blk.get("role", "para")
+    if role not in LIST_ROLES:
+        counters.clear()
+        return ""
+    depth = max(0, int(blk.get("depth") or 0))
+    for key in [k for k in counters if k[1] > depth]:
+        counters.pop(key)
+    if role == "bullet":
+        return "-"
+    key = (role, depth)
+    counters[key] = counters.get(key, 0) + 1
+    k = counters[key]
+    return f"{k}." if role == "numbered" else f"{alpha(k)}." if role == "alpha" else f"{roman(k)}."
 
 
 def _inline(blk: dict) -> str:
@@ -161,7 +195,6 @@ def _inline(blk: dict) -> str:
 def page_markdown(page: dict, blocks: list[dict], assets_prefix: str = "") -> list[dict]:
     """Markdown lines for one page: [{text, block, n}], each line tagged with its block."""
     out: list[dict] = []
-    counters: dict[tuple[str, int], int] = {}
     prev_list = False
 
     def put(text: str, blk: dict | None) -> None:
@@ -181,8 +214,6 @@ def page_markdown(page: dict, blocks: list[dict], assets_prefix: str = "") -> li
             return
         role = blk.get("role", "para")
         is_list = role in LIST_ROLES
-        if not is_list:
-            counters.clear()
         if role == "image":
             pic = (
                 page["pictures"][blk["picture"]]
@@ -219,27 +250,10 @@ def page_markdown(page: dict, blocks: list[dict], assets_prefix: str = "") -> li
             prev_list = False
             return
         if is_list:
-            depth = max(0, int(blk.get("depth") or 0))
-            # reset deeper counters when we come back up
-            for key in [k for k in counters if k[1] > depth]:
-                counters.pop(key)
-            indent = "  " * depth
-            if role == "bullet":
-                marker = "-"
-            else:
-                key = (role, depth)
-                counters[key] = counters.get(key, 0) + 1
-                k = counters[key]
-                marker = (
-                    f"{k}."
-                    if role == "numbered"
-                    else f"{alpha(k)}."
-                    if role == "alpha"
-                    else f"{roman(k)}."
-                )
+            indent = "  " * max(0, int(blk.get("depth") or 0))
             if not prev_list and out and out[-1]["text"] != "":
                 put("", None)
-            put(f"{indent}{marker} {text}", blk)
+            put(f"{indent}{blk['list_marker']} {text}", blk)
             prev_list = True
             return
         # paragraph

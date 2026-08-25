@@ -1,6 +1,6 @@
 # The app, in detail
 
-**pdf → markdown, page by page, with a UI and a CLI that do the same things.**
+**pdf → markdown, page by page: a UI to shape one document, a shell to run a corpus.**
 
 The page is on the left, the markdown it produces is on the right, and every
 piece of text and every picture on the page is a numbered box. The same numbers
@@ -8,7 +8,10 @@ sit in the markdown's gutter (nvim-style). Click a box and say what it is — a
 heading and its level, a bullet / `1.` / `a.` / `i.` item and its depth, bold,
 italic, hidden. Drag a box (on the page, or its number in the panel) onto
 another and it takes that place; the whole page renumbers under the pointer so
-you see the blast radius before you let go. Everything is recorded per
+you see the blast radius before you let go. Only what the markdown carries is
+numbered: delete a block and it keeps its place in the list — struck through,
+there to be restored — but gives up its number, so `#9` on the page is the
+ninth thing in the output and never the ninth of a list with holes in it. Everything is recorded per
 document in a small `edits.json`; the markdown is rewritten on every change
 into a tree that mirrors the PDFs'.
 
@@ -58,35 +61,43 @@ A document's id is its path under `sources/` without `.pdf`:
 it — `manuals/training/module-1`, `…/hydraulics/valves` — and an index can be
 built over any folder (so any subset of uploads).
 
-## One set of operations, two faces
+## One set of operations, one editor and one gate
 
-Every UI action is an `ops.*` function; the API (`engine/mdgest/api.py`) and
-the CLI (`engine/mdgest/cli.py`) both call it, so anything you do in the browser
-you can do in a shell, and vice versa.
+Every mutation is an `ops.*` function and the API (`engine/mdgest/api.py`) is a
+thin lambda over it — no decision lives in a React component, because the
+component has nowhere to put one.
 
-| UI | CLI | API |
+The CLI is not a second editor. It used to be: `set`, `move`, `join`, `split`,
+`order`, `insert`, `undo`, twenty-odd verbs mirroring the shape bar one for one.
+They were a worse way to do a thing the page already does well — addressing
+`p1b7` by id when the block is sitting right there under a numbered box — and
+nothing used them: not the tests, not CI, not the Makefile. What they did cost
+was a rule that every new UI action owed a shell verb and a row in this table.
+
+What is left is what a browser is the wrong shape for.
+
+| | CLI | API |
 |---|---|---|
-| drop a pdf / zip / folder | `mdgest add <path> --to <folder>` | `POST /api/upload` (multipart, `folder=`) |
-| explorer | `mdgest ls [folder]` | `GET /api/tree` |
-| new folder / rename / move / delete | `mdgest mkdir` `mv` `rm` | `POST /api/folders`, `POST /api/move`, `DELETE …` |
-| the numbered boxes | `mdgest show <doc> [--page N] [--json]` | `GET /api/docs/<doc>` |
-| the markdown | `mdgest md <doc>` | `GET /api/docs/<doc>/markdown` |
-| shape bar (H1–H4 ¶ • 1. a. i. depth B I hide) | `mdgest set <doc> <block> --role heading --level 2 --bold …` | `PATCH /api/docs/<doc>/blocks/<block>` |
-| drag a box / type a number; click + ⇧click a range and drag the group | `mdgest move <doc> <block>[,<block>…] --to N \| --before <b> \| --after <b>` | `POST …/blocks/<block>/move` (`blocks: […]` for a group) |
-| join ↑ / split | `mdgest join <doc> <child> <parent>` / `mdgest split` | `POST …/blocks/<b>/join` / `/split` |
-| Insert text (with the warning) | `mdgest insert <doc> "text" --page N --after <block>` | `POST /api/docs/<doc>/inserts` |
-| undo / redo / reset | `mdgest undo` `redo` `reset` | `POST …/undo` `/redo` `/reset` |
-| Build index on a folder | `mdgest index <folder>` | `POST /api/index` |
-| — (not in the UI yet) | `mdgest hide <doc> <block> [--scope …]` | — |
-| — (not in the UI yet) | `mdgest suggest [doc\|folder]` | — |
-| — (not in the UI yet) | `mdgest settings [folder] --page-numbers …` | — |
-| — (not in the UI yet) | `mdgest verify [doc\|folder]` | — |
+| run the engine (and the built web app) | `mdgest serve [--host --port]` | — |
+| ingest a pdf, a zip, or a directory tree | `mdgest add <path> --to <folder>` | `POST /api/upload` |
+| read a document into `analysis.json` + markdown | `mdgest analyze <doc> [--force]` | `POST …/reanalyze` |
+| the workspace as a tree | `mdgest ls [folder] [--json]` | `GET /api/tree` |
+| hide, and say how far it reaches | `mdgest hide <doc> <block> [--scope …] [--dry-run]` | — |
+| what else looks like what you hid | `mdgest suggest [doc\|folder]` | — |
+| what to do with printed page numbers | `mdgest settings [folder] --page-numbers …` | — |
+| the corpus index for citation | `mdgest index <folder>` | `POST /api/index` |
+| the fidelity gate — exits nonzero | `mdgest verify [doc\|folder]` | — |
 
-`mdgest --help` lists them all; `make help` lists the make targets.
+Every one of those is corpus-shaped: sixty documents at once, or a check CI can
+fail on. The markdown itself needs no verb — the engine writes it beside the
+source on every change, so reading it is `cat`.
+
+`mdgest --help` lists them; `make help` lists the make targets.
 
 Keys in the UI (select a box first): `1`–`6` heading level · `p` paragraph ·
 `-` bullet · `n` numbered · `a` lettered · `r` roman · `[` `]` depth · `b` bold ·
-`i` italic · `h` hide · `⇧click` select a range (then any key or drag acts on the whole group) · `j`/`k` next/previous block · `J`/`K` move it down/up ·
+`i` italic · `h` hide · `⇧click` select a range, `⌘click` (`ctrl` click) add or drop
+one block wherever it sits — then any key or drag acts on the whole group · `j`/`k` next/previous block · `J`/`K` move it down/up ·
 `t` / `g` / `#` toggle text / image / number overlays · `⌘Z` undo · `Esc` deselect.
 
 ## How the engine reads a page (no model, no network)
@@ -142,7 +153,9 @@ and stops), and `--scope` overrides the proposal. Nothing generalizes unseen.
 
 The `--learn` path that the UI drives goes through the same evidence: hiding
 margin furniture still records a folder rule, and hiding body wording hides
-the block you clicked but *declines* to generalize, saying why. That is the
+the block you clicked but *declines* to generalize, saying why. A line deleted
+under **edit text** is the same decision as one deleted on the page, and is put
+to the same evidence. That is the
 one case where the gate cannot help afterwards — hiding removes the
 expectation along with the content, so coverage stays at 100% either way.
 
@@ -233,8 +246,8 @@ rename, delete, upload pdf/zip/folder), tabs, page rail with thumbnails,
 overlays (text / images / numbers / raw lines) with click-select and
 drag-to-reorder with live blast radius, the shape bar + keyboard, rendered and
 source markdown views with the numbered gutter and the same drag, insert-text
-with the warning, undo/redo, join/split, per-folder `INDEX.md`, and the CLI
-mirror. Engine tests: `make test`.
+with the warning, undo/redo, join/split, per-folder `INDEX.md`, and the shell
+commands for ingesting and checking a corpus. Engine tests: `make test`.
 
 Not built yet (in order of value):
 

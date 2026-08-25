@@ -27,7 +27,7 @@ MDGEST := $(UV) mdgest
 export MDGEST_WORKSPACE := $(WS)
 
 .DEFAULT_GOAL := help
-.PHONY: help setup dev serve build api web add ls show md index test lint fmt typecheck check clean \
+.PHONY: help setup dev serve build api web add ls index verify test lint fmt typecheck check clean \
         engine-bin desktop-dev desktop-build
 
 help: ## list these targets
@@ -57,7 +57,7 @@ build: ## build the web app into web/dist (the engine serves it)
 serve: build ## build the web app, then serve everything from the engine
 	$(MDGEST) serve --host $(HOST) --port $(PORT)
 
-# ---- the same things the UI does, from the shell -------------------------
+# ---- a corpus, from the shell --------------------------------------------
 
 add: ## add SRC (pdf | zip | directory) into TO: make add SRC=../pdfs TO=manuals
 	@test -n "$(SRC)" || { echo "usage: make add SRC=<pdf|zip|dir> [TO=<folder>]"; exit 2; }
@@ -66,16 +66,11 @@ add: ## add SRC (pdf | zip | directory) into TO: make add SRC=../pdfs TO=manuals
 ls: ## the explorer tree
 	$(MDGEST) ls
 
-show: ## numbered blocks of DOC (optionally PAGE=n)
-	@test -n "$(DOC)" || { echo "usage: make show DOC=<id> [PAGE=n]"; exit 2; }
-	$(MDGEST) show "$(DOC)" $(if $(PAGE),--page $(PAGE),)
-
-md: ## print DOC's markdown
-	@test -n "$(DOC)" || { echo "usage: make md DOC=<id>"; exit 2; }
-	$(MDGEST) md "$(DOC)"
-
 index: ## build INDEX.md over FOLDER (default: whole workspace)
 	$(MDGEST) index "$(FOLDER)"
+
+verify: ## check every document's markdown against the pages it came from
+	$(MDGEST) verify "$(FOLDER)"
 
 # ---- the desktop app -----------------------------------------------------
 

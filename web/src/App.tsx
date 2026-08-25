@@ -94,7 +94,7 @@ function Empty() {
           Drop a PDF, a zip, or a whole folder into the explorer. Each document opens as a tab: the page on the left with numbered boxes around every piece of text and every picture, the markdown on the right with the same numbers in its gutter.
         </p>
         <p className="text-xs text-faint mt-4">
-          Everything here is also a command: <span className="kbd">mdgest add</span> <span className="kbd">mdgest show</span> <span className="kbd">mdgest set</span> <span className="kbd">mdgest move</span> <span className="kbd">mdgest index</span>
+          A whole corpus is a command: <span className="kbd">mdgest add</span> <span className="kbd">mdgest index</span> <span className="kbd">mdgest verify</span>
         </p>
       </div>
     </div>

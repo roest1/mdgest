@@ -277,14 +277,19 @@ function useShortcuts(docId: string) {
           e.preventDefault();
           return;
         }
+        // one place up or down means one *visible* place: a deleted block has
+        // no number to take, so stepping onto it would look like nothing moved
         case "K": {
           const first = page.blocks.findIndex((x) => group.includes(x.id));
-          if (first > 0) s.moveBlock(group, { to: first });
+          const above = page.blocks.slice(0, first).filter((x) => !x.hidden && !group.includes(x.id));
+          const t = above[above.length - 1];
+          if (t) s.moveBlock(group, { target: t.id, place: "before" });
           return;
         }
         case "J": {
           const last = page.blocks.map((x) => group.includes(x.id)).lastIndexOf(true);
-          if (last < page.blocks.length - 1) s.moveBlock(group, { to: last - group.length + 3 });
+          const t = page.blocks.slice(last + 1).find((x) => !x.hidden && !group.includes(x.id));
+          if (t) s.moveBlock(group, { target: t.id, place: "after" });
           return;
         }
       }

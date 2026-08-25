@@ -66,6 +66,9 @@ export const api = {
   reanalyze: (id: string) => req("/docs/" + id + "/reanalyze", json("POST")),
   patchBlock: (id: string, block: string, fields: Record<string, unknown>) =>
     req(`/docs/${id}/blocks/${block}`, json("PATCH", fields)),
+  // a group rides on the first block's route, the way a group move does
+  patchBlocks: (id: string, blocks: string[], fields: Record<string, unknown>) =>
+    req(`/docs/${id}/blocks/${blocks[0]}`, json("PATCH", { ...fields, blocks })),
   resetBlock: (id: string, block: string) => req(`/docs/${id}/blocks/${block}/override`, { method: "DELETE" }),
   moveBlock: (id: string, block: string, body: { to?: number; target?: string; place?: "before" | "after"; blocks?: string[] }) =>
     req<{ page: number; order: string[]; affected: string[] }>(`/docs/${id}/blocks/${block}/move`, json("POST", body)),
@@ -78,8 +81,11 @@ export const api = {
     req<{ id: string }>(`/docs/${id}/inserts`, json("POST", { page, after, text })),
   updateInsert: (id: string, ins: string, text: string) => req(`/docs/${id}/inserts/${ins}`, json("PATCH", { text })),
   removeInsert: (id: string, ins: string) => req(`/docs/${id}/inserts/${ins}`, { method: "DELETE" }),
-  putMarkdown: (id: string, text: string) =>
-    req<{ shaped: number; hidden: number; inserted: number; updated: number; removed: number }>(`/docs/${id}/markdown`, json("PUT", { text })),
+  putMarkdown: (id: string, text: string, learn: string | null) =>
+    req<{ shaped: number; hidden: number; inserted: number; updated: number; removed: number; learned: number }>(
+      `/docs/${id}/markdown`,
+      json("PUT", { text, learn }),
+    ),
   undo: (id: string) => req<{ undone: boolean }>(`/docs/${id}/undo`, json("POST")),
   redo: (id: string) => req<{ redone: boolean }>(`/docs/${id}/redo`, json("POST")),
   resetEdits: (id: string) => req(`/docs/${id}/reset`, json("POST")),

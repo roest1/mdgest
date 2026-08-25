@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
-import { hitBlock, useDrag } from "../lib/drag";
+import { badgeState, sameRow, useBlockDrag, useDrag } from "../lib/drag";
 import { roleColor, shapeLabel } from "../lib/roles";
 import { useStore } from "../store";
 import type { Block, DocView, Page } from "../types";
@@ -72,13 +72,10 @@ function PageView({ docId, page, overlays, zoom }: { docId: string; page: Page; 
   const selected = useStore((s) => s.selected);
   const hover = useStore((s) => s.hover);
   const select = useStore((s) => s.select);
-  const selectRange = useStore((s) => s.selectRange);
   const setSelected = useStore((s) => s.setSelected);
   const setHover = useStore((s) => s.setHover);
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
-  const scrollTo = useStore((s) => s.scrollTo);
-  const moveBlock = useStore((s) => s.moveBlock);
   const drag = useDrag((s) => s.drag);
   const W = page.width;
   const H = page.height;
@@ -95,59 +92,7 @@ function PageView({ docId, page, overlays, zoom }: { docId: string; page: Page; 
     return { left: `${(100 * l) / W}%`, top: `${(100 * (H - t)) / H}%`, width: `${(100 * (r - l)) / W}%`, height: `${(100 * (t - bt)) / H}%` };
   };
 
-  const onPointerDown = useCallback(
-    (e: React.PointerEvent, b: Block) => {
-      if (e.button !== 0) return;
-      e.stopPropagation();
-      e.preventDefault(); // no text selection, no native drag of the page image
-      const startX = e.clientX;
-      const startY = e.clientY;
-      const shift = e.shiftKey;
-      let dragging = false;
-      // dragging a selected box drags the whole selected group
-      const cur = useStore.getState().selected;
-      const group = cur.includes(b.id) && cur.length > 1 ? cur : [b.id];
-      const onMove = (ev: PointerEvent) => {
-        if (shift) return;
-        if (!dragging && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 5) {
-          dragging = true;
-          useDrag.getState().start(b.id, page.n, group.length > 1 ? `${group.length} blocks` : `#${b.n}`, ev.clientX, ev.clientY, group);
-          if (group.length === 1) select(b.id);
-          document.body.style.cursor = "grabbing";
-        }
-        if (!dragging) return;
-        const hit = hitBlock(ev.clientX, ev.clientY, "pdf");
-        let target: string | null = null;
-        let place: "before" | "after" = "before";
-        if (hit && !group.includes(hit.id) && page.blocks.some((x) => x.id === hit.id)) {
-          target = hit.id;
-          const tb = page.blocks.find((x) => x.id === hit.id)!;
-          const r = hit.el.getBoundingClientRect();
-          // same row? decide left/right; otherwise above/below
-          const sameRow = tb.bbox && b.bbox && Math.min(tb.bbox[3], b.bbox[3]) - Math.max(tb.bbox[1], b.bbox[1]) > 0.5 * Math.min(tb.bbox[3] - tb.bbox[1], b.bbox[3] - b.bbox[1]);
-          place = sameRow ? (ev.clientX < r.left + r.width / 2 ? "before" : "after") : ev.clientY < r.top + r.height / 2 ? "before" : "after";
-        }
-        useDrag.getState().update(ev.clientX, ev.clientY, target, place, page.blocks);
-      };
-      const onUp = () => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-        document.body.style.cursor = "";
-        if (dragging) {
-          const d = useDrag.getState().end();
-          if (d?.target) moveBlock(d.ids, { target: d.target, place: d.place });
-        } else if (shift) {
-          selectRange(b.id);
-        } else {
-          select(b.id);
-          scrollTo(b.id, "md");
-        }
-      };
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-    },
-    [page.blocks, page.n, select, selectRange, scrollTo, moveBlock],
-  );
+  const onPointerDown = useBlockDrag("pdf", page);
 
   // drag on the page itself (not on a box) draws a rectangle: every box it
   // touches becomes the selection, in page order — a group you can then drag.
@@ -161,6 +106,9 @@ function PageView({ docId, page, overlays, zoom }: { docId: string; page: Page; 
       const r0 = root.getBoundingClientRect();
       const sx = e.clientX;
       const sy = e.clientY;
+      // held with the toggle key the lasso adds, so two far-apart groups can
+      // be swept into one selection
+      const keep = e.metaKey || e.ctrlKey ? useStore.getState().selected : [];
       let moved = false;
       const onMove = (ev: PointerEvent) => {
         if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
@@ -172,14 +120,14 @@ function PageView({ docId, page, overlays, zoom }: { docId: string; page: Page; 
           const b = el.getBoundingClientRect();
           if (b.left < rect.x1 && b.right > rect.x0 && b.top < rect.y1 && b.bottom > rect.y0) hits.push(el.dataset.block!);
         });
-        const set = new Set(hits);
+        const set = new Set([...keep, ...hits]);
         setSelected(page.blocks.filter((b) => set.has(b.id)).map((b) => b.id));
       };
       const onUp = () => {
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
         setMarquee(null);
-        if (!moved) select(null);
+        if (!moved && !keep.length) select(null);
       };
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
@@ -212,8 +160,7 @@ function PageView({ docId, page, overlays, zoom }: { docId: string; page: Page; 
         const c = roleColor(b);
         const isSel = selection === b.id || selected.includes(b.id);
         const isHover = hover === b.id;
-        const previewN = drag?.numbers?.get(b.id);
-        const affected = drag?.affected.has(b.id);
+        const badge = badgeState(b, drag, isSel);
         const isTarget = drag?.target === b.id;
         const isDragged = drag?.ids.includes(b.id);
         return (
@@ -233,7 +180,7 @@ function PageView({ docId, page, overlays, zoom }: { docId: string; page: Page; 
             {isTarget && (
               <div
                 className={`drop-line ${
-                  sameRowFlag(drag, b, page)
+                  sameRow(page.blocks.find((x) => x.id === drag!.id), b)
                     ? drag!.place === "before"
                       ? "left-[-4px] top-0 bottom-0 w-[3px]"
                       : "right-[-4px] top-0 bottom-0 w-[3px]"
@@ -245,11 +192,11 @@ function PageView({ docId, page, overlays, zoom }: { docId: string; page: Page; 
             )}
             {overlays.numbers && (
               <span
-                className={`absolute -top-[7px] -left-[7px] px-[3px] min-w-[14px] h-[13px] rounded-[3px] text-[10px] font-mono font-semibold leading-[13px] text-center shadow-md whitespace-nowrap transition-all ${c.badge} ${
-                  affected ? "ring-2 ring-amber-400" : isSel ? "ring-2 ring-blue-400" : ""
-                } ${b.hidden ? "line-through opacity-70" : ""} ${isSel || isHover ? "z-20 scale-110" : "opacity-90"}`}
+                className={`absolute -top-[7px] -left-[7px] px-[3px] min-w-[14px] h-[13px] rounded-[3px] text-[10px] font-mono font-semibold leading-[13px] text-center shadow-md whitespace-nowrap transition-all ${c.badge} ${badge.ring} ${badge.dim} ${
+                  isSel || isHover ? "z-20 scale-110" : "opacity-90"
+                }`}
               >
-                {previewN ?? b.n}
+                {badge.label}
                 {(isSel || isHover) && <span className="font-normal opacity-90"> {shapeLabel(b)}</span>}
               </span>
             )}
@@ -260,14 +207,6 @@ function PageView({ docId, page, overlays, zoom }: { docId: string; page: Page; 
   );
 }
 
-function sameRowFlag(drag: ReturnType<typeof useDrag.getState>["drag"], target: Block, page: Page): boolean {
-  if (!drag) return false;
-  const moving = page.blocks.find((x) => x.id === drag.id);
-  if (!moving?.bbox || !target.bbox) return false;
-  const ov = Math.min(target.bbox[3], moving.bbox[3]) - Math.max(target.bbox[1], moving.bbox[1]);
-  return ov > 0.5 * Math.min(target.bbox[3] - target.bbox[1], moving.bbox[3] - moving.bbox[1]);
-}
-
 function area(b: Block): number {
   if (!b.bbox) return 0;
   return (b.bbox[2] - b.bbox[0]) * (b.bbox[3] - b.bbox[1]);
@@ -276,9 +215,10 @@ function area(b: Block): number {
 export function DragGhost() {
   const drag = useDrag((s) => s.drag);
   if (!drag) return null;
+  const n = drag.numbers?.get(drag.id); // a deleted block lands somewhere but takes no number
   return (
     <div className="fixed z-50 pointer-events-none px-2 py-1 rounded bg-blue-600 text-white text-[11px] font-mono shadow-lg" style={{ left: drag.x + 12, top: drag.y + 12 }}>
-      {drag.target && drag.numbers ? `${drag.label} → #${drag.numbers.get(drag.id)}` : `${drag.label} — drop on the place it should take`}
+      {!drag.target ? `${drag.label} — drop on the place it should take` : n ? `${drag.label} → #${n}` : `${drag.label} → here`}
     </div>
   );
 }

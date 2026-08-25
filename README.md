@@ -6,7 +6,7 @@ PDF to Markdown. The one missing feature to [pdf.net](https://pdf.net).
 
 <!-- **Novelty of our markdown conversion**: Provide a schema for citing and referencing parsed content to use with OpenAI SDK compatible things-->
 
-PDF to Markdown converter. Works page-by-page, getting smarter the more you work with it. Works completely offline. Designed as dual-purpose, UI and CLI so you can accomplish all the things from anywhere.
+PDF to Markdown converter. Works page-by-page, getting smarter the more you work with it. Works completely offline. The shaping happens in the UI, where the page is; the shell is for what a corpus needs — ingest a tree of PDFs, build the citation index, and gate the output in CI.
 
 ---
 
@@ -34,7 +34,7 @@ flowchart TB
 
     subgraph DECIDE ["2 &nbsp; DECIDE &nbsp;&mdash;&nbsp; the only step with a person in it"]
         direction LR
-        UI["<b>UI &middot; CLI &middot; API</b><br/>numbered boxes on the page,<br/>the same numbers in the markdown"]
+        UI["<b>UI &middot; API</b><br/>numbered boxes on the page,<br/>the same numbers in the markdown"]
         ED["<b>edits.json</b><br/>role, level, order, joins,<br/>hides, inserts<br/><i>precious &mdash; the one file<br/>that does not regenerate</i>"]
         UI --> ED
     end
@@ -87,7 +87,7 @@ Two things the picture is trying to make unmissable:
 
 ```bash
 curl -fsSL https://bun.com/install | bash # install bun
-curl -fsSL https://astral.sh/uv/install.sh | bash # install uv (CLI route only needs this)
+curl -fsSL https://astral.sh/uv/install.sh | bash # install uv (the engine needs only this)
 ```
 
 **Get the GUI Going**:
@@ -132,6 +132,6 @@ make desktop-build   # AppImage / deb / rpm on Linux; dmg / nsis via CI
 ```
 
 How the shell, the sidecar and the UI fit together: [docs/desktop.md](docs/desktop.md).
-The app in detail (blocks, rules, versions, CLI mirror): [docs/app.md](docs/app.md).
+The app in detail (blocks, rules, versions, what the shell is for): [docs/app.md](docs/app.md).
 What has to be fixed before this branch lands: [docs/known-issues.md](docs/known-issues.md).
 

@@ -105,53 +105,94 @@ def _mutate(ws: Workspace, doc_id: str, fn) -> dict:
 
 
 def set_block(
-    ws: Workspace, doc_id: str, block_id: str, learn: str | None = None, **fields
+    ws: Workspace, doc_id: str, block_id: str | list[str], learn: str | None = None, **fields
 ) -> dict:
-    """Override a block's shape. With `learn` = a folder on the document's path,
-    also record the decision as a rule there (see `rules.py`)."""
+    """Override the shape of a block — or of a group, which is one edit and so
+    one undo. With `learn` = a folder on the document's path, also record the
+    decision as a rule there (see `rules.py`).
+
+    A group was a request per block until it was not: ten bullets meant ten
+    rewrites of the markdown, ten passes over the corpus, and ten presses of
+    undo to take back one decision.
+    """
+    group = [block_id] if isinstance(block_id, str) else list(dict.fromkeys(block_id))
+    if not group:
+        raise ValueError("nothing to set")
 
     def fn(edits):
         clean = {k: v for k, v in fields.items() if k in E.BLOCK_FIELDS}
         if "role" in clean and clean["role"] is not None and clean["role"] not in structure.ROLES:
             raise ValueError(f"unknown role {clean['role']!r}; one of {structure.ROLES}")
-        E.set_block(edits, block_id, **clean)
-        result = {"block": block_id, "override": edits["blocks"].get(block_id, {})}
+        for bid in group:
+            E.set_block(edits, bid, **clean)
+        result = {
+            "block": group[0],
+            "blocks": group,
+            "override": edits["blocks"].get(group[0], {}),
+        }
         if learn is not None:
-            result["learned"] = _learn(ws, doc_id, block_id, learn, clean, edits)
+            result["learned"] = _learn(ws, doc_id, learn, [(b, clean) for b in group], edits)
         return result
 
     return _mutate(ws, doc_id, fn)
 
 
-def _raw_block(ws: Workspace, doc_id: str, block_id: str) -> dict | None:
+def _raw_blocks(ws: Workspace, doc_id: str) -> dict[str, dict]:
+    """Every block as the page gave it, by id — one read of the analysis."""
     analysis = ws.read_analysis(doc_id)
-    for page in analysis["pages"]:
-        for b in page["blocks"]:
-            if b["id"] == block_id:
-                return b
-    return None
+    return {b["id"]: b for page in analysis["pages"] for b in page["blocks"]}
+
+
+def _raw_block(ws: Workspace, doc_id: str, block_id: str) -> dict | None:
+    return _raw_blocks(ws, doc_id).get(block_id)
 
 
 def _learn(
-    ws: Workspace, doc_id: str, block_id: str, folder: str, fields: dict, edits: dict
-) -> dict | None:
+    ws: Workspace, doc_id: str, folder: str, decisions: list[tuple[str, dict]], edits: dict
+) -> list[dict]:
+    """Record what a person just decided — `(block, fields)` for each — as rules.
+
+    The whole group at once, because the cost here is per call and not per
+    block: one read of the analysis, one of the folder's rules, and at most one
+    pass over the corpus. The scope a hide is allowed to reach comes from where
+    the wording sits on the page, which no hide moves, so one index serves them
+    all.
+    """
     folder = folder.strip("/")
     if folder not in rules.ancestors(doc_id):
         raise ValueError(f"{folder!r} is not a folder on the path of {doc_id}")
-    raw = _raw_block(ws, doc_id, block_id)
-    if raw is None or raw.get("kind") != "text":
-        return None
+    raw_blocks = _raw_blocks(ws, doc_id)
+    wanted = [
+        (raw_blocks[b], f) for b, f in decisions if (raw_blocks.get(b) or {}).get("kind") == "text"
+    ]
+    if not wanted:
+        return []
     store = rules.load(ws.cache, folder)
-    out: dict = {"folder": folder}
+    index = occurrences.Index.over(ws, folder) if any("hidden" in f for _, f in wanted) else None
+    out = [_learn_one(doc_id, raw, folder, f, edits, store, index) for raw, f in wanted]
+    rules.save(ws.cache, folder, store)
+    return out
+
+
+def _learn_one(
+    doc_id: str,
+    raw: dict,
+    folder: str,
+    fields: dict,
+    edits: dict,
+    store: dict,
+    index: occurrences.Index | None,
+) -> dict:
+    out: dict = {"folder": folder, "block": raw["id"]}
     shape = {k: v for k, v in fields.items() if k in rules.SHAPE_FIELDS}
     if shape:
         # the rule carries the block's whole shape as it now stands, not just the key that changed
         current = {k: raw.get(k) for k in rules.SHAPE_FIELDS}
         current.update(
-            {k: v for k, v in edits["blocks"].get(block_id, {}).items() if k in rules.SHAPE_FIELDS}
+            {k: v for k, v in edits["blocks"].get(raw["id"], {}).items() if k in rules.SHAPE_FIELDS}
         )
         out["shape"] = rules.learn_shape(store, raw, current, doc_id)
-    if "hidden" in fields:
+    if "hidden" in fields and index is not None:
         # A hide keyed by wording alone reaches every block with that wording
         # in the folder, including in documents nobody has opened. That is
         # right for a running footer and wrong for a section heading printed
@@ -160,7 +201,6 @@ def _learn(
         # wording may generalize, body wording is held to this document.
         hidden = bool(fields["hidden"])
         key = rules.text_key(raw.get("text") or "")
-        index = occurrences.Index.over(ws, folder)
         proposal = index.propose(key, doc_id)
         if not hidden or proposal.scope == "folder":
             out["hide"] = rules.learn_hide(store, raw, hidden, doc_id)
@@ -173,7 +213,6 @@ def _learn(
                 "scope": proposal.scope,
                 "why": proposal.why,
             }
-    rules.save(ws.cache, folder, store)
     return out
 
 
@@ -427,8 +466,15 @@ def delete_version(ws: Workspace, doc_id: str, version_id: str) -> dict:
     return versions.summary(data, edits)
 
 
-def reset_block(ws: Workspace, doc_id: str, block_id: str) -> dict:
-    return _mutate(ws, doc_id, lambda e: E.clear_block(e, block_id))
+def reset_block(ws: Workspace, doc_id: str, block_id: str | list[str]) -> dict:
+    group = [block_id] if isinstance(block_id, str) else list(dict.fromkeys(block_id))
+
+    def fn(edits):
+        for bid in group:
+            E.clear_block(edits, bid)
+        return {"blocks": group}
+
+    return _mutate(ws, doc_id, fn)
 
 
 def _page_of(ws: Workspace, doc_id: str, block_id: str, edits: dict) -> tuple[dict, list[dict]]:
@@ -438,6 +484,28 @@ def _page_of(ws: Workspace, doc_id: str, block_id: str, edits: dict) -> tuple[di
         if any(b["id"] == block_id for b in blocks):
             return page, blocks
     raise KeyError(block_id)
+
+
+def _numbers(ids: list[str], hidden: set[str]) -> dict[str, int]:
+    """Each id's number on the page — `emit.resolve_page`'s numbering, which
+    counts only what the markdown carries."""
+    out: dict[str, int] = {}
+    for ident in ids:
+        if ident not in hidden:
+            out[ident] = len(out) + 1
+    return out
+
+
+def _slot(rest: list[str], hidden: set[str], to: int) -> int:
+    """Where in `rest` a group has to go to come out as the `to`-th visible block."""
+    seen = 0
+    for i, ident in enumerate(rest):
+        if ident in hidden:
+            continue
+        seen += 1
+        if seen >= max(1, to):
+            return i
+    return len(rest)
 
 
 def move_block(
@@ -450,6 +518,9 @@ def move_block(
 ) -> dict:
     """Move a block — or a group of blocks from one page, kept in their order —
     to number `to` (1-based) on the page, or before/after `target`.
+
+    `to` counts the numbers a person can see, so a deleted block between two
+    others is not a place to land on and not a place that has to be counted.
 
     Returns the new order and the blast radius: every block whose number changed.
     """
@@ -465,24 +536,25 @@ def move_block(
             raise ValueError(f"not on page {page['n']}: {missing}")
         if target is not None and target in group:
             raise ValueError("the target cannot be one of the blocks being moved")
-        before = list(ids)
+        hidden = {b["id"] for b in blocks if b.get("hidden")}
+        was = _numbers(ids, hidden)
         moving = [i for i in ids if i in group]  # page order, not click order
         rest = [i for i in ids if i not in group]
         if target is not None:
             dst = rest.index(target) + (1 if place == "after" else 0)
         elif to is not None:
-            dst = max(0, min(len(rest), int(to) - 1))
+            dst = _slot(rest, hidden, int(to))
         else:
             raise ValueError("move needs `to` or `target`")
         ids = rest[:dst] + moving + rest[dst:]
         E.set_order(edits, page["n"], ids)
-        affected = [i for n, i in enumerate(ids) if before[n] != i]
+        now = _numbers(ids, hidden)
         return {
             "page": page["n"],
             "order": ids,
             "moved": moving,
-            "affected": affected,
-            "to": ids.index(moving[0]) + 1,
+            "affected": [i for i in ids if now.get(i) != was.get(i)],
+            "to": now.get(moving[0]),
         }
 
     return _mutate(ws, doc_id, fn)
@@ -669,7 +741,7 @@ def _parse_md_line(line: str) -> dict:
     return out
 
 
-def apply_markdown(ws: Workspace, doc_id: str, text: str) -> dict:
+def apply_markdown(ws: Workspace, doc_id: str, text: str, learn: str | None = None) -> dict:
     """Take a freely edited copy of the document's markdown and record the
     difference as edits — one undo step.
 
@@ -679,6 +751,11 @@ def apply_markdown(ws: Workspace, doc_id: str, text: str) -> dict:
     - a line changed in its words → the block is hidden and the new words are
       inserted after it, as a person's text
     - new lines → inserted after the block they follow
+
+    With `learn`, the reshapes and the deletions become rules the same way the
+    shape bar's do. Fixing a section's bullets in the text and fixing them on
+    the page are the same decision, and only one of them used to teach mdgest
+    anything.
     """
     doc_id = ws.check_doc(doc_id)
     path = ws.edits_path(doc_id)
@@ -696,7 +773,8 @@ def apply_markdown(ws: Workspace, doc_id: str, text: str) -> dict:
             blocks_by_id[b["id"]] = b
 
     E.checkpoint(edits)
-    report = {"shaped": 0, "hidden": 0, "inserted": 0, "updated": 0, "removed": 0}
+    report = {"shaped": 0, "hidden": 0, "inserted": 0, "updated": 0, "removed": 0, "learned": 0}
+    decisions: list[tuple[str, dict]] = []  # what to learn from, once, at the end
 
     def anchor_before(i: int) -> tuple[int, str | None]:
         """(page, block id) of the last block line at or before old index i-1."""
@@ -722,6 +800,7 @@ def apply_markdown(ws: Workspace, doc_id: str, text: str) -> dict:
             report["removed"] += 1
         elif not b.get("hidden"):
             E.set_block(edits, block_id, hidden=True)
+            decisions.append((block_id, {"hidden": True}))
             report["hidden"] += 1
 
     sm = difflib.SequenceMatcher(a=old, b=new, autojunk=False)
@@ -761,6 +840,7 @@ def apply_markdown(ws: Workspace, doc_id: str, text: str) -> dict:
                     }
                     if fields:
                         E.set_block(edits, bid, **fields)
+                        decisions.append((bid, fields))
                         report["shaped"] += 1
                 else:
                     hide(bid)
@@ -772,6 +852,8 @@ def apply_markdown(ws: Workspace, doc_id: str, text: str) -> dict:
             hide(old_lines[i]["block"])
         add_insert(i2, new_seg)
 
+    if learn is not None and decisions:
+        report["learned"] = len(_learn(ws, doc_id, learn, decisions, edits))
     E.save(path, edits)
     write_markdown(ws, doc_id)
     return report

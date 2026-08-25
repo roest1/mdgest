@@ -105,6 +105,8 @@ def test_emit_numbering_resets():
     blocks = emit.resolve_page(page, E.blank())
     text = "\n".join(l["text"] for l in emit.page_markdown(page, blocks))
     assert "1. one\n2. two" in text and "a. again" in text
+    # the panel draws its list from the same markers, so they ride on the block
+    assert [b["list_marker"] for b in blocks] == ["1.", "2.", "", "a."]
 
 
 def test_api_smoke(tmp_path):
@@ -178,6 +180,67 @@ def test_group_move_keeps_page_order(ws):
         ops.move_block(ws, doc, [ids[1], ids[2]], target=ids[2])
 
 
+def test_deleting_a_block_gives_up_its_number(ws):
+    """A deleted block keeps its place -- it is there to be restored -- but not
+    its number, so #9 on the page is the ninth thing in the markdown. Numbering
+    what the markdown does not carry makes `--to 3` a count of the invisible,
+    and every delete a renumbering a person has to do in their head."""
+    doc = ws.add_pdf(SAMPLE.read_bytes(), "h.pdf", "x")
+    ops.analyze(ws, doc)
+    ids = [b["id"] for b in ops.view(ws, doc)["pages"][0]["blocks"]]
+    assert len(ids) >= 5
+    ops.set_block(ws, doc, ids[1], hidden=True)
+    blocks = ops.view(ws, doc)["pages"][0]["blocks"]
+    assert [b["id"] for b in blocks] == ids  # still in place, still restorable
+    numbers = {b["id"]: b["n"] for b in blocks}
+    assert numbers[ids[1]] is None
+    assert numbers[ids[0]] == 1 and numbers[ids[2]] == 2
+
+    # and `to` counts the same numbers: 2 is where the second visible one sits
+    r = ops.move_block(ws, doc, ids[3], to=2)
+    assert r["to"] == 2
+    assert r["order"][:4] == [ids[0], ids[1], ids[3], ids[2]]
+
+    ops.set_block(ws, doc, ids[1], hidden=False)
+    back = {b["id"]: b["n"] for b in ops.view(ws, doc)["pages"][0]["blocks"]}
+    assert back[ids[1]] == 2  # restored, and numbered from where it now sits
+
+
+def test_shaping_a_group_is_one_edit(ws):
+    """A selection is one decision, so it costs one undo. Per-block requests
+    meant ten bullets took ten presses of undo to take back, and nine of them
+    left the document in a state nobody had asked for."""
+    doc = ws.add_pdf(SAMPLE.read_bytes(), "b.pdf", "x")
+    ops.analyze(ws, doc)
+    ids = [b["id"] for b in ops.view(ws, doc)["pages"][0]["blocks"]][:3]
+    ops.set_block(ws, doc, ids, role="bullet")
+    blocks = {b["id"]: b for b in ops.view(ws, doc)["pages"][0]["blocks"]}
+    assert all(blocks[i]["role"] == "bullet" for i in ids)
+    ops.undo(ws, doc)
+    back = {b["id"]: b for b in ops.view(ws, doc)["pages"][0]["blocks"]}
+    assert not any(back[i]["role"] == "bullet" for i in ids)
+
+
+def test_editing_the_text_teaches_what_the_shape_bar_teaches(ws):
+    """Fixing a section's bullets by typing and fixing them by clicking are the
+    same decision. Only one of them used to record a rule, so the next document
+    arrived wrong in exactly the way the person had just corrected."""
+    a = ws.add_pdf(SAMPLE.read_bytes(), "doc-a.pdf", "acme/widgets")
+    ops.analyze(ws, a)
+    md = ops.view(ws, a)["markdown"]
+    lines = md.split("\n")
+    # the bold run-in label reads as an H3; say it is a paragraph, in the text
+    i = next(i for i, l in enumerate(lines) if l.startswith("### Key Points"))
+    lines[i] = lines[i].replace("### ", "")
+    r = ops.apply_markdown(ws, a, "\n".join(lines), learn="acme/widgets")
+    assert r["shaped"] == 1 and r["learned"] == 1
+
+    b = ws.add_pdf(LEGS.read_bytes(), "doc-b.pdf", "acme/widgets")
+    ops.analyze(ws, b)
+    kp = next(x for x in ops.view(ws, b)["pages"][0]["blocks"] if x["text"].startswith("Key Points"))
+    assert kp["role"] == "para" and kp["rule"]["kind"] == "shape"
+
+
 def test_api_group_move(tmp_path):
     app = api.create_app(tmp_path / "ws")
     c = TestClient(app)
@@ -212,7 +275,7 @@ def test_rules_carry_to_the_next_document(ws):
     target = next(b for b in v["pages"][0]["blocks"] if b["text"].startswith("Key Points"))
     assert target["role"] == "heading"
     r = ops.set_block(ws, a, target["id"], learn="acme/manuals/widgets", role="para")
-    assert r["learned"]["shape"]["fields"]["role"] == "para"
+    assert r["learned"][0]["shape"]["fields"]["role"] == "para"
     # and hide the copyright footer, learned at the client level
     foot = next(b for b in v["pages"][0]["blocks"] if "Copyright" in b["text"])
     ops.set_block(ws, a, foot["id"], learn="acme", hidden=True)

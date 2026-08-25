@@ -27,7 +27,7 @@ export function ShapeBar() {
   const found = findBlock(view, selection);
   const [moveTo, setMoveTo] = useState("");
 
-  useEffect(() => setMoveTo(found ? String(found.block.n) : ""), [found?.block.id, found?.block.n]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => setMoveTo(found?.block.n ? String(found.block.n) : ""), [found?.block.id, found?.block.n]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!found) return null;
   const b = found.block;
@@ -56,7 +56,7 @@ export function ShapeBar() {
             <span className="text-ink">{group.length} selected</span>
           ) : (
             <>
-              <span className="text-ink">#{b.n}</span> <span className="text-faint">{b.id}</span>
+              <span className="text-ink">{b.n ? `#${b.n}` : "deleted"}</span> <span className="text-faint">{b.id}</span>
             </>
           )}
         </span>
@@ -113,7 +113,7 @@ export function ShapeBar() {
           {b.hidden ? " restore" : ""}
         </Btn>
         {b.kind === "text" && prev && prev.kind === "text" && (
-          <Btn onClick={() => joinBlock(b.id, prev.id)} title={`Join onto #${prev.n} (the block before it)`}>
+          <Btn onClick={() => joinBlock(b.id, prev.id)} title={`Join onto ${prev.n ? `#${prev.n}` : "the deleted block"} before it`}>
             <Merge className="w-3.5 h-3.5" /> join ↑
           </Btn>
         )}
