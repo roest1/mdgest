@@ -123,10 +123,11 @@ Not built yet (in order of value):
 1. **Cross-page decisions** — "hide this wording everywhere" for running heads
    and footers (v1's margin-vs-body scope model), and "this page reads across
    rows" as a rule instead of a permutation (v1's readings).
-2. **mdask / mdcite** — ask a question against a folder's `INDEX.md` + sections
-   with checked `[[doc:…#anchor]]` citations through LiteLLM (`LLM_HOST`,
-   `LLM_API_KEY`, `LLM_MODEL` as in v1; see `engine/.env.example`). Start from
-   `codegig-br/mdgest` — that is the thing being turned into `mdask` — and give
-   it a `make ask` target alongside the rest.
+2. **The citation contract** — mdgest's job is to emit markdown whose headings
+   carry stable, unique anchors, and to write down the token grammar
+   (`[[doc:<doc-id>#<anchor>]]`) that a downstream asker resolves against. The
+   grammar and the anchoring rules live here; repairing, validating and
+   resolving tokens against a corpus is a separate tool's job, not this one's.
+   mdgest itself stays offline and model-free.
 3. **Block splitting** by line (today a block can be joined to another, not cut).
 4. A relationship graph view over the folder hierarchy + indexes.

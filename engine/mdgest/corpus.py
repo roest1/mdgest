@@ -2,10 +2,24 @@
 
 The index is itself markdown: for each document (recursively), its title,
 page count, and heading outline with GitHub-style anchors, plus a short
-lead for each top section. `mdask`/`mdcite` downstream read the index first
-and open only the sections that matter. Citation tokens follow v1:
+lead for each top section (the first line under it, taken verbatim — nothing
+here writes prose). A downstream asker reads the index first and opens only
+the sections that matter.
 
-    [[doc:<folder-relative path>#<anchor>|display]]
+**The citation contract.** mdgest owns one half of it: every emitted heading
+gets a stable, unique, GitHub-style anchor, and a citable id is a document's
+folder-relative path minus `.md`. The token grammar those two compose into is
+
+    [[doc:<doc-id>#<anchor>|display text]]
+
+    doc-id  the path under the indexed folder, without `.md`
+    anchor  a heading slug from `slugify`, deduped by `outline`; H2s are the
+            retrieval sections. A bare doc-id is legal only for a document
+            with no H2s.
+
+Repairing, validating and resolving those tokens against a corpus is the
+other half, and it is deliberately not here — it needs a model in the loop,
+and mdgest stays offline and model-free. It lives in the asking tool.
 """
 
 from __future__ import annotations
