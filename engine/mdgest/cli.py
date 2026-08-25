@@ -11,6 +11,7 @@ mdgest move <doc> <block> --to N          reorder
 mdgest insert <doc> --page N --after <block> "text"
 mdgest join / split / undo / redo / reset
 mdgest index <folder>                     build the corpus index
+mdgest verify [doc|folder]                check the markdown against the page
 """
 
 from __future__ import annotations
@@ -394,6 +395,54 @@ def reset(doc: str, yes: bool = typer.Option(False, "--yes", "-y")):
 def index(folder: str = typer.Argument("")):
     """Build INDEX.md over a folder's markdown."""
     typer.echo(ops.build_index(_ws(), folder), nl=False)
+
+
+@app.command()
+def verify(
+    target: str = typer.Argument("", help="a document id, or a folder (default: all)"),
+    json_out: bool = typer.Option(False, "--json", help="the full report, machine-readable"),
+):
+    """Check the markdown against the pages it came from.
+
+    Every word of every visible line must reach the markdown, no word in the
+    markdown may be absent from both the page and the inserts, nothing hidden
+    may leak, and every heading must be text really on the page. Exits 1 if
+    any document fails, so CI can gate on it.
+    """
+    ws = _ws()
+    # the argument is a document if it names one, otherwise a folder ("" = all)
+    try:
+        doc = ws.check_doc(target) if target else None
+    except Exception:
+        doc = None
+    if doc is not None:
+        reports = [ops.verify(ws, doc)]
+        result = {"folder": doc, "documents": 1, "reports": reports}
+        result["failed"] = sum(1 for r in reports if not r["passed"])
+    else:
+        result = ops.verify_folder(ws, target)
+
+    if json_out:
+        _echo(result)
+    else:
+        for r in result["reports"]:
+            flag = "PASS" if r["passed"] else "FAIL"
+            line = f"{flag}  {r['coverage']:.2%}  {r['doc']}"
+            if r["inserted_words"]:
+                line += f"  (+{r['inserted_words']} inserted)"
+            typer.echo(line)
+            for label, items in (
+                ("missing", [w for w, _ in r["missing"]]),
+                ("invented", [w for w, _ in r["invented"]]),
+                ("leaked", r["leaked"]),
+                ("untraceable heading", r["untraceable_headings"]),
+            ):
+                for item in items[:10]:
+                    typer.echo(f"      {label}: {item}")
+        if result["documents"] > 1:
+            typer.echo(f"\n{result['documents']} documents, {result['failed']} failed")
+    if result["failed"]:
+        raise typer.Exit(1)
 
 
 def main() -> None:

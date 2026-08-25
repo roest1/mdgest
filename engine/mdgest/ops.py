@@ -390,6 +390,38 @@ def reset_edits(ws: Workspace, doc_id: str) -> dict:
 # ---- corpus index -------------------------------------------------------------
 
 
+def verify(ws: Workspace, doc_id: str) -> dict:
+    """Score a document's markdown against the pages it was read from."""
+    from .fidelity import check
+
+    doc_id = ws.check_doc(doc_id)
+    if not ws.has_analysis(doc_id):
+        analyze(ws, doc_id)
+    report = check(ws.read_analysis(doc_id), E.load(ws.edits_path(doc_id)))
+    return {
+        "doc": doc_id,
+        "passed": report.passed,
+        "coverage": round(report.coverage, 4),
+        "missing": report.missing[:25],
+        "invented": report.invented[:25],
+        "leaked": report.leaked,
+        "untraceable_headings": report.untraceable_headings,
+        "inserted_words": report.inserted_words,
+    }
+
+
+def verify_folder(ws: Workspace, folder: str = "") -> dict:
+    """Every document under a folder, worst first — the shape CI wants."""
+    reports = [verify(ws, doc) for doc in ws.docs(folder)]
+    reports.sort(key=lambda r: (r["passed"], r["coverage"]))
+    return {
+        "folder": folder,
+        "documents": len(reports),
+        "failed": sum(1 for r in reports if not r["passed"]),
+        "reports": reports,
+    }
+
+
 def build_index(ws: Workspace, folder: str) -> str:
     """Write INDEX.md over every markdown file under a folder: one entry per
     document with its heading outline and anchors, so a downstream agent can

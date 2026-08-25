@@ -68,9 +68,22 @@ PDF well, because the only real corpus is client material and this is a public
 repository. Checking in expected-output snapshots from client PDFs is not an
 option and will not become one.
 
-The honest options: a public-domain PDF corpus with committed snapshots, or a
-local-only regression run against the client drive that never reaches CI.
-Undecided.
+`mdgest verify` (the gate ported from v1) changes what is left of this. It
+scores a document against its own pages — coverage, invention, leaks,
+untraceable headings — so it needs **no reference corpus and no committed
+snapshot**, which was the thing blocking every option here. It can be run over
+client material locally, and over anything at all in CI, without either
+leaving the machine.
+
+What it still does not prove is that the engine reads a real PDF *well*: a
+heading given the wrong level, a list nested one step too deep, or a
+two-column page read in the wrong order all pass the gate, because every word
+is present, on the page, and traceable. The gate catches loss and invention,
+not misreading.
+
+So what remains of this issue is narrower than it was: a small public-domain
+corpus with committed snapshots, to cover the structural judgements the gate
+is blind to. Still undecided, but no longer blocking.
 
 ## 5. Code signing is unbought
 

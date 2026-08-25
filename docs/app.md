@@ -77,6 +77,7 @@ you can do in a shell, and vice versa.
 | Insert text (with the warning) | `mdgest insert <doc> "text" --page N --after <block>` | `POST /api/docs/<doc>/inserts` |
 | undo / redo / reset | `mdgest undo` `redo` `reset` | `POST …/undo` `/redo` `/reset` |
 | Build index on a folder | `mdgest index <folder>` | `POST /api/index` |
+| — (not in the UI yet) | `mdgest verify [doc\|folder]` | — |
 
 `mdgest --help` lists them all; `make help` lists the make targets.
 
@@ -107,6 +108,31 @@ each a default role:
 All of it is a default the UI overrides; `edits.json` is the only precious
 file and `analysis.json` regenerates from the PDF (`mdgest analyze --force`,
 or Re-analyze in the explorer). Page images render on demand at 1.5× and cache.
+
+## The gate: `mdgest verify`
+
+The markdown is checked against the pages it was read from, never against a
+reference copy of the document — a reference is itself unverified, and
+comparing against one scores the engine's fidelity as the reference's failure.
+
+- **Coverage** — every word of every visible line reaches the markdown.
+  Hiding a block removes it from the expectation too, so hiding a running
+  header is not scored as loss.
+- **Invention** — no word in the markdown is absent from both the page and the
+  inserts. Here that is exact rather than approximate: a block's `text` is read
+  off the page and is not writable (`edits.BLOCK_FIELDS` has no `text`), so the
+  only other words that can enter are a person's inserts, which arrive labelled.
+  A word that is on no page and in no insert is an engine bug, not a judgement
+  call — and this is what finds it.
+- **Leaks** — nothing hidden reaches the markdown. Wording that survives
+  somewhere else on purpose is not a leak.
+- **Headings** — every heading emitted from the page is text really printed on
+  it, in that order. Coverage cannot see a heading assembled from two blocks on
+  opposite ends of the page; this can.
+
+`mdgest verify` exits non-zero if any document fails, so it gates in CI.
+Ported from v1's `fidelity.py`, minus its profile-driven "required wording"
+check — this engine has no profiles.
 
 ## Status / next
 
