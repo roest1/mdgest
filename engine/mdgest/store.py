@@ -1,6 +1,6 @@
 """The workspace on disk — a hierarchy of folders, each holding PDFs, mirrored
 as markdown. Folders are just directories, any depth, so a client can shape
-them however they think (kinesics/results-review/body-regions/...).
+them however they think (manuals/hydraulics/pumps/...).
 
     <workspace>/
       sources/<folder...>/<doc>.pdf          what was uploaded
@@ -12,7 +12,7 @@ them however they think (kinesics/results-review/body-regions/...).
                                  /renders/       regenerable page images
 
 A document's id is its path under sources/ without the extension, e.g.
-`kinesics/results-review/body-regions/arms`.
+`manuals/hydraulics/pumps/axial-piston`.
 """
 
 from __future__ import annotations

@@ -298,7 +298,7 @@ export function Explorer() {
               Create
             </button>
           </form>
-          <p className="text-xs text-faint mt-2">Nest as deep as the client needs — kinesics / results-review / body-regions…</p>
+          <p className="text-xs text-faint mt-2">Nest as deep as you need — manuals / hydraulics / pumps…</p>
         </Modal>
       )}
       {rename && (

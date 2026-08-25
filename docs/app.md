@@ -34,7 +34,7 @@ Put documents in from the shell (a pdf, a zip of pdfs, or a directory tree — t
 directory structure becomes the folder hierarchy):
 
 ```bash
-make add SRC=../kinesics-drive TO=kinesics
+make add SRC=../pdfs TO=manuals
 make ls
 ```
 
@@ -54,9 +54,9 @@ or drop them on the explorer in the UI (files, a zip, or a whole folder).
 ```
 
 A document's id is its path under `sources/` without `.pdf`:
-`kinesics/results-review/body-regions/arms`. A client can shape the hierarchy
-however they think — `kinesics/course-material/ktc-1`, `…/results-review/joint-regions` —
-and build an index over any folder (so any subset of uploads).
+`manuals/hydraulics/pumps/axial-piston`. The hierarchy is whoever's shaping
+it — `manuals/training/module-1`, `…/hydraulics/valves` — and an index can be
+built over any folder (so any subset of uploads).
 
 ## One set of operations, two faces
 

@@ -3,7 +3,7 @@ import { useCallback, useRef, useState } from "react";
 import { isDesktop, pickFolder, pickPdfs } from "../lib/desktop";
 import { useStore } from "../store";
 
-/** Drop PDFs, zips of PDFs, or whole folders. Inspired by kinesics' CSVDropZone.
+/** Drop PDFs, zips of PDFs, or whole folders.
  *
  * Two very different plumbings, one face. In the browser, HTML5 drag-drop
  * hands over File objects (directories walked via webkitGetAsEntry) and the

@@ -59,7 +59,7 @@ serve: build ## build the web app, then serve everything from the engine
 
 # ---- the same things the UI does, from the shell -------------------------
 
-add: ## add SRC (pdf | zip | directory) into TO: make add SRC=../kinesics-drive TO=kinesics
+add: ## add SRC (pdf | zip | directory) into TO: make add SRC=../pdfs TO=manuals
 	@test -n "$(SRC)" || { echo "usage: make add SRC=<pdf|zip|dir> [TO=<folder>]"; exit 2; }
 	$(MDGEST) add "$(abspath $(SRC))" --to "$(TO)"
 
