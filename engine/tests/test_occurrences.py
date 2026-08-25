@@ -344,3 +344,56 @@ def test_a_number_in_the_body_is_not_a_page_number(ws):
     md = ws.md_path(a).read_text()
     assert "Seat the frame plate flat on the jig." in md  # numbered item 1, intact
     assert md.count("Torque to spec") == 1
+
+
+# ---- cost, at the scale a real corpus reaches --------------------------------
+
+
+def test_a_shared_index_gives_the_same_answer_as_a_fresh_one(ws):
+    """Building the index reads every analysis under the folder, which is most
+    of the cost of asking. Hiding does not move a block, so a caller working
+    through a list may build one and reuse it — but only if it answers the
+    same."""
+    a, b = _corpus(ws)
+    block = _block(ws, a, "Copyright")
+    fresh = ops.preview_hide(ws, a, block)
+    shared = occurrences.Index.over(ws, "manuals")
+    reused = ops.preview_hide(ws, a, block, index=shared)
+    assert reused == fresh
+
+
+def test_changing_a_setting_does_not_re_read_the_documents(ws):
+    """A setting changes what is done with what was already read. Re-analyzing
+    a corpus to move one policy is minutes of work for none of it, so this
+    re-shapes the cached analyses instead — and `analyze` must not be reached.
+    """
+    a, _ = _corpus(ws)
+    calls = []
+    original = ops.analyze
+
+    def spy(ws_, doc, force=False):
+        calls.append((doc, force))
+        return original(ws_, doc, force=force)
+
+    ops.analyze = spy
+    try:
+        ops.set_setting(ws, "manuals", "page_numbers", "hide")
+    finally:
+        ops.analyze = original
+    assert calls == []
+    assert "Page 1" not in ws.md_path(a).read_text()
+
+
+def test_a_setting_round_trips_exactly(ws):
+    """`keep` has to put back what `hide` took away, or the cheap re-shape is
+    not a substitute for re-reading the page."""
+    a, _ = _corpus(ws)
+    before = ws.md_path(a).read_text()
+
+    ops.set_setting(ws, "manuals", "page_numbers", "hide")
+    assert "Page 1" not in ws.md_path(a).read_text()
+    ops.set_setting(ws, "manuals", "page_numbers", "mark")
+    assert "<!-- page 1 -->" in ws.md_path(a).read_text()
+    ops.set_setting(ws, "manuals", "page_numbers", "keep")
+
+    assert ws.md_path(a).read_text() == before

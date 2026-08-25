@@ -181,11 +181,22 @@ def _folder_of(doc_id: str) -> str:
     return str(PurePosixPath(doc_id).parent) if "/" in doc_id else ""
 
 
-def preview_hide(ws: Workspace, doc_id: str, block_id: str, folder: str | None = None) -> dict:
+def preview_hide(
+    ws: Workspace,
+    doc_id: str,
+    block_id: str,
+    folder: str | None = None,
+    index: occurrences.Index | None = None,
+) -> dict:
     """What hiding this block would reach, at each scope. Changes nothing.
 
     The rule the UI and the CLI both keep: never apply a generalization the
     person has not seen. This is the seeing half; `hide` is a separate call.
+
+    Building the index reads every analysis under the folder, which on a real
+    corpus is most of the cost of asking. A caller working through a list of
+    them should build one (`occurrences.Index.over`) and pass it: hiding does
+    not move a block, so the reach of the next decision is unchanged.
     """
     doc_id = ws.check_doc(doc_id)
     folder = _folder_of(doc_id) if folder is None else folder.strip("/")
@@ -193,7 +204,7 @@ def preview_hide(ws: Workspace, doc_id: str, block_id: str, folder: str | None =
     if raw is None or raw.get("kind") != "text":
         raise ValueError(f"{block_id} is not a text block")
     key = rules.text_key(raw.get("text") or "")
-    index = occurrences.Index.over(ws, folder)
+    index = index if index is not None else occurrences.Index.over(ws, folder)
     proposal = index.propose(key, doc_id)
     return {
         "doc": doc_id,
@@ -224,6 +235,7 @@ def hide(
     scope: str | None = None,
     folder: str | None = None,
     hidden: bool = True,
+    index: occurrences.Index | None = None,
 ) -> dict:
     """Hide (or unhide) a block at a scope: this instance, this document, or
     the folder. With no scope, the one the evidence proposes (`preview_hide`).
@@ -234,7 +246,7 @@ def hide(
     every other edit does.
     """
     doc_id = ws.check_doc(doc_id)
-    preview = preview_hide(ws, doc_id, block_id, folder)
+    preview = preview_hide(ws, doc_id, block_id, folder, index)
     scope = scope or preview["proposed"]["scope"]
     if scope not in occurrences.SCOPES:
         raise ValueError(f"unknown scope {scope!r}; one of {occurrences.SCOPES}")
@@ -262,7 +274,9 @@ def hide(
     return _mutate(ws, doc_id, fn)
 
 
-def suggest_hides(ws: Workspace, doc_or_folder: str = "") -> dict:
+def suggest_hides(
+    ws: Workspace, doc_or_folder: str = "", index: occurrences.Index | None = None
+) -> dict:
     """What else looks like the boilerplate this person has already hidden.
 
     Deliberately learned-only: with nothing hidden yet there is nothing to
@@ -275,7 +289,7 @@ def suggest_hides(ws: Workspace, doc_or_folder: str = "") -> dict:
     if ws.source_path(doc_or_folder).exists():
         doc = ws.check_doc(doc_or_folder)
         folder = _folder_of(doc)
-    index = occurrences.Index.over(ws, folder)
+    index = index if index is not None else occurrences.Index.over(ws, folder)
     return {
         "folder": folder,
         "doc": doc,
@@ -312,9 +326,18 @@ def set_setting(ws: Workspace, folder: str, name: str, value: str | None) -> dic
     else:
         store["settings"][name] = value
     rules.save(ws.cache, folder, store)
+    # Re-shape the cached analyses rather than re-reading the PDFs: a setting
+    # changes what is done with what was already read, and re-analyzing a
+    # corpus of sixty to move one policy is minutes of work for none of it.
+    stack = [(f, rules.load(ws.cache, f)) for f in rules.ancestors(folder)]
+    effective = rules.settings_for(stack)
     for doc in ws.docs(folder):
-        if ws.has_analysis(doc):
-            analyze(ws, doc, force=True)
+        if not ws.has_analysis(doc):
+            continue
+        analysis = ws.read_analysis(doc)
+        rules.apply_settings(analysis, effective)
+        ws.write_analysis(doc, analysis)
+        write_markdown(ws, doc, analysis)
     return get_settings(ws, folder)
 
 

@@ -154,6 +154,43 @@ def stack_for(cache_root: Path, doc_id: str) -> list[tuple[str, dict]]:
     return [(f, load(cache_root, f)) for f in ancestors(folder)]
 
 
+def apply_settings(analysis: dict, settings: dict) -> int:
+    """The settings layer, on its own so it can be re-run without the PDF.
+
+    Nothing here needs anything the analysis does not already hold, so a
+    changed setting costs a rewrite of `analysis.json` rather than a re-read of
+    every document -- which on a corpus of sixty is the difference between an
+    edit and a coffee break. Its own state is cleared first, so re-running it
+    is exact: `keep` puts back what `hide` took away.
+    """
+    policy = pagenums.policy_of(settings)
+    analysis["page_numbers"] = policy
+    touched = 0
+    for page in analysis["pages"]:
+        band = page["height"] * pagenums.MARGIN_FRACTION
+        for blk in page["blocks"]:
+            if blk.get("kind") != "text":
+                continue
+            if (blk.get("rule") or {}).get("kind") == "setting":
+                blk["hidden"] = False
+                blk.pop("rule", None)
+            blk.pop("page_number", None)
+            # A page number is only a page number where a page number goes: a
+            # bare `4` is one in the footer and a list item in the body.
+            box = blk.get("bbox") or [0, 0, 0, 0]
+            if not (box[3] > page["height"] - band or box[1] < band):
+                continue
+            printed = pagenums.label(blk.get("text") or "")
+            if printed is None:
+                continue
+            blk["page_number"] = printed
+            if policy in ("hide", "mark"):
+                blk["hidden"] = True
+                blk["rule"] = {"folder": "", "key": "page_numbers", "kind": "setting", "doc": ""}
+                touched += 1
+    return touched
+
+
 def apply(analysis: dict, stack: list[tuple[str, dict]]) -> int:
     """Shape the analysis by the rules. Returns how many blocks a rule touched.
 
@@ -161,36 +198,16 @@ def apply(analysis: dict, stack: list[tuple[str, dict]]) -> int:
     deepest folder wins. Everything written is a *default*: the block remembers
     its page-read role in `default_role` and which rule spoke in `rule`.
     """
-    touched = 0
-    settings = settings_for(stack)
-    page_policy = pagenums.policy_of(settings)
-    analysis["page_numbers"] = page_policy
-    if not any(r["shape"] or r["hide"] or r.get("settings") for _, r in stack):
-        return 0
+    touched = apply_settings(analysis, settings_for(stack))
+    if not any(r["shape"] or r["hide"] for _, r in stack):
+        return touched
     # the same rules keyed without their indent, for the looser match
     loose = [(f, {_strip_indent(k): v for k, v in r["shape"].items()}) for f, r in stack]
     for page in analysis["pages"]:
-        band = page["height"] * pagenums.MARGIN_FRACTION
         for blk in page["blocks"]:
             if blk.get("kind") != "text":
                 continue
             blk.setdefault("default_role", blk.get("role"))
-            # A page number is only a page number where a page number goes: a
-            # bare `4` is one in the footer and a list item in the body.
-            box = blk.get("bbox") or [0, 0, 0, 0]
-            if box[3] > page["height"] - band or box[1] < band:
-                printed = pagenums.label(blk.get("text") or "")
-                if printed is not None:
-                    blk["page_number"] = printed
-                    if page_policy in ("hide", "mark"):
-                        blk["hidden"] = True
-                        blk["rule"] = {
-                            "folder": "",
-                            "key": "page_numbers",
-                            "kind": "setting",
-                            "doc": "",
-                        }
-                        touched += 1
             hit = None
             for with_indent in (True, False):
                 sig = signature(blk, with_indent=with_indent)

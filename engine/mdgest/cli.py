@@ -25,7 +25,7 @@ from pathlib import Path
 
 import typer
 
-from . import ops
+from . import occurrences, ops
 from .store import Workspace, default_workspace
 
 app = typer.Typer(
@@ -492,7 +492,13 @@ def suggest(
     own that wording is furniture.
     """
     ws = _ws()
-    result = ops.suggest_hides(ws, target)
+    # one index for the whole walk: hiding does not move a block, so the reach
+    # of each later suggestion is the same as when they were all proposed
+    folder = target
+    if ws.source_path(target).exists():
+        folder = str(Path(ws.check_doc(target)).parent) if "/" in target else ""
+    index = occurrences.Index.over(ws, folder)
+    result = ops.suggest_hides(ws, target, index=index)
     if not result["learned_from"]:
         typer.echo("nothing hidden yet, so nothing to learn from.")
         typer.echo("hide a running header or footer first: mdgest hide <doc> <block>")
@@ -508,7 +514,7 @@ def suggest(
         if s["flagged"]:
             typer.echo("  ⚠ body wording that repeats is very often a section heading")
         if apply and typer.confirm(f"  hide it at {s['scope']} scope?"):
-            ops.hide(ws, s["doc"], s["block"], scope=s["scope"])
+            ops.hide(ws, s["doc"], s["block"], scope=s["scope"], index=index)
             typer.echo("  hidden.")
 
 
