@@ -1,40 +1,17 @@
 """The gate: does the markdown say what the page says, and nothing else?
 
-Measured against the page map, never against a reference copy of the document.
-A reference is itself unverified — a hand-made corpus can contain headings and
-whole sentences that appear in no source, and comparing against one scores the
-engine's fidelity as the reference's failure. Against the page there is no such
-ambiguity: a word is printed on it or it is not.
+Measured against the page map, never against a reference copy — a reference is
+itself unverified, so comparing against one scores this engine's fidelity as
+the reference's failure. Coverage, invention, leaks, headings; see docs/app.md.
 
-Four checks:
+Invention is exact here rather than approximate, and the reason is structural:
+a block's `text` is read off the page and is not writable (`edits.BLOCK_FIELDS`
+has no `text`), so the only words that can enter another way are a person's
+inserts, which arrive labeled. A word on no page and in no insert is a bug in
+mdgest, not a judgment call about the document.
 
-1. **Coverage** — every word of every visible line reaches the markdown.
-2. **Invention** — no word in the markdown is absent from both the page and
-   the inserts. In this engine that check is exact rather than heuristic, and
-   the reason is structural: a block's `text` is read off the page and is
-   never writable (`edits.BLOCK_FIELDS` has no `text`), so the only words that
-   can enter the output another way are a person's inserts, which arrive
-   already labeled `origin: "person"`. Even the freehand markdown editor
-   keeps this — `ops.apply_markdown` turns a line whose *words* changed into a
-   hide plus an insert, never an in-place rewrite. So a word here that is on
-   no page and in no insert is not a judgment call about the document. It is
-   a bug in mdgest, and this is the check that finds it.
-3. **Leaks** — nothing hidden reaches the markdown.
-4. **Headings** — every heading emitted from the page is text really on it.
-
-And one thing reported rather than gated. Coverage is computed over what is
-*visible*, so hiding removes a line from the expectation as well as from the
-output — which means over-hiding cannot move it. Hide a whole banner and it
-still reads 100%. That blind spot matters most where a hide is learned at the
-folder and reaches documents nobody has opened, so `hidden_words` and
-`hidden_by_rule` say how much went and which document taught the rule. Hiding
-is legitimate, so neither fails the gate; they are there to be looked at.
-
-Ported from mdgest v1, with its profile-driven "required wording" check
-dropped (v1 read those phrases from a client profile; this engine has no
-profiles) and its text-scraping replaced: `emit.document_markdown` tags every
-output line with the block that produced it, so words are attributed to the
-page or to a person by construction instead of by parsing them back out.
+Coverage is blind to over-hiding — hiding takes the expectation with it — so
+`hidden_words` and `hidden_by_rule` are reported instead of gated.
 """
 
 from __future__ import annotations
@@ -60,10 +37,8 @@ _DASHES = re.compile(r"[‐-―−]")
 _COMPOUND = re.compile(r"(?<=[a-z0-9])-(?=[a-z0-9])")
 
 PASS_COVERAGE = 0.98
-#: Lines of something else a heading may be printed among and still be one
-#: heading: a `Notes:` label in the margin at a baseline between its two
-#: halves, or a neighbouring column's line where the page interleaves them.
-#: Two covers what real pages do; it is not a license to scatter.
+#: Lines a heading may be printed among and still be one heading — a margin
+#: label at a baseline between its halves. Two is what real pages do.
 INTRUDING_LINES = 2
 
 
@@ -91,22 +66,14 @@ class Report:
     invented: list[tuple[str, int]] = field(default_factory=list)
     leaked: list[str] = field(default_factory=list)
     untraceable_headings: list[str] = field(default_factory=list)
-    #: Words a person typed. Not a failure — reported so the share of the
-    #: document that is not the document is visible at a glance.
+    # Reported, never gated. Each of these moves content without being a
+    # fidelity failure, and coverage is blind to all of them.
     inserted_words: int = 0
-    #: Words hidden everywhere, and how much of the page they are. Hiding is
-    #: legitimate, so neither fails the gate — but coverage is computed over
-    #: what is *visible*, which means over-hiding deletes the expectation
-    #: along with the content and coverage does not move. Hide a whole banner
-    #: and it still reads 100%. These are what move instead.
     hidden_words: int = 0
     hidden_share: float = 0.0
-    #: Content hidden here by a folder rule rather than by a decision taken on
-    #: this document — including in a file nobody has opened. Each entry names
-    #: the document that taught the rule.
+    #: Hidden by a folder rule rather than by a decision on this document —
+    #: including in a file nobody has opened. Names the document that taught it.
     hidden_by_rule: list[dict] = field(default_factory=list)
-    #: What the folder asks be done with printed page numbers. Stated because
-    #: it moves content, and counted nowhere else for the same reason.
     page_numbers: str = "keep"
 
     @property
@@ -163,9 +130,8 @@ def _page_lines(page: dict) -> list[str]:
 def _visible_line_indices(page: dict, blocks: list[dict]) -> tuple[set[int], set[int]]:
     """(visible, hidden) page-line indices, by the block each line belongs to.
 
-    A joined child's lines travel with its parent — `resolve_page` folds the
-    child's words into the parent and drops it from the list — so its indices
-    are collected from the parent's `joined` list rather than lost.
+    A joined child's lines travel with its parent, so they are collected from
+    the parent's `joined` list rather than lost with the child.
     """
     by_id = {b["id"]: b for b in blocks}
     visible: set[int] = set()
@@ -190,18 +156,27 @@ def _visible_line_indices(page: dict, blocks: list[dict]) -> tuple[set[int], set
     return visible, hidden
 
 
-def _expected(analysis: dict, resolved: dict[int, list[dict]]) -> Counter[str]:
-    """Words the markdown must contain.
+def _line_split(analysis: dict, resolved: dict[int, list[dict]]) -> dict[int, tuple[set, set]]:
+    """(visible, hidden) line indices per page, computed once and shared.
 
-    A line repeated across pages counts once. A deck restates its section
-    banner on every slide and the markdown states it once, which is correct;
-    counting each restatement would read as loss.
+    Both the expectation and the leak check need this, and walking every block
+    of every page twice to get it is the kind of waste that only shows up on a
+    thousand-page book.
+    """
+    return {p["n"]: _visible_line_indices(p, resolved[p["n"]]) for p in analysis["pages"]}
+
+
+def _expected(analysis: dict, split: dict[int, tuple[set, set]]) -> Counter[str]:
+    """Words the markdown must contain, each distinct line counted once.
+
+    A deck restates its section banner on every slide and the markdown states
+    it once; counting each restatement would read as loss.
     """
     seen: set[str] = set()
     expected: Counter[str] = Counter()
     for page in analysis["pages"]:
         texts = _page_lines(page)
-        visible, _ = _visible_line_indices(page, resolved[page["n"]])
+        visible, _ = split[page["n"]]
         for i in sorted(visible):
             if i >= len(texts):
                 continue
@@ -216,10 +191,9 @@ def _expected(analysis: dict, resolved: dict[int, list[dict]]) -> Counter[str]:
 def _column_reading(page: dict) -> str:
     """The page read down its columns — the order `structure.analyze` uses.
 
-    A page map is one list per page, top to bottom, so a two-column layout
-    interleaves and a heading wrapped over two lines of the left column has
-    the right column's line sitting between its halves. Both readings are the
-    page; a heading found in either is on it.
+    A page map runs top to bottom, so two columns interleave and a wrapped
+    heading can have the other column's line between its halves. Both readings
+    are the page; a heading found in either is on it.
     """
     lines = page.get("lines", [])
     if not lines:
@@ -234,14 +208,10 @@ def _column_reading(page: dict) -> str:
 def _printed_together(heading: list[str], lines: list[list[str]]) -> bool:
     """Is this heading a run of lines on the page, give or take an intruder?
 
-    A heading is checked against the page as a plain substring first, and
-    against the page read down its columns, and that is what normally matches.
-    What defeats both is a heading wrapped over two lines with something
-    printed *between* them. Then the question worth asking is this one: are
-    the heading's lines here, whole, consecutive, in order, with no more than
-    a couple of other lines among them. A heading assembled from a block is
-    exactly that by construction. Words scattered over a page are not, and
-    neither is the same wording in another order.
+    The fallback for what the substring and column readings both miss: a
+    heading wrapped over two lines with something printed *between* them.
+    A heading assembled from a block is a whole, consecutive, in-order run of
+    lines by construction. Words scattered over a page are not.
     """
     if not heading:
         return False
@@ -284,7 +254,8 @@ def check(analysis: dict, edits: dict) -> Report:
 
     produced_page = tokens(page_output)
     produced_person = tokens(person_output)
-    expected = _expected(analysis, resolved)
+    split = _line_split(analysis, resolved)
+    expected = _expected(analysis, split)
 
     mass = sum(expected.values()) or 1
     missing = expected - (produced_page + produced_person)
@@ -295,18 +266,15 @@ def check(analysis: dict, edits: dict) -> Report:
     on_page: Counter[str] = Counter()
     for page in analysis["pages"]:
         on_page += tokens("\n".join(_page_lines(page)))
-    # A counted list's marker is markup, not a word: markdown writes `3.` in
-    # front of the third item exactly as it writes `-` in front of a bullet,
-    # and renumbers, so the digit it writes need not be the digit the page
-    # printed. Discount markers here only — coverage is measured above, so a
-    # number the page really does print is still owed back.
+    # A list marker is markup, not a word, and markdown renumbers — so the
+    # digit it writes need not be the one the page printed. Discounted from
+    # invention only; coverage still owes back a number the page does print.
     markers = tokens(" ".join(LIST_MARKER_RE.findall(page_output)))
     invented = Counter({w: n for w, n in (produced_page - markers).items() if w not in on_page})
 
-    # Leaks: wording that is hidden *everywhere* and still reached the output.
-    # The same text often occurs twice — once in a contents list that is
-    # hidden, once as the heading of the page it points at, which stays — and
-    # the surviving copy is not a leak.
+    # Only wording hidden *everywhere* can leak. The same text often occurs
+    # twice — a hidden contents entry, and the heading it points at, which
+    # stays — and the surviving copy is not a leak.
     body_keys = {
         text_key(re.sub(r"^#{1,6}\s+", "", ln)) for ln in page_output.splitlines() if ln.strip()
     }
@@ -316,12 +284,10 @@ def check(analysis: dict, edits: dict) -> Report:
     overrides = edits.get("blocks", {})
     for page in analysis["pages"]:
         texts = _page_lines(page)
-        visible, hidden = _visible_line_indices(page, resolved[page["n"]])
-        # A page number removed by the folder's page-number policy is not
-        # someone hiding content: the setting is explicit, visible in
-        # `mdgest settings`, and under `mark` the number is not even gone —
-        # it is recorded as a comment. Reporting it every run would be noise
-        # in exactly the signal that exists to catch accidents.
+        visible, hidden = split[page["n"]]
+        # The page-number policy is not someone hiding content: it is
+        # explicit, and under `mark` the number is recorded rather than gone.
+        # Counting it here would be noise in the signal that catches accidents.
         policy_lines = {
             i
             for blk in resolved[page["n"]]
@@ -335,10 +301,9 @@ def check(analysis: dict, edits: dict) -> Report:
         for i in hidden:
             if i < len(texts) and text_key(texts[i]):
                 hidden_texts[text_key(texts[i])] = texts[i]
-        # Which of those went by a rule nobody applied to *this* document.
-        # Coverage cannot see over-hiding — hiding removes the line from the
-        # expectation as well as from the output — so this is the only place
-        # content that vanished by a rule learned elsewhere becomes visible.
+        # Content that went by a rule nobody applied to *this* document.
+        # Coverage cannot see it (hiding takes the expectation too), so this
+        # is the only place it surfaces.
         for blk in resolved[page["n"]]:
             rule = blk.get("rule")
             if not blk.get("hidden") or blk.get("origin") != "page" or not rule:

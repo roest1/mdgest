@@ -1,35 +1,13 @@
 """Where else does this wording appear, and where on the page does it sit?
 
 Hiding a block asks a question the block cannot answer: how far should this
-reach? A running footer should go from every document in the folder. A section
-heading that happens to be printed twice should go from neither. Both are
-"wording that repeats", and telling them apart by repetition alone is the
-mistake that deletes real content — on a twenty-page deck a section banner
-shown on eight slides clears any sensible repetition threshold.
-
-Position decides. Repetition is the necessary condition, position the
-deciding one:
-
-    in a page margin, on several pages  ->  the whole folder
-    in a page margin, on one page       ->  this instance only
-    in the body, printed once           ->  this instance only
-    in the body, printed several times  ->  this document, flagged
-
-v1 also required a margin wording to be corroborated across *documents* before
-it would generalize. That fits a corpus ingested all at once and not this one:
-here documents arrive one at a time, and the first is exactly when a person
-sets up the footer rule for the rest. Requiring a second document to exist
-first would decline the decision at the only moment it is worth making.
-
-**Margin wording generalizes by default; body wording does not.** A line
-repeating in the margins is furniture with near certainty. A line repeating in
-the body is very often a section title, and deleting one of those is the
-expensive mistake — the more so because the gate cannot report it: coverage is
-computed over what is visible, so hiding removes the expectation along with
-the content (see `fidelity`).
+reach? Repetition alone cannot tell a running footer from a section heading
+printed twice — a banner on eight slides of a twenty-page deck clears any
+threshold. Position decides, and the asymmetry is the point: margin wording
+generalizes, body wording does not. The full table is in docs/app.md.
 
 Nothing here decides anything. It proposes a scope and lists exactly what that
-scope would touch, and a person accepts it, narrows it, or ignores it.
+scope would touch.
 """
 
 from __future__ import annotations

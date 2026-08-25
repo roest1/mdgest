@@ -241,11 +241,21 @@ Not built yet (in order of value):
 1. **Cross-page decisions** — "hide this wording everywhere" for running heads
    and footers (v1's margin-vs-body scope model), and "this page reads across
    rows" as a rule instead of a permutation (v1's readings).
-2. **The citation contract** — mdgest's job is to emit markdown whose headings
-   carry stable, unique anchors, and to write down the token grammar
-   (`[[doc:<doc-id>#<anchor>]]`) that a downstream asker resolves against. The
-   grammar and the anchoring rules live here; repairing, validating and
-   resolving tokens against a corpus is a separate tool's job, not this one's.
-   mdgest itself stays offline and model-free.
+2. **The citation contract.** mdgest owns one half of it — every emitted
+   heading gets a stable, unique, GitHub-style anchor, and a citable id is the
+   document's folder-relative path minus `.md`. Those compose into
+
+   ```
+   [[doc:<doc-id>#<anchor>|display text]]
+
+   doc-id   the path under the indexed folder, without `.md`
+   anchor   a heading slug from `corpus.slugify`, deduped by `corpus.outline`;
+            H2s are the retrieval sections. A bare doc-id is legal only for a
+            document with no H2s.
+   ```
+
+   Repairing, validating and resolving those tokens against a corpus is the
+   other half, and it is deliberately not here: it needs a model in the loop,
+   and mdgest stays offline and model-free.
 3. **Block splitting** by line (today a block can be joined to another, not cut).
 4. A relationship graph view over the folder hierarchy + indexes.

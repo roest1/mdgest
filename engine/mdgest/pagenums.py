@@ -1,27 +1,10 @@
 """Printed page numbers, and what a folder wants done with them.
 
-A page number is the one piece of furniture that carries information worth
-keeping. It is not prose — nobody wants `Page 12` sitting in the markdown as a
-paragraph — but the number itself is how a reader cites the source, and it is
-not always the page's position in the file: front matter is often numbered in
-roman, and a chapter extracted from a larger book starts at 143.
-
-So there are three things a folder might want, and no default that is right
-for everyone:
-
-    keep   leave it as ordinary text (what happens with no setting at all)
-    hide   drop it, like any other furniture
-    mark   drop it as prose, and record it as `<!-- page 12 -->` at the top of
-           the page instead — invisible when rendered, readable by a machine,
-           and, unlike a heading, harmless to the outline and to the citation
-           anchors built from it
-
-`keep` is the default because it changes nothing. Removing content silently on
-a default would be the one thing this engine tries never to do.
-
-The setting lives in `rules.json` beside the rules, so it is per folder and the
-deeper folder wins — the same shape as everything else that varies by where a
-document sits.
+The number is worth keeping even though the line is not prose: it is how a
+reader cites the source, and it is not always the page's position in the file
+— front matter is numbered in roman, an extracted chapter starts at 143. So
+`keep` / `hide` / `mark` is a per-folder setting rather than a behavior; see
+docs/app.md for what each does and why `mark` writes a comment.
 """
 
 from __future__ import annotations

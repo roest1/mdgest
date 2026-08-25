@@ -79,6 +79,25 @@ citation anchors — that sentence saves the next person from "fixing" it.
 not misreading, and the docs say so. Never let a doc imply more coverage than
 the code has.
 
+## The prose budget
+
+Comments grow quietly. `make lint` runs `scripts/prose_budget.py --check`,
+which fails a module whose docstring runs past 20 lines or whose comments and
+docstrings exceed 0.45 lines per line of code. Run it with no arguments to see
+every module's ratio.
+
+Both numbers come from this repo, not from a book: 20 is the longest module
+docstring the engine's original modules carry, and 0.45 is where a module full
+of hard-won rules still passes while narration does not.
+
+When a module goes over, the fix is almost never to delete a good comment. It
+is one of these:
+
+- The module docstring is repeating `docs/`. Point at the doc instead.
+- A comment *develops* its point over five lines when the point is one line.
+  Say the thing; do not argue for it.
+- Two comments are making the same observation in different places.
+
 ## Do not
 
 - Hedge. No "we might want to", "this should probably", "consider".

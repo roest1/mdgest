@@ -96,8 +96,9 @@ desktop-build: engine-bin ## build the installable bundles for this OS
 test: ## engine tests
 	cd $(ROOT)/engine && uv run pytest -q
 
-lint: ## ruff + tsc
+lint: ## ruff + the prose budget + tsc
 	cd $(ROOT)/engine && uv run ruff check .
+	cd $(ROOT)/engine && uv run python ../scripts/prose_budget.py --check
 	$(BUN) run typecheck
 
 typecheck: ## tsc only

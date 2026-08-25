@@ -11,6 +11,7 @@ Everything here is a *default*. The UI and CLI override any of it per block
 
 from __future__ import annotations
 
+import bisect
 import re
 from collections import Counter
 from dataclasses import dataclass, field
@@ -162,8 +163,7 @@ def xy_cut(items: list[tuple[int, Box]], unit: float) -> list[list[int]]:
         groups: list[list[tuple[int, Box]]] = [[] for _ in range(len(cuts) + 1)]
         for item in items:
             cx = (item[1].left + item[1].right) / 2
-            k = sum(1 for c in cuts if cx > c)
-            groups[k].append(item)
+            groups[bisect.bisect_left(cuts, cx)].append(item)
         out: list[list[int]] = []
         for g in groups:
             out.extend(xy_cut(g, unit))
@@ -174,12 +174,13 @@ def xy_cut(items: list[tuple[int, Box]], unit: float) -> list[list[int]]:
         if g[1] - g[0] >= BAND_GAP_RATIO * unit
     ]
     if ygaps:
-        cuts = sorted(((g[0] + g[1]) / 2 for g in ygaps), reverse=True)
+        # ascending, so a band index is a bisect rather than a scan of every
+        # cut per item -- that scan made a page of n bands cost O(n^2)
+        cuts = sorted((g[0] + g[1]) / 2 for g in ygaps)
         groups = [[] for _ in range(len(cuts) + 1)]
         for item in items:
             cy = (item[1].top + item[1].bottom) / 2
-            k = sum(1 for c in cuts if cy < c)
-            groups[k].append(item)
+            groups[len(cuts) - bisect.bisect_right(cuts, cy)].append(item)
         out = []
         for g in groups:
             out.extend(xy_cut(g, unit))

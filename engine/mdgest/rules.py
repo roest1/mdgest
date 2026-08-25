@@ -28,9 +28,13 @@ from .structure import ROLES
 SHAPE_FIELDS = ("role", "level", "depth", "bold", "italic")
 
 
+_SPACES = re.compile(r"\s+")
+_DIGITS = re.compile(r"\d+")
+
+
 def text_key(text: str) -> str:
     """v1's boilerplate key: lowercase, one space, digits wildcarded."""
-    return re.sub(r"\d+", "#", re.sub(r"\s+", " ", (text or "").strip().lower()))
+    return _DIGITS.sub("#", _SPACES.sub(" ", (text or "").strip().lower()))
 
 
 def signature(block: dict, page: dict | None = None, with_indent: bool = True) -> str:
