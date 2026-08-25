@@ -1,3 +1,26 @@
+# Env vars
+.env
+
+# Dependencies
+web/node_modules/
+engine/.venv/
+
+# Build
+web/dist/
+
+# Cache
+**/__pycache__/
+engine/.pytest_cache/
+engine/.ruff_cache/
+
+workspace/
+
+# Desktop (tauri + the packaged engine)
+src-tauri/target/
+src-tauri/binaries/
+src-tauri/gen/schemas/
+engine/.pyinstaller/
+
 # Logs
 logs
 *.log
@@ -120,15 +143,7 @@ dist-ssr/
 # TernJS port file
 .tern-port
 
-# pdf workspace
-workspace/
-
-# Tauri
-target/
-binaries/
-schemas/
-.pyinstaller/
-
+# Editors / OS
 *.local
 .vscode/*
 ~.vscode/extensions.json
@@ -139,3 +154,6 @@ schemas/
 *.njsproj
 *.sln
 *.sw?
+
+# The agent pointer at CONTRIBUTING.md — local to each machine, never committed.
+CLAUDE.md

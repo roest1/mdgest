@@ -1,0 +1,91 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+3 0 obj
+<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 12 >>
+stream
+0`†¿P0‡¿@ 0p
+endstream
+endobj
+4 0 obj
+<<  /Length 1533 >>
+stream
+BT /F2 20 Tf 1 0 0 1 72 740 Tm (Widget Maintenance Manual) Tj ET
+BT /F2 14 Tf 1 0 0 1 72 705 Tm (Overview) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 685 Tm (The service proceeds in four stages. Each stage depends on the one) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 673 Tm (before it, so do not skip ahead. Read this section end to end) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 661 Tm (before you pick up a single tool.) Tj ET
+BT /F2 14 Tf 1 0 0 1 72 620 Tm (Required Parts) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 598 Tm (ï Frame plate, anodized) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 584 Tm (ï Hex bolts, eight of them) Tj ET
+BT /F1 10 Tf 1 0 0 1 90 570 Tm (- Washers ship in the bolt bag) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 556 Tm (ï Torque wrench, calibrated this year) Tj ET
+BT /F2 14 Tf 1 0 0 1 72 520 Tm (Procedure) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 498 Tm (1. Seat the frame plate flat on the jig.) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 484 Tm (2. Thread every bolt by hand before torquing any of them.) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 470 Tm (3. Torque to spec in a star pattern, never in a circle.) Tj ET
+BT /F2 10 Tf 1 0 0 1 72 434 Tm (Key Points:) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 418 Tm (A hand-thread that binds means the plate is not seated. Back it out) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 406 Tm (and start the stage again rather than forcing the bolt.) Tj ET
+q 144 0 0 108 72 250 cm /Im1 Do Q
+BT /F1 8 Tf 1 0 0 1 72 772 Tm (Widget Corp - Internal Use Only) Tj ET
+BT /F1 8 Tf 1 0 0 1 72 72 Tm (Copyright 2026 Fixture Press. Synthetic test data.) Tj ET
+BT /F1 8 Tf 1 0 0 1 300 56 Tm (Page 1) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 8 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> /XObject << /Im1 3 0 R >> >> /Contents 4 0 R >>
+endobj
+6 0 obj
+<<  /Length 990 >>
+stream
+BT /F2 14 Tf 1 0 0 1 72 740 Tm (Verification) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 718 Tm (Verify the assembly cold, before the first run. A warm frame hides) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 706 Tm (the very gap you are looking for.) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 670 Tm (a. Check the gap with a feeler gauge at all four corners.) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 656 Tm (b. Re-torque after ten minutes of rest.) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 642 Tm (c. Record the final reading in the build log.) Tj ET
+BT /F2 14 Tf 1 0 0 1 72 606 Tm (Troubleshooting) Tj ET
+BT /F2 10 Tf 1 0 0 1 72 584 Tm (Key Points:) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 568 Tm (A reading that drifts between the first and second torque pass is a) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 556 Tm (seating problem, not a calibration problem.) Tj ET
+BT /F1 8 Tf 1 0 0 1 72 772 Tm (Widget Corp - Internal Use Only) Tj ET
+BT /F1 8 Tf 1 0 0 1 72 72 Tm (Copyright 2026 Fixture Press. Synthetic test data.) Tj ET
+BT /F1 8 Tf 1 0 0 1 300 56 Tm (Page 2) Tj ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 8 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> /XObject << /Im1 3 0 R >> >> /Contents 6 0 R >>
+endobj
+8 0 obj
+<< /Type /Pages /Count 2 /Kids [5 0 R 7 0 R] >>
+endobj
+9 0 obj
+<< /Title (Widget Maintenance Manual) >>
+endobj
+10 0 obj
+<< /Type /Catalog /Pages 8 0 R >>
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000015 00000 n 
+0000000112 00000 n 
+0000000214 00000 n 
+0000000369 00000 n 
+0000001955 00000 n 
+0000002117 00000 n 
+0000003159 00000 n 
+0000003321 00000 n 
+0000003384 00000 n 
+0000003440 00000 n 
+trailer
+<< /Size 11 /Root 10 0 R >>
+startxref
+3490
+%%EOF

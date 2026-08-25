@@ -1,0 +1,25 @@
+name: engine
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: sync
+        run: cd engine && uv sync --extra dev
+      - name: tests
+        run: cd engine && uv run pytest -q
+      - name: ruff
+        run: cd engine && uv run ruff check .
+      - name: prose budget
+        run: cd engine && uv run python ../scripts/prose_budget.py --check
+      - name: american english
+        run: uv run --project engine python scripts/check_language.py .
