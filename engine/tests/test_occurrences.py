@@ -397,3 +397,31 @@ def test_a_setting_round_trips_exactly(ws):
     ops.set_setting(ws, "manuals", "page_numbers", "keep")
 
     assert ws.md_path(a).read_text() == before
+
+
+def test_the_index_does_not_hold_every_analysis_at_once(ws):
+    """It keeps a few fields per block, not the analysis they came from. One
+    document is read, folded in and let go before the next is opened.
+
+    Measured against the thing it replaced — reading every analysis into one
+    dict and building from that — because on-disk JSON bytes and in-memory
+    Python objects are not comparable quantities.
+    """
+    import tracemalloc
+
+    _corpus(ws)
+    docs = ws.docs("manuals")
+
+    tracemalloc.start()
+    streamed = occurrences.Index.over(ws, "manuals")
+    streamed_peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+
+    tracemalloc.start()
+    everything = {d: ws.read_analysis(d) for d in docs}
+    held = occurrences.Index.build(everything)
+    held_peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+
+    assert streamed.by_key.keys() == held.by_key.keys()  # same answer
+    assert streamed_peak < held_peak, f"{streamed_peak} >= {held_peak}"

@@ -92,14 +92,25 @@ class Index:
     by_key: dict[str, Evidence] = field(default_factory=dict)
     documents: list[str] = field(default_factory=list)
 
+    def add(self, doc: str, analysis: dict, hidden: set[str] | None = None) -> None:
+        """Fold one document in. `hidden` names the blocks a person hid there,
+        which the analysis alone does not know."""
+        hidden = hidden or set()
+        if doc not in self.documents:
+            self.documents.append(doc)
+        self._ingest(doc, analysis, hidden)
+
     @classmethod
     def build(cls, analyses: dict[str, dict], hidden: dict[str, set[str]] | None = None) -> Index:
-        """`hidden` names the blocks a person hid per document (from each
-        document's `edits.json`), which the analysis alone does not know."""
         hidden = hidden or {}
         index = cls(documents=sorted(analyses))
         for doc in index.documents:
-            for page in analyses[doc]["pages"]:
+            index._ingest(doc, analyses[doc], hidden.get(doc, set()))
+        return index
+
+    def _ingest(self, doc: str, analysis: dict, hidden: set[str]) -> None:
+        index = self
+        for page in analysis["pages"]:
                 band = page["height"] * MARGIN_FRACTION
                 for blk in page["blocks"]:
                     if blk.get("kind") != "text":
@@ -117,25 +128,32 @@ class Index:
                             text=blk.get("text") or "",
                             margin=top > page["height"] - band or bottom < band,
                             signature=signature(blk),
-                            hidden=bool(blk.get("hidden")) or blk["id"] in hidden.get(doc, set()),
+                            hidden=bool(blk.get("hidden")) or blk["id"] in hidden,
                         )
                     )
-        return index
 
     @classmethod
     def over(cls, ws: Workspace, folder: str = "") -> Index:
         """Every analyzed document under a folder. Unanalyzed ones are skipped
-        rather than read — a preview must not trigger minutes of work."""
+        rather than read — a preview must not trigger minutes of work.
+
+        One document is read, folded in and let go before the next is opened.
+        Holding them all at once cost about 20 MB for sixty documents, and the
+        index keeps a few fields per block, not the analysis it came from.
+        """
         from . import edits as E
 
-        analyses, hidden = {}, {}
-        for doc in ws.docs(folder):
+        index = cls()
+        for doc in sorted(ws.docs(folder)):
             if not ws.has_analysis(doc):
                 continue
-            analyses[doc] = ws.read_analysis(doc)
             overrides = E.load(ws.edits_path(doc)).get("blocks", {})
-            hidden[doc] = {b for b, ov in overrides.items() if ov.get("hidden")}
-        return cls.build(analyses, hidden)
+            index.add(
+                doc,
+                ws.read_analysis(doc),
+                {b for b, ov in overrides.items() if ov.get("hidden")},
+            )
+        return index
 
     def evidence(self, key: str) -> Evidence:
         return self.by_key.get(key, Evidence(key=key))
