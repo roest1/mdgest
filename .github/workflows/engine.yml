@@ -23,3 +23,5 @@ jobs:
         run: cd engine && uv run python ../scripts/prose_budget.py --check
       - name: american english
         run: uv run --project engine python scripts/check_language.py .
+      - name: cost
+        run: uv run --project engine python scripts/bench.py --check

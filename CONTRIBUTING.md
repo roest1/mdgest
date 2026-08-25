@@ -4,8 +4,9 @@
 
 ```bash
 make setup     # uv sync
-make check     # what CI runs: pytest, ruff, and the two conventions checks
+make check     # what CI runs: pytest, ruff, the conventions, and the budgets
 make test      # the engine's tests
+make bench     # what it costs, at the shape of a real corpus
 make fmt       # ruff --fix, then ruff format
 ```
 
@@ -103,10 +104,19 @@ When a module goes over, the fix is almost never to delete a good comment:
 
 ## Cost
 
-Measure before claiming. `scripts/bench.py` builds a synthetic corpus the shape
-of a real one — around 60 documents, 1,000 pages, folders seven deep — plus a
-single document of 300 pages, because those two put different pressure on the
-engine and a two-page fixture shows neither.
+`make bench` builds a synthetic corpus the shape of a real one — around 60
+documents, 1,000 pages, folders seven deep — plus a single document of 300
+pages, because those put different pressure on the engine and a two-page
+fixture shows neither. `make check` runs it as a gate.
+
+The budget is written in **growth ratios rather than milliseconds**. CI
+machines vary by five times or more, so an absolute limit either passes
+everything or flakes; a ratio is the same everywhere and catches the thing that
+actually hurts, which is work growing faster than the corpus. Doubling the
+input should roughly double the cost. The byte budgets are absolute, because
+bytes do not vary by machine — and they are a ratchet rather than a target:
+each sits a little above today's number so a regression fails, and none of them
+claims today's number is good.
 
 Four rules, each of which names a bug this repo actually had:
 

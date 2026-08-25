@@ -1,7 +1,7 @@
 ROOT := $(shell cd $(dir $(lastword $(MAKEFILE_LIST))) && pwd)
 UV   := uv
 
-.PHONY: help setup test lint fmt check
+.PHONY: help setup test lint bench fmt check
 
 help: ## list these targets
 	@grep -hE '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/\t/' | sort | column -t -s "$$(printf '\t')"
@@ -12,10 +12,14 @@ setup: ## everything the targets below need
 test: ## the engine's tests
 	cd $(ROOT)/engine && $(UV) run pytest -q
 
-lint: ## ruff, plus the conventions this repo enforces
+lint: ## ruff, plus the conventions and budgets this repo enforces
 	cd $(ROOT)/engine && $(UV) run ruff check .
 	cd $(ROOT)/engine && $(UV) run python ../scripts/prose_budget.py --check
 	cd $(ROOT) && $(UV) run --project engine python scripts/check_language.py .
+	cd $(ROOT) && $(UV) run --project engine python scripts/bench.py --check
+
+bench: ## what it costs, at the shape of a real corpus
+	cd $(ROOT) && $(UV) run --project engine python scripts/bench.py
 
 fmt: ## ruff --fix, then format
 	cd $(ROOT)/engine && $(UV) run ruff check --fix . && $(UV) run ruff format .
