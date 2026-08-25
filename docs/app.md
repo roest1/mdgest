@@ -130,6 +130,14 @@ comparing against one scores the engine's fidelity as the reference's failure.
   it, in that order. Coverage cannot see a heading assembled from two blocks on
   opposite ends of the page; this can.
 
+Coverage is deliberately blind to one thing, and the report covers it instead:
+hiding a line removes it from the expectation as well as from the output, so
+over-hiding cannot move coverage — hide a whole banner and it still reads
+100%. That matters most when a hide is learned at the folder and reaches a
+document nobody has opened, so the report also says how many words are hidden,
+what share of the page that is, and which document taught the rule that hid
+them. Hiding is legitimate, so none of it fails the gate.
+
 `mdgest verify` exits non-zero if any document fails, so it gates in CI.
 Ported from v1's `fidelity.py`, minus its profile-driven "required wording"
 check — this engine has no profiles.

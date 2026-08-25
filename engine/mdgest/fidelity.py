@@ -22,6 +22,14 @@ Four checks:
 3. **Leaks** — nothing hidden reaches the markdown.
 4. **Headings** — every heading emitted from the page is text really on it.
 
+And one thing reported rather than gated. Coverage is computed over what is
+*visible*, so hiding removes a line from the expectation as well as from the
+output — which means over-hiding cannot move it. Hide a whole banner and it
+still reads 100%. That blind spot matters most where a hide is learned at the
+folder and reaches documents nobody has opened, so `hidden_words` and
+`hidden_by_rule` say how much went and which document taught the rule. Hiding
+is legitimate, so neither fails the gate; they are there to be looked at.
+
 Ported from mdgest v1, with its profile-driven "required wording" check
 dropped (v1 read those phrases from a client profile; this engine has no
 profiles) and its text-scraping replaced: `emit.document_markdown` tags every
@@ -86,6 +94,17 @@ class Report:
     #: Words a person typed. Not a failure — reported so the share of the
     #: document that is not the document is visible at a glance.
     inserted_words: int = 0
+    #: Words hidden everywhere, and how much of the page they are. Hiding is
+    #: legitimate, so neither fails the gate — but coverage is computed over
+    #: what is *visible*, which means over-hiding deletes the expectation
+    #: along with the content and coverage does not move. Hide a whole banner
+    #: and it still reads 100%. These are what move instead.
+    hidden_words: int = 0
+    hidden_share: float = 0.0
+    #: Content hidden here by a folder rule rather than by a decision taken on
+    #: this document — including in a file nobody has opened. Each entry names
+    #: the document that taught the rule.
+    hidden_by_rule: list[dict] = field(default_factory=list)
 
     @property
     def passed(self) -> bool:
@@ -98,8 +117,18 @@ class Report:
 
     def render(self) -> str:
         lines = [f"coverage: {self.coverage:.2%}  ({'PASS' if self.passed else 'FAIL'})"]
+        if self.hidden_words:
+            lines.append(f"hidden: {self.hidden_words} words ({self.hidden_share:.1%} of the page)")
         if self.inserted_words:
             lines.append(f"inserted by hand: {self.inserted_words} words")
+        if self.hidden_by_rule:
+            lines.append("hidden by a folder rule, not by a decision on this document:")
+            lines.extend(
+                f"  - {h['text']}   [{h['folder'] or '<root>'}"
+                + (f", learned on {h['learned_on']}" if h.get("learned_on") else "")
+                + "]"
+                for h in self.hidden_by_rule
+            )
         for label, items in (
             ("words on the page but not in the markdown", self.missing[:25]),
             ("words in the markdown but on no page (a bug)", self.invented[:25]),
@@ -278,6 +307,8 @@ def check(analysis: dict, edits: dict) -> Report:
     }
     visible_keys: set[str] = set()
     hidden_texts: dict[str, str] = {}
+    by_rule: dict[str, dict] = {}
+    overrides = edits.get("blocks", {})
     for page in analysis["pages"]:
         texts = _page_lines(page)
         visible, hidden = _visible_line_indices(page, resolved[page["n"]])
@@ -287,8 +318,33 @@ def check(analysis: dict, edits: dict) -> Report:
         for i in hidden:
             if i < len(texts) and text_key(texts[i]):
                 hidden_texts[text_key(texts[i])] = texts[i]
+        # Which of those went by a rule nobody applied to *this* document.
+        # Coverage cannot see over-hiding — hiding removes the line from the
+        # expectation as well as from the output — so this is the only place
+        # content that vanished by a rule learned elsewhere becomes visible.
+        for blk in resolved[page["n"]]:
+            rule = blk.get("rule")
+            if not blk.get("hidden") or blk.get("origin") != "page" or not rule:
+                continue
+            if "hidden" in overrides.get(blk["id"], {}):
+                continue  # this document's own decision, not an inherited one
+            for i in blk.get("lines") or []:
+                if i < len(texts) and text_key(texts[i]):
+                    by_rule[text_key(texts[i])] = {
+                        "text": texts[i],
+                        "folder": rule.get("folder", ""),
+                        "key": rule.get("key", ""),
+                        "learned_on": rule.get("doc", ""),
+                    }
     leaked = sorted(
         text for key, text in hidden_texts.items() if key in body_keys and key not in visible_keys
+    )
+    # Words hidden *everywhere* — a line hidden on one page and kept on
+    # another is not gone, and is already counted in `expected`.
+    gone = {k: t for k, t in hidden_texts.items() if k not in visible_keys}
+    hidden_words = sum(sum(tokens(t).values()) for t in gone.values())
+    hidden_by_rule = sorted(
+        (v for k, v in by_rule.items() if k not in visible_keys), key=lambda v: v["text"]
     )
 
     # Headings: only those emitted from the page are owed to it. A heading a
@@ -324,6 +380,9 @@ def check(analysis: dict, edits: dict) -> Report:
         leaked=leaked,
         untraceable_headings=untraceable,
         inserted_words=sum(produced_person.values()),
+        hidden_words=hidden_words,
+        hidden_share=hidden_words / (mass + hidden_words) if (mass + hidden_words) else 0.0,
+        hidden_by_rule=hidden_by_rule,
     )
 
 

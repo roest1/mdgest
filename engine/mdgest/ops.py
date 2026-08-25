@@ -407,6 +407,9 @@ def verify(ws: Workspace, doc_id: str) -> dict:
         "leaked": report.leaked,
         "untraceable_headings": report.untraceable_headings,
         "inserted_words": report.inserted_words,
+        "hidden_words": report.hidden_words,
+        "hidden_share": round(report.hidden_share, 4),
+        "hidden_by_rule": report.hidden_by_rule,
     }
 
 

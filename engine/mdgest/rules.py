@@ -173,13 +173,25 @@ def apply(analysis: dict, stack: list[tuple[str, dict]]) -> int:
                 folder, sig, entry = hit
                 for k, v in entry["fields"].items():
                     blk[k] = v
-                blk["rule"] = {"folder": folder, "key": sig, "kind": "shape"}
+                blk["rule"] = {
+                    "folder": folder,
+                    "key": sig,
+                    "kind": "shape",
+                    "doc": entry.get("doc", ""),
+                }
                 touched += 1
             key = text_key(blk.get("text") or "")
             for folder, rules in reversed(stack):
                 if key in rules["hide"]:
                     blk["hidden"] = True
-                    blk["rule"] = {"folder": folder, "key": key, "kind": "hide"}
+                    blk["rule"] = {
+                        "folder": folder,
+                        "key": key,
+                        "kind": "hide",
+                        # which document taught it — so a report can say where
+                        # content that vanished from *this* one was decided
+                        "doc": rules["hide"][key].get("doc", ""),
+                    }
                     touched += 1
                     break
     return touched

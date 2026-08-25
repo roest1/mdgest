@@ -428,6 +428,8 @@ def verify(
         for r in result["reports"]:
             flag = "PASS" if r["passed"] else "FAIL"
             line = f"{flag}  {r['coverage']:.2%}  {r['doc']}"
+            if r["hidden_words"]:
+                line += f"  (-{r['hidden_words']} hidden, {r['hidden_share']:.1%})"
             if r["inserted_words"]:
                 line += f"  (+{r['inserted_words']} inserted)"
             typer.echo(line)
@@ -436,6 +438,15 @@ def verify(
                 ("invented", [w for w, _ in r["invented"]]),
                 ("leaked", r["leaked"]),
                 ("untraceable heading", r["untraceable_headings"]),
+                (
+                    "hidden by folder rule",
+                    [
+                        f"{h['text']}  [{h['folder'] or '<root>'}"
+                        + (f", learned on {h['learned_on']}" if h.get("learned_on") else "")
+                        + "]"
+                        for h in r["hidden_by_rule"]
+                    ],
+                ),
             ):
                 for item in items[:10]:
                     typer.echo(f"      {label}: {item}")

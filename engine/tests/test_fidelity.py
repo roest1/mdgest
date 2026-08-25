@@ -244,3 +244,71 @@ def test_verify_exits_nonzero_so_ci_can_gate(ws, monkeypatch):
     assert result.exit_code == 1
     assert "FAIL" in result.stdout
     assert "Widget Assembly Manual Required Parts" in result.stdout
+
+
+def test_over_hiding_is_invisible_to_coverage_but_not_to_the_report(ws):
+    """The hole this closes.
+
+    Hiding removes a line from the expectation as well as from the output, so
+    coverage cannot move when someone hides too much — a whole banner can go
+    and it still reads 100%. Worse, a hide learned at the folder reaches
+    documents nobody has opened. `hidden_words` and `hidden_by_rule` are what
+    move instead.
+
+    The fixtures print `Key Points:` as a *body* heading, twice in each
+    document — the case v1 warned about, where generalizing by wording alone
+    deletes real content.
+    """
+    a = _added(ws, DOC_A)
+    b = _added(ws, DOC_B)
+    key_points = next(
+        blk["id"]
+        for page in ws.read_analysis(a)["pages"]
+        for blk in page["blocks"]
+        if blk.get("text", "").startswith("Key Points")
+    )
+    ops.set_block(ws, a, key_points, hidden=True, learn="x")
+    ops.analyze(ws, a, force=True)
+    ops.analyze(ws, b, force=True)
+
+    # it reached the document nobody opened
+    assert "Key Points" not in ws.md_path(b).read_text()
+
+    report = _score(ws, b)
+    assert report.coverage == pytest.approx(1.0)  # coverage is blind to it
+    assert report.passed  # and hiding is legitimate, so it does not fail
+    assert report.hidden_words == 2  # but this moved
+    assert report.hidden_share > 0
+    assert [h["text"] for h in report.hidden_by_rule] == ["Key Points:"]
+    assert report.hidden_by_rule[0]["learned_on"] == a
+    assert "hidden by a folder rule" in report.render()
+
+
+def test_a_hide_decided_on_this_document_is_not_reported_as_inherited(ws):
+    """Hiding a block here, without learning a rule, is this document's own
+    decision — it must not show up as something a folder rule did."""
+    doc = _added(ws, DOC_A)
+    block = next(b for b in ops.view(ws, doc)["pages"][0]["blocks"] if b.get("text"))
+    ops.set_block(ws, doc, block["id"], hidden=True)
+
+    report = _score(ws, doc)
+    assert report.hidden_words > 0
+    assert report.hidden_by_rule == []
+
+
+def test_wording_hidden_here_but_kept_elsewhere_is_not_counted_as_gone(ws):
+    """`Key Points:` is printed on both pages. Hiding one instance without
+    learning a rule leaves the other standing, so nothing is actually gone."""
+    doc = _added(ws, DOC_A)
+    first = next(
+        blk["id"]
+        for page in ws.read_analysis(doc)["pages"]
+        for blk in page["blocks"]
+        if blk.get("text", "").startswith("Key Points")
+    )
+    ops.set_block(ws, doc, first, hidden=True)
+
+    report = _score(ws, doc)
+    assert "Key Points" in ws.md_path(doc).read_text()  # the page-2 copy survives
+    assert report.hidden_words == 0
+    assert report.hidden_by_rule == []
