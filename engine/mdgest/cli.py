@@ -10,6 +10,7 @@ mdgest set <doc> <block> --role ...       change a block's shape
 mdgest move <doc> <block> --to N          reorder
 mdgest insert <doc> --page N --after <block> "text"
 mdgest join / split / undo / redo / reset
+mdgest hide <doc> <block> [--scope ...]   hide, and say how far it reaches
 mdgest index <folder>                     build the corpus index
 mdgest verify [doc|folder]                check the markdown against the page
 """
@@ -395,6 +396,53 @@ def reset(doc: str, yes: bool = typer.Option(False, "--yes", "-y")):
 def index(folder: str = typer.Argument("")):
     """Build INDEX.md over a folder's markdown."""
     typer.echo(ops.build_index(_ws(), folder), nl=False)
+
+
+@app.command()
+def hide(
+    doc: str,
+    block: str,
+    scope: str | None = typer.Option(
+        None, "--scope", help="block | document | folder (default: what the evidence proposes)"
+    ),
+    show: bool = typer.Option(False, "--show", help="unhide instead"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="print the reach, change nothing"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="skip the confirmation"),
+):
+    """Hide a block, and say how far that reaches.
+
+    A hide is keyed by the block's wording, so it can reach other pages and
+    other documents. Which is right depends on where the wording sits: margin
+    wording that repeats is furniture and generalizes, body wording that
+    repeats is usually a section heading and stays narrow. The reach is
+    printed before anything changes — nothing generalizes unseen.
+    """
+    ws = _ws()
+    preview = ops.preview_hide(ws, doc, block)
+    chosen = scope or preview["proposed"]["scope"]
+    touch = preview["would_touch"].get(chosen, [])
+
+    typer.echo(f'"{preview["text"][:80]}"')
+    typer.echo(f"  {'in a page margin' if preview['in_margin'] else 'in the body of the page'}")
+    typer.echo(f"  proposed: {preview['proposed']['scope']} — {preview['proposed']['why']}")
+    if preview["proposed"]["flagged"]:
+        typer.echo("  ⚠ body wording that repeats is very often a section heading")
+    if chosen != preview["proposed"]["scope"]:
+        typer.echo(f"  asked for: {chosen}")
+    if chosen == "block":
+        typer.echo("  reaches: this block only")
+    else:
+        typer.echo(f"  reaches: {len(touch)} block(s)")
+        for o in touch[:20]:
+            typer.echo(f"      {o['doc']}  p{o['page']}  {o['block']}  {o['text'][:60]}")
+        if len(touch) > 20:
+            typer.echo(f"      … and {len(touch) - 20} more")
+
+    if dry_run:
+        return
+    if not yes and not typer.confirm(f"{'unhide' if show else 'hide'} at {chosen} scope?"):
+        raise typer.Abort()
+    _echo(ops.hide(ws, doc, block, scope=chosen, hidden=not show))
 
 
 @app.command()

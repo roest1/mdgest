@@ -77,6 +77,7 @@ you can do in a shell, and vice versa.
 | Insert text (with the warning) | `mdgest insert <doc> "text" --page N --after <block>` | `POST /api/docs/<doc>/inserts` |
 | undo / redo / reset | `mdgest undo` `redo` `reset` | `POST …/undo` `/redo` `/reset` |
 | Build index on a folder | `mdgest index <folder>` | `POST /api/index` |
+| — (not in the UI yet) | `mdgest hide <doc> <block> [--scope …]` | — |
 | — (not in the UI yet) | `mdgest verify [doc\|folder]` | — |
 
 `mdgest --help` lists them all; `make help` lists the make targets.
@@ -108,6 +109,40 @@ each a default role:
 All of it is a default the UI overrides; `edits.json` is the only precious
 file and `analysis.json` regenerates from the PDF (`mdgest analyze --force`,
 or Re-analyze in the explorer). Page images render on demand at 1.5× and cache.
+
+## How far a hide reaches
+
+A hide is keyed by the block's *wording*, not its position, so it can reach
+other pages and other documents — which is right for a running footer and
+wrong for a section heading that happens to be printed twice. Both are
+"wording that repeats", and repetition alone cannot tell them apart: on a
+twenty-page deck a section banner shown on eight slides clears any sensible
+threshold.
+
+Position decides. Repetition is the necessary condition, position the
+deciding one:
+
+| where it is printed | reach |
+|---|---|
+| in a page margin, on several pages | the **folder** — furniture, and a rule is learned |
+| in a page margin, on one page | this **block** — a one-off, nothing to generalize |
+| in the body, printed once | this **block** |
+| in the body, printed several times | this **document**, flagged |
+
+Only the folder scope becomes a rule in `rules.json`. A document-wide hide is
+written into that document's own `edits.json`, because that is what it is —
+what a person decided about this document — and it survives re-analysis the
+way every other edit does. So the scopes need no new file and no new concept;
+they are a choice between the two mechanisms that already exist.
+
+`mdgest hide` prints the reach before anything changes (`--dry-run` prints it
+and stops), and `--scope` overrides the proposal. Nothing generalizes unseen.
+
+The `--learn` path that the UI drives goes through the same evidence: hiding
+margin furniture still records a folder rule, and hiding body wording hides
+the block you clicked but *declines* to generalize, saying why. That is the
+one case where the gate cannot help afterwards — hiding removes the
+expectation along with the content, so coverage stays at 100% either way.
 
 ## The gate: `mdgest verify`
 

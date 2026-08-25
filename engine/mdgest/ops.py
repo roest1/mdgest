@@ -11,7 +11,7 @@ import shutil
 from pathlib import Path, PurePosixPath
 
 from . import edits as E
-from . import emit, pagemap, rules, structure, versions
+from . import emit, occurrences, pagemap, rules, structure, versions
 from .store import Workspace
 
 # ---- analysis ----------------------------------------------------------------
@@ -152,9 +152,114 @@ def _learn(
         )
         out["shape"] = rules.learn_shape(store, raw, current, doc_id)
     if "hidden" in fields:
-        out["hide"] = rules.learn_hide(store, raw, bool(fields["hidden"]), doc_id)
+        # A hide keyed by wording alone reaches every block with that wording
+        # in the folder, including in documents nobody has opened. That is
+        # right for a running footer and wrong for a section heading printed
+        # twice, and the gate cannot tell you afterwards — hiding removes the
+        # expectation along with the content. So position decides: margin
+        # wording may generalize, body wording is held to this document.
+        hidden = bool(fields["hidden"])
+        key = rules.text_key(raw.get("text") or "")
+        index = occurrences.Index.over(ws, folder)
+        proposal = index.propose(key, doc_id)
+        if not hidden or proposal.scope == "folder":
+            out["hide"] = rules.learn_hide(store, raw, hidden, doc_id)
+        else:
+            # Narrowed, not refused: the block the person clicked is already
+            # hidden by `set_block`; what is declined is the generalization.
+            out["hide"] = {
+                "key": key,
+                "declined": True,
+                "scope": proposal.scope,
+                "why": proposal.why,
+            }
     rules.save(ws.cache, folder, store)
     return out
+
+
+def _folder_of(doc_id: str) -> str:
+    return str(PurePosixPath(doc_id).parent) if "/" in doc_id else ""
+
+
+def preview_hide(ws: Workspace, doc_id: str, block_id: str, folder: str | None = None) -> dict:
+    """What hiding this block would reach, at each scope. Changes nothing.
+
+    The rule the UI and the CLI both keep: never apply a generalization the
+    person has not seen. This is the seeing half; `hide` is a separate call.
+    """
+    doc_id = ws.check_doc(doc_id)
+    folder = _folder_of(doc_id) if folder is None else folder.strip("/")
+    raw = _raw_block(ws, doc_id, block_id)
+    if raw is None or raw.get("kind") != "text":
+        raise ValueError(f"{block_id} is not a text block")
+    key = rules.text_key(raw.get("text") or "")
+    index = occurrences.Index.over(ws, folder)
+    proposal = index.propose(key, doc_id)
+    return {
+        "doc": doc_id,
+        "block": block_id,
+        "text": raw.get("text") or "",
+        "key": key,
+        "folder": folder,
+        "proposed": {
+            "scope": proposal.scope,
+            "why": proposal.why,
+            "flagged": proposal.flagged,
+        },
+        "in_margin": index.evidence(key).in_margin,
+        "would_touch": {
+            scope: [
+                {"doc": o.doc, "page": o.page, "block": o.block, "text": o.text, "margin": o.margin}
+                for o in index.would_touch(key, doc_id, scope)
+            ]
+            for scope in ("document", "folder")
+        },
+    }
+
+
+def hide(
+    ws: Workspace,
+    doc_id: str,
+    block_id: str,
+    scope: str | None = None,
+    folder: str | None = None,
+    hidden: bool = True,
+) -> dict:
+    """Hide (or unhide) a block at a scope: this instance, this document, or
+    the folder. With no scope, the one the evidence proposes (`preview_hide`).
+
+    Only the folder scope becomes a rule. A document-wide decision is written
+    into this document's own `edits.json`, because that is what it is — what a
+    person decided about this document — and it survives re-analysis the way
+    every other edit does.
+    """
+    doc_id = ws.check_doc(doc_id)
+    preview = preview_hide(ws, doc_id, block_id, folder)
+    scope = scope or preview["proposed"]["scope"]
+    if scope not in occurrences.SCOPES:
+        raise ValueError(f"unknown scope {scope!r}; one of {occurrences.SCOPES}")
+    folder = preview["folder"]
+
+    if scope == "folder":
+        raw = _raw_block(ws, doc_id, block_id)
+        store = rules.load(ws.cache, folder)
+        learned = rules.learn_hide(store, raw, hidden, doc_id)
+        rules.save(ws.cache, folder, store)
+        analyze(ws, doc_id, force=True)
+        return {"scope": scope, "folder": folder, "learned": learned, "preview": preview}
+
+    targets = (
+        [block_id]
+        if scope == "block"
+        else [o["block"] for o in preview["would_touch"]["document"]]
+    )
+
+    def fn(edits):
+        for bid in targets:
+            E.set_block(edits, bid, hidden=hidden or None)
+        return {"scope": scope, "blocks": targets, "preview": preview}
+
+    return _mutate(ws, doc_id, fn)
 
 
 def list_rules(ws: Workspace, doc_or_folder: str) -> list[dict]:
