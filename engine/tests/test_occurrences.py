@@ -232,3 +232,115 @@ def test_suggestions_never_apply_themselves(ws):
     ops.suggest_hides(ws, "manuals")
     assert ws.md_path(b).read_text() == before
     assert "Widget Corp" in ws.md_path(b).read_text()
+
+
+# ---- what a folder wants done with page numbers ------------------------------
+
+
+def test_page_numbers_are_left_alone_by_default(ws):
+    """The default changes nothing. Removing content silently on a default is
+    the one thing this engine tries never to do."""
+    a, _ = _corpus(ws)
+    assert ops.get_settings(ws, "manuals")["effective"]["page_numbers"] == "keep"
+    assert "Page 1" in ws.md_path(a).read_text()
+
+
+def test_hide_drops_them(ws):
+    a, _ = _corpus(ws)
+    ops.set_setting(ws, "manuals", "page_numbers", "hide")
+    md = ws.md_path(a).read_text()
+    assert "Page 1" not in md and "Page 2" not in md
+    assert "Copyright" in md  # other furniture is untouched
+
+
+def test_mark_records_the_printed_number_without_touching_the_outline(ws):
+    """A comment, not a heading: the anchors `corpus.py` builds for citation
+    come from headings, and a page number has no business among them."""
+    from mdgest import corpus
+
+    a, _ = _corpus(ws)
+    ops.set_setting(ws, "manuals", "page_numbers", "mark")
+    md = ws.md_path(a).read_text()
+    assert "<!-- page 1 -->" in md and "<!-- page 2 -->" in md
+    assert "Page 1" not in md.replace("<!-- page 1 -->", "")
+    assert not any("page" in h["anchor"] for h in corpus.outline(md))
+
+
+def test_the_deeper_folder_wins(ws):
+    a, _ = _corpus(ws)
+    ops.set_setting(ws, "", "page_numbers", "hide")
+    ops.set_setting(ws, "manuals", "page_numbers", "mark")
+    assert ops.get_settings(ws, a)["effective"]["page_numbers"] == "mark"
+    assert "<!-- page 1 -->" in ws.md_path(a).read_text()
+
+
+def test_a_setting_can_be_cleared_so_the_parent_speaks_again(ws):
+    a, _ = _corpus(ws)
+    ops.set_setting(ws, "", "page_numbers", "hide")
+    ops.set_setting(ws, "manuals", "page_numbers", "keep")
+    assert ops.get_settings(ws, a)["effective"]["page_numbers"] == "keep"
+    ops.set_setting(ws, "manuals", "page_numbers", None)
+    assert ops.get_settings(ws, a)["effective"]["page_numbers"] == "hide"
+
+
+def test_a_bad_policy_is_refused(ws):
+    _corpus(ws)
+    with pytest.raises(ValueError, match="page_numbers must be"):
+        ops.set_setting(ws, "manuals", "page_numbers", "delete")
+    with pytest.raises(ValueError, match="unknown setting"):
+        ops.set_setting(ws, "manuals", "colour", "blue")
+
+
+def test_the_policy_is_reported_but_never_counted_as_someone_hiding(ws):
+    """`hidden_by_rule` exists to catch content that vanished by a decision
+    nobody saw. A folder setting is not that — it is explicit and visible —
+    and under `mark` the number is recorded rather than removed."""
+    from mdgest import edits as E
+    from mdgest import fidelity
+
+    a, _ = _corpus(ws)
+    for policy in ("hide", "mark"):
+        ops.set_setting(ws, "manuals", "page_numbers", policy)
+        report = fidelity.check(ws.read_analysis(a), E.load(ws.edits_path(a)))
+        assert report.page_numbers == policy
+        assert report.hidden_by_rule == []
+        assert report.hidden_words == 0
+        assert report.passed
+        assert f"page numbers: {policy}" in report.render()
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("12", "12"),
+        ("Page 12", "12"),
+        ("page iv", "iv"),
+        ("IV", "iv"),
+        ("- 12 -", "12"),
+        ("12 of 40", "12"),
+        ("p. 7", "7"),
+        # words made only of roman-numeral letters, which `[ivxlcdm]+` eats
+        ("civil", None),
+        ("mill", None),
+        ("did", None),
+        # and things that merely contain a number
+        ("Chapter 4", None),
+        ("Copyright 2026 Fixture Press.", None),
+        ("Widget Corp - Internal Use Only", None),
+        ("", None),
+    ],
+)
+def test_page_number_detection_discriminates(text, expected):
+    from mdgest import pagenums
+
+    assert pagenums.label(text) == expected
+
+
+def test_a_number_in_the_body_is_not_a_page_number(ws):
+    """`4` is a page number in the footer and a list item in the body, so
+    position is checked before the pattern ever is."""
+    a, _ = _corpus(ws)
+    ops.set_setting(ws, "manuals", "page_numbers", "hide")
+    md = ws.md_path(a).read_text()
+    assert "Seat the frame plate flat on the jig." in md  # numbered item 1, intact
+    assert md.count("Torque to spec") == 1

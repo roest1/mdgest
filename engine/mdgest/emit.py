@@ -264,6 +264,7 @@ def document_markdown(analysis: dict, edits: dict, assets_prefix: str = "") -> d
     """The whole document: markdown text + per-line block map + per-page resolved blocks."""
     lines: list[dict] = []
     pages: list[dict] = []
+    marking = analysis.get("page_numbers") == "mark"
     for page in analysis["pages"]:
         blocks = resolve_page(page, edits)
         pages.append({"n": page["n"], "blocks": blocks})
@@ -274,6 +275,25 @@ def document_markdown(analysis: dict, edits: dict, assets_prefix: str = "") -> d
                 {"text": "---", "block": None, "n": None, "page": page["n"], "page_break": True}
             )
             lines.append({"text": "", "block": None, "n": None, "page": page["n"]})
+        if marking:
+            # The printed number, recorded where it cannot be mistaken for
+            # prose: a comment is invisible when rendered and, unlike a
+            # heading, adds nothing to the outline or to the anchors built
+            # from it. The number a page prints is not always its position in
+            # the file, which is the whole reason to keep it.
+            printed = next(
+                (b["page_number"] for b in blocks if b.get("page_number") is not None), None
+            )
+            if printed is not None:
+                lines.append(
+                    {
+                        "text": f"<!-- page {printed} -->",
+                        "block": None,
+                        "n": None,
+                        "page": page["n"],
+                    }
+                )
+                lines.append({"text": "", "block": None, "n": None, "page": page["n"]})
         for ln in page_markdown(page, blocks, assets_prefix):
             ln["page"] = page["n"]
             lines.append(ln)

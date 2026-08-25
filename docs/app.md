@@ -79,6 +79,7 @@ you can do in a shell, and vice versa.
 | Build index on a folder | `mdgest index <folder>` | `POST /api/index` |
 | — (not in the UI yet) | `mdgest hide <doc> <block> [--scope …]` | — |
 | — (not in the UI yet) | `mdgest suggest [doc\|folder]` | — |
+| — (not in the UI yet) | `mdgest settings [folder] --page-numbers …` | — |
 | — (not in the UI yet) | `mdgest verify [doc\|folder]` | — |
 
 `mdgest --help` lists them all; `make help` lists the make targets.
@@ -161,6 +162,36 @@ about an 8pt margin line.
 
 Suggestions are proposals and nothing else; `--apply` walks them one at a
 time, asking. Nothing is hidden without a person saying so.
+
+## Page numbers
+
+A page number is the one piece of furniture worth keeping. It is not prose —
+nobody wants `Page 12` sitting in the markdown as a paragraph — but the number
+is how a reader cites the source, and it is not always the page's position in
+the file: front matter is numbered in roman, and a chapter extracted from a
+larger book starts at 143.
+
+So it is a setting, per folder, deeper folder winning:
+
+| `--page-numbers` | what happens |
+|---|---|
+| `keep` | left as ordinary text — **the default, because it changes nothing** |
+| `hide` | dropped, like any other furniture |
+| `mark` | dropped as prose; `<!-- page 12 -->` written at the top of the page instead |
+
+`mark` uses a comment rather than a heading on purpose: the anchors
+`corpus.py` builds for citation come from headings, and a page number has no
+business among them. A comment is invisible when rendered and readable by a
+machine.
+
+Position is checked before the pattern ever is — `4` is a page number in the
+footer and a list item in the body — and the roman-numeral case is matched
+strictly, because the obvious `[ivxlcdm]+` also swallows `civil`, `mill` and
+`did`.
+
+The gate states the policy but never counts it as someone hiding content: the
+setting is explicit and visible, and under `mark` the number is recorded
+rather than removed.
 
 ## The gate: `mdgest verify`
 

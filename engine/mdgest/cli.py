@@ -12,6 +12,7 @@ mdgest insert <doc> --page N --after <block> "text"
 mdgest join / split / undo / redo / reset
 mdgest hide <doc> <block> [--scope ...]   hide, and say how far it reaches
 mdgest suggest [doc|folder]               what else looks like what you hid
+mdgest settings [folder] --page-numbers   keep | hide | mark
 mdgest index <folder>                     build the corpus index
 mdgest verify [doc|folder]                check the markdown against the page
 """
@@ -447,6 +448,39 @@ def hide(
 
 
 @app.command()
+def settings(
+    target: str = typer.Argument("", help="a document or folder (default: the workspace root)"),
+    page_numbers: str | None = typer.Option(
+        None, "--page-numbers", help="keep | hide | mark (or 'unset' to stop overriding)"
+    ),
+):
+    """What a folder wants done with page numbers, and where that was decided.
+
+    keep  leave them as ordinary text (the default: it changes nothing)
+    hide  drop them like any other furniture
+    mark  drop them as prose and record `<!-- page 12 -->` at the top of the
+          page instead — invisible when rendered, and unlike a heading it adds
+          nothing to the outline or to the anchors built from it
+
+    Set on a folder; the deeper folder wins. The printed number is worth
+    keeping because it is not always the page's position in the file — front
+    matter is numbered in roman, and an extracted chapter starts at 143.
+    """
+    ws = _ws()
+    if page_numbers is not None:
+        folder = target
+        if ws.source_path(target).exists():
+            raise typer.BadParameter("a setting is recorded on a folder, not a document")
+        _echo(
+            ops.set_setting(
+                ws, folder, "page_numbers", None if page_numbers == "unset" else page_numbers
+            )
+        )
+        return
+    _echo(ops.get_settings(ws, target))
+
+
+@app.command()
 def suggest(
     target: str = typer.Argument("", help="a document or a folder (default: everything)"),
     apply: bool = typer.Option(False, "--apply", help="hide each one, asking first"),
@@ -513,6 +547,8 @@ def verify(
                 line += f"  (-{r['hidden_words']} hidden, {r['hidden_share']:.1%})"
             if r["inserted_words"]:
                 line += f"  (+{r['inserted_words']} inserted)"
+            if r.get("page_numbers", "keep") != "keep":
+                line += f"  (page numbers: {r['page_numbers']})"
             typer.echo(line)
             for label, items in (
                 ("missing", [w for w, _ in r["missing"]]),

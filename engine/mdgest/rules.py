@@ -22,6 +22,7 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
+from . import pagenums
 from .structure import ROLES
 
 SHAPE_FIELDS = ("role", "level", "depth", "bold", "italic")
@@ -67,7 +68,7 @@ def _marker_kind(block: dict) -> str:
 
 
 def blank() -> dict:
-    return {"version": 1, "shape": {}, "hide": {}}
+    return {"version": 1, "shape": {}, "hide": {}, "settings": {}}
 
 
 def path_for(cache_root: Path, folder: str) -> Path:
@@ -131,6 +132,14 @@ def learn_hide(rules: dict, raw_block: dict, hidden: bool, doc_id: str) -> dict 
     return {"key": key, "removed": True}
 
 
+def settings_for(stack: list[tuple[str, dict]]) -> dict:
+    """The settings in force, root first and the deeper folder winning."""
+    out: dict = {}
+    for _, table in stack:
+        out.update({k: v for k, v in (table.get("settings") or {}).items() if v is not None})
+    return out
+
+
 def forget(rules: dict, kind: str, key: str) -> bool:
     return rules.get(kind, {}).pop(key, None) is not None
 
@@ -149,15 +158,35 @@ def apply(analysis: dict, stack: list[tuple[str, dict]]) -> int:
     its page-read role in `default_role` and which rule spoke in `rule`.
     """
     touched = 0
-    if not any(r["shape"] or r["hide"] for _, r in stack):
+    settings = settings_for(stack)
+    page_policy = pagenums.policy_of(settings)
+    analysis["page_numbers"] = page_policy
+    if not any(r["shape"] or r["hide"] or r.get("settings") for _, r in stack):
         return 0
     # the same rules keyed without their indent, for the looser match
     loose = [(f, {_strip_indent(k): v for k, v in r["shape"].items()}) for f, r in stack]
     for page in analysis["pages"]:
+        band = page["height"] * pagenums.MARGIN_FRACTION
         for blk in page["blocks"]:
             if blk.get("kind") != "text":
                 continue
             blk.setdefault("default_role", blk.get("role"))
+            # A page number is only a page number where a page number goes: a
+            # bare `4` is one in the footer and a list item in the body.
+            box = blk.get("bbox") or [0, 0, 0, 0]
+            if box[3] > page["height"] - band or box[1] < band:
+                printed = pagenums.label(blk.get("text") or "")
+                if printed is not None:
+                    blk["page_number"] = printed
+                    if page_policy in ("hide", "mark"):
+                        blk["hidden"] = True
+                        blk["rule"] = {
+                            "folder": "",
+                            "key": "page_numbers",
+                            "kind": "setting",
+                            "doc": "",
+                        }
+                        touched += 1
             hit = None
             for with_indent in (True, False):
                 sig = signature(blk, with_indent=with_indent)

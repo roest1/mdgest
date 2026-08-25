@@ -105,6 +105,9 @@ class Report:
     #: this document — including in a file nobody has opened. Each entry names
     #: the document that taught the rule.
     hidden_by_rule: list[dict] = field(default_factory=list)
+    #: What the folder asks be done with printed page numbers. Stated because
+    #: it moves content, and counted nowhere else for the same reason.
+    page_numbers: str = "keep"
 
     @property
     def passed(self) -> bool:
@@ -121,6 +124,8 @@ class Report:
             lines.append(f"hidden: {self.hidden_words} words ({self.hidden_share:.1%} of the page)")
         if self.inserted_words:
             lines.append(f"inserted by hand: {self.inserted_words} words")
+        if self.page_numbers != "keep":
+            lines.append(f"page numbers: {self.page_numbers} (a folder setting)")
         if self.hidden_by_rule:
             lines.append("hidden by a folder rule, not by a decision on this document:")
             lines.extend(
@@ -312,6 +317,18 @@ def check(analysis: dict, edits: dict) -> Report:
     for page in analysis["pages"]:
         texts = _page_lines(page)
         visible, hidden = _visible_line_indices(page, resolved[page["n"]])
+        # A page number removed by the folder's page-number policy is not
+        # someone hiding content: the setting is explicit, visible in
+        # `mdgest settings`, and under `mark` the number is not even gone —
+        # it is recorded as a comment. Reporting it every run would be noise
+        # in exactly the signal that exists to catch accidents.
+        policy_lines = {
+            i
+            for blk in resolved[page["n"]]
+            if blk.get("page_number") is not None
+            for i in (blk.get("lines") or [])
+        }
+        hidden = hidden - policy_lines
         for i in visible:
             if i < len(texts):
                 visible_keys.add(text_key(texts[i]))
@@ -326,6 +343,8 @@ def check(analysis: dict, edits: dict) -> Report:
             rule = blk.get("rule")
             if not blk.get("hidden") or blk.get("origin") != "page" or not rule:
                 continue
+            if blk.get("page_number") is not None:
+                continue  # the page-number policy, reported on its own line
             if "hidden" in overrides.get(blk["id"], {}):
                 continue  # this document's own decision, not an inherited one
             for i in blk.get("lines") or []:
@@ -383,6 +402,7 @@ def check(analysis: dict, edits: dict) -> Report:
         hidden_words=hidden_words,
         hidden_share=hidden_words / (mass + hidden_words) if (mass + hidden_words) else 0.0,
         hidden_by_rule=hidden_by_rule,
+        page_numbers=analysis.get("page_numbers", "keep"),
     )
 
 

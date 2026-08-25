@@ -11,7 +11,7 @@ import shutil
 from pathlib import Path, PurePosixPath
 
 from . import edits as E
-from . import emit, occurrences, pagemap, rules, structure, versions
+from . import emit, occurrences, pagemap, pagenums, rules, structure, versions
 from .store import Workspace
 
 # ---- analysis ----------------------------------------------------------------
@@ -284,6 +284,40 @@ def suggest_hides(ws: Workspace, doc_or_folder: str = "") -> dict:
     }
 
 
+def get_settings(ws: Workspace, doc_or_folder: str = "") -> dict:
+    """The settings in force where this document sits, and where each came from."""
+    folder = doc_or_folder
+    if ws.source_path(doc_or_folder).exists():
+        folder = _folder_of(ws.check_doc(doc_or_folder))
+    stack = [(f, rules.load(ws.cache, f)) for f in rules.ancestors(folder)]
+    return {
+        "folder": folder,
+        "effective": {"page_numbers": pagenums.policy_of(rules.settings_for(stack))},
+        "set_in": {f: (r.get("settings") or {}) for f, r in stack if r.get("settings")},
+    }
+
+
+def set_setting(ws: Workspace, folder: str, name: str, value: str | None) -> dict:
+    """Record a setting on a folder. `None` clears it, so a deeper folder can
+    stop overriding what its parent says."""
+    if name != "page_numbers":
+        raise ValueError(f"unknown setting {name!r}")
+    if value is not None and value not in pagenums.POLICIES:
+        raise ValueError(f"page_numbers must be one of {pagenums.POLICIES}")
+    folder = folder.strip("/")
+    store = rules.load(ws.cache, folder)
+    store.setdefault("settings", {})
+    if value is None:
+        store["settings"].pop(name, None)
+    else:
+        store["settings"][name] = value
+    rules.save(ws.cache, folder, store)
+    for doc in ws.docs(folder):
+        if ws.has_analysis(doc):
+            analyze(ws, doc, force=True)
+    return get_settings(ws, folder)
+
+
 def list_rules(ws: Workspace, doc_or_folder: str) -> list[dict]:
     """Every rule that applies on the path, root first."""
     out = []
@@ -537,6 +571,7 @@ def verify(ws: Workspace, doc_id: str) -> dict:
         "hidden_words": report.hidden_words,
         "hidden_share": round(report.hidden_share, 4),
         "hidden_by_rule": report.hidden_by_rule,
+        "page_numbers": report.page_numbers,
     }
 
 
