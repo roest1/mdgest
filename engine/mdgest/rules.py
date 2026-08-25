@@ -5,7 +5,7 @@ A **rule** is keyed by how a block is *set on the page* — font size, weight,
 face, the kind of marker in front of it, how far in it sits — never by its
 words, so it carries from `arms.pdf` to `legs.pdf`. Its value is the shape
 you gave such blocks (role, heading level, depth, bold, italic). A **hide
-rule** is the one exception: it is keyed by the block's normalised text
+rule** is the one exception: it is keyed by the block's normalized text
 (digits wildcarded), because a running footer *is* its words.
 
 Rules live in `.mdgest/<folder>/rules.json` and apply to every document in

@@ -288,7 +288,7 @@ def test_a_bad_policy_is_refused(ws):
     with pytest.raises(ValueError, match="page_numbers must be"):
         ops.set_setting(ws, "manuals", "page_numbers", "delete")
     with pytest.raises(ValueError, match="unknown setting"):
-        ops.set_setting(ws, "manuals", "colour", "blue")
+        ops.set_setting(ws, "manuals", "color", "blue")
 
 
 def test_the_policy_is_reported_but_never_counted_as_someone_hiding(ws):

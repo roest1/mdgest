@@ -14,10 +14,10 @@ Four checks:
    the reason is structural: a block's `text` is read off the page and is
    never writable (`edits.BLOCK_FIELDS` has no `text`), so the only words that
    can enter the output another way are a person's inserts, which arrive
-   already labelled `origin: "person"`. Even the freehand markdown editor
+   already labeled `origin: "person"`. Even the freehand markdown editor
    keeps this — `ops.apply_markdown` turns a line whose *words* changed into a
    hide plus an insert, never an in-place rewrite. So a word here that is on
-   no page and in no insert is not a judgement call about the document. It is
+   no page and in no insert is not a judgment call about the document. It is
    a bug in mdgest, and this is the check that finds it.
 3. **Leaks** — nothing hidden reaches the markdown.
 4. **Headings** — every heading emitted from the page is text really on it.
@@ -63,7 +63,7 @@ PASS_COVERAGE = 0.98
 #: Lines of something else a heading may be printed among and still be one
 #: heading: a `Notes:` label in the margin at a baseline between its two
 #: halves, or a neighbouring column's line where the page interleaves them.
-#: Two covers what real pages do; it is not a licence to scatter.
+#: Two covers what real pages do; it is not a license to scatter.
 INTRUDING_LINES = 2
 
 
@@ -214,7 +214,7 @@ def _expected(analysis: dict, resolved: dict[int, list[dict]]) -> Counter[str]:
 
 
 def _column_reading(page: dict) -> str:
-    """The page read down its columns — the order `structure.analyse` uses.
+    """The page read down its columns — the order `structure.analyze` uses.
 
     A page map is one list per page, top to bottom, so a two-column layout
     interleaves and a heading wrapped over two lines of the left column has

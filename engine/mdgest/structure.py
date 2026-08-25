@@ -117,10 +117,10 @@ def _is_heading(line: Line, body: float, bold_matters: bool) -> bool:
     if marker_of(text)[0]:
         return False
     larger = line.size >= body * SIZE_RATIO
-    emphasised = (
+    emphasized = (
         bold_matters and line.bold and line.size >= body and not text.endswith((".", ",", ";"))
     )
-    return larger or emphasised
+    return larger or emphasized
 
 
 # ---------------------------------------------------------------- reading order (XY-cut)
@@ -244,7 +244,7 @@ def _group_lines(page: Page, order: list[int], body: float, bold_matters: bool) 
     return groups
 
 
-def analyse(pm: PageMap) -> dict:
+def analyze(pm: PageMap) -> dict:
     """The whole document as blocks with roles, per page, plus a default order."""
     body = body_size(pm)
     bold_matters = bold_fraction(pm) < BOLD_SATURATION
@@ -294,7 +294,7 @@ def analyse(pm: PageMap) -> dict:
                 blk.role = "para"
             blocks.append(blk)
 
-        # pictures become blocks, placed by their vertical centre among the text
+        # pictures become blocks, placed by their vertical center among the text
         for pi, pic in enumerate(page.pictures):
             blocks.append(
                 Block(

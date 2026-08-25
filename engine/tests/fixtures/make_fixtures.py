@@ -29,7 +29,7 @@ HERE = Path(__file__).parent
 BODY, H2, H1, SMALL = 10.0, 14.0, 20.0, 8.0
 LEADING = 12.0
 LEFT = 72.0
-BULLET = "\x95"  # WinAnsi 0x95 -> U+2022, which pagemap.BULLETS recognises
+BULLET = "\x95"  # WinAnsi 0x95 -> U+2022, which pagemap.BULLETS recognizes
 
 
 def esc(s: str) -> str:

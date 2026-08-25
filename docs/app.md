@@ -205,8 +205,8 @@ comparing against one scores the engine's fidelity as the reference's failure.
 - **Invention** — no word in the markdown is absent from both the page and the
   inserts. Here that is exact rather than approximate: a block's `text` is read
   off the page and is not writable (`edits.BLOCK_FIELDS` has no `text`), so the
-  only other words that can enter are a person's inserts, which arrive labelled.
-  A word that is on no page and in no insert is an engine bug, not a judgement
+  only other words that can enter are a person's inserts, which arrive labeled.
+  A word that is on no page and in no insert is an engine bug, not a judgment
   call — and this is what finds it.
 - **Leaks** — nothing hidden reaches the markdown. Wording that survives
   somewhere else on purpose is not a leak.

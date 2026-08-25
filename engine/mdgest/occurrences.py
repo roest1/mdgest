@@ -109,7 +109,7 @@ class Proposal:
 
 @dataclass
 class Index:
-    """Every text block of every analyzed document, keyed by normalised text."""
+    """Every text block of every analyzed document, keyed by normalized text."""
 
     by_key: dict[str, Evidence] = field(default_factory=dict)
     documents: list[str] = field(default_factory=list)

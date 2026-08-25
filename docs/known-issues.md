@@ -37,12 +37,12 @@ Two residual gaps even on the atomic path:
   cache still holds the bytes — but not a power loss or a kernel panic.
 - **The temp name is derived from the target** (`path.with_suffix(".tmp")`), so
   every writer of a given file shares one temp path. `analyze_async`
-  (`engine/mdgest/api.py:69`) starts an unsynchronised daemon thread per call
+  (`engine/mdgest/api.py:69`) starts an unsynchronized daemon thread per call
   and the module-level lock guards only the `jobs` dict, so two overlapping
   analyses of the same document race on both the temp file and the target.
 
 **Before main**: give `write_analysis` and the two markdown writers the same
-temp-then-replace; make the temp name unique per writer; serialise analysis
+temp-then-replace; make the temp name unique per writer; serialize analysis
 per document. Decide `fsync` separately — it costs latency on every edit and
 buys only power-loss durability.
 
@@ -82,7 +82,7 @@ is present, on the page, and traceable. The gate catches loss and invention,
 not misreading.
 
 So what remains of this issue is narrower than it was: a small public-domain
-corpus with committed snapshots, to cover the structural judgements the gate
+corpus with committed snapshots, to cover the structural judgments the gate
 is blind to. Still undecided, but no longer blocking.
 
 ## 5. Code signing is unbought

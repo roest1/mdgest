@@ -29,7 +29,7 @@ def analyze(ws: Workspace, doc_id: str, force: bool = False) -> dict:
 
     with PDFIUM_LOCK:
         pm = pagemap.read(ws.source_path(doc_id), assets)
-    analysis = structure.analyse(pm)
+    analysis = structure.analyze(pm)
     analysis["source"] = Path(doc_id).name + ".pdf"
     analysis["rules_applied"] = rules.apply(analysis, rules.stack_for(ws.cache, doc_id))
     ws.write_analysis(doc_id, analysis)
