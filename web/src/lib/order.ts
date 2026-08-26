@@ -1,7 +1,7 @@
 import type { Block } from "../types";
 
 /** Numbers for an order, mirroring emit.resolve_page: deleted blocks get none. */
-function numbering(ids: string[], hidden: Set<string>): Map<string, number> {
+export function numbering(ids: string[], hidden: Set<string>): Map<string, number> {
   const out = new Map<string, number>();
   for (const id of ids) if (!hidden.has(id)) out.set(id, out.size + 1);
   return out;

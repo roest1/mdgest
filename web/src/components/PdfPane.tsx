@@ -5,6 +5,8 @@ import { roleColor, shapeLabel } from "../lib/roles";
 import { useStore } from "../store";
 import type { Block, DocView, Page } from "../types";
 
+const PAGE_WIDTH = 92; // percent of the pane at 100%, so the page is not flush with its edges
+
 /**
  * Every page in one scrolling column. Each page is its rendered image with an
  * overlay of numbered boxes — one per block — that you can click (select) and
@@ -52,11 +54,21 @@ export function PdfPane({ docId, view }: { docId: string; view: DocView }) {
 
   return (
     <div ref={containerRef} className="h-full overflow-auto bg-ground relative select-none" onDragStart={(e) => e.preventDefault()}>
-      <div className="flex flex-col items-center gap-6 py-6 px-4">
+      {/* The page carries the zoom, and `mx-auto` rather than `items-center`
+          centers it: auto margins go to zero once the page is wider than the
+          pane, so the overflow all falls to the right where it can be scrolled
+          to. Centered, half of it would sit left of the origin, unreachable. */}
+      <div className="flex flex-col gap-6 py-6 px-4">
         {view.pages.map((p) => (
-          <div key={p.n} ref={(el) => { if (el) pageRefs.current.set(p.n, el); }} data-page={p.n} className="w-full flex flex-col items-center">
-            <PageView docId={docId} page={p} overlays={overlays} zoom={zoom} />
-            <div className="text-[11px] text-faint mt-1 font-mono">
+          <div
+            key={p.n}
+            ref={(el) => { if (el) pageRefs.current.set(p.n, el); }}
+            data-page={p.n}
+            className="mx-auto"
+            style={{ width: `${PAGE_WIDTH * zoom}%` }}
+          >
+            <PageView docId={docId} page={p} overlays={overlays} />
+            <div className="text-[11px] text-faint mt-1 font-mono text-center">
               page {p.n} · {p.blocks.length} blocks{p.reordered ? " · reordered" : ""}
             </div>
           </div>
@@ -67,7 +79,7 @@ export function PdfPane({ docId, view }: { docId: string; view: DocView }) {
   );
 }
 
-function PageView({ docId, page, overlays, zoom }: { docId: string; page: Page; overlays: ReturnType<typeof useStore.getState>["overlays"]; zoom: number }) {
+function PageView({ docId, page, overlays }: { docId: string; page: Page; overlays: ReturnType<typeof useStore.getState>["overlays"] }) {
   const selection = useStore((s) => s.selection);
   const selected = useStore((s) => s.selected);
   const hover = useStore((s) => s.hover);
@@ -77,9 +89,9 @@ function PageView({ docId, page, overlays, zoom }: { docId: string; page: Page; 
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const drag = useDrag((s) => s.drag);
+  const preview = useStore((s) => s.orderPreview);
   const W = page.width;
   const H = page.height;
-  const widthPct = Math.round(100 * Math.min(1, 0.92 * zoom));
 
   // biggest boxes first, so small ones sit on top and stay clickable
   const visible = useMemo(() => {
@@ -136,7 +148,7 @@ function PageView({ docId, page, overlays, zoom }: { docId: string; page: Page; 
   );
 
   return (
-    <div ref={pageRef} onPointerDown={onPageDown} className="relative shadow-2xl shadow-black/60 rounded-sm bg-white cursor-crosshair" style={{ width: `${widthPct}%`, aspectRatio: `${W} / ${H}` }}>
+    <div ref={pageRef} onPointerDown={onPageDown} className="relative w-full shadow-2xl shadow-black/60 rounded-sm bg-white cursor-crosshair" style={{ aspectRatio: `${W} / ${H}` }}>
       {marquee && (
         <div
           className="absolute border border-blue-400 bg-blue-400/15 pointer-events-none z-30"
@@ -160,7 +172,7 @@ function PageView({ docId, page, overlays, zoom }: { docId: string; page: Page; 
         const c = roleColor(b);
         const isSel = selection === b.id || selected.includes(b.id);
         const isHover = hover === b.id;
-        const badge = badgeState(b, drag, isSel);
+        const badge = badgeState(b, drag ?? preview, isSel);
         const isTarget = drag?.target === b.id;
         const isDragged = drag?.ids.includes(b.id);
         return (

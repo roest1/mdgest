@@ -5,13 +5,14 @@ markdown beside the source, and returns the resolved view of the page touched.
 
 from __future__ import annotations
 
+import copy
 import difflib
 import re as _re
 import shutil
 from pathlib import Path, PurePosixPath
 
 from . import edits as E
-from . import emit, occurrences, pagemap, pagenums, rules, structure, versions
+from . import emit, fidelity, occurrences, pagemap, pagenums, rules, structure, versions
 from .store import Workspace
 
 # ---- analysis ----------------------------------------------------------------
@@ -137,10 +138,23 @@ def set_block(
     return _mutate(ws, doc_id, fn)
 
 
-def _raw_blocks(ws: Workspace, doc_id: str) -> dict[str, dict]:
-    """Every block as the page gave it, by id — one read of the analysis."""
+def _raw_blocks(ws: Workspace, doc_id: str, edits: dict | None = None) -> dict[str, dict]:
+    """Every block as the page gave it, by id — one read of the analysis.
+
+    Cut fragments included: a fragment's words are as much the page's as the
+    run they came out of, so a rule can be learned from one and a hide can
+    reach one. Leave them out and both would go quiet rather than wrong.
+    """
     analysis = ws.read_analysis(doc_id)
-    return {b["id"]: b for page in analysis["pages"] for b in page["blocks"]}
+    if edits is None:
+        edits = E.load(ws.edits_path(doc_id))
+    cuts = edits.get("cuts", {})
+    return {
+        b["id"]: b
+        for page in analysis["pages"]
+        for raw in page["blocks"]
+        for b in emit.cut_blocks(page, raw, cuts.get(raw["id"]) or [])
+    }
 
 
 def _raw_block(ws: Workspace, doc_id: str, block_id: str) -> dict | None:
@@ -161,7 +175,7 @@ def _learn(
     folder = folder.strip("/")
     if folder not in rules.ancestors(doc_id):
         raise ValueError(f"{folder!r} is not a folder on the path of {doc_id}")
-    raw_blocks = _raw_blocks(ws, doc_id)
+    raw_blocks = _raw_blocks(ws, doc_id, edits)
     wanted = [
         (raw_blocks[b], f) for b, f in decisions if (raw_blocks.get(b) or {}).get("kind") == "text"
     ]
@@ -431,7 +445,14 @@ def save_version(ws: Workspace, doc_id: str, name: str) -> dict:
 
 
 def checkout(ws: Workspace, doc_id: str, version_id: str | None) -> dict:
-    """Make the working copy that version (or the original). Undoable."""
+    """Make the working copy that version (or the original).
+
+    Undoable, once: what you had is one step back, and nothing is behind it.
+    A saved state is a place, not an edit, so the history of the working copy
+    you left does not come with you -- undo used to walk from the original
+    into the edits of an abandoned branch, which is the opposite of what the
+    button says it does, and there was no bottom to reach.
+    """
     doc_id = ws.check_doc(doc_id)
     data = versions.load(ws.versions_path(doc_id))
     target = None
@@ -439,14 +460,24 @@ def checkout(ws: Workspace, doc_id: str, version_id: str | None) -> dict:
         target = versions.get(data, version_id)
         if not target:
             raise KeyError(version_id)
+    fresh = E.blank()
+    saved = target["edits"] if target else fresh
+    want = {k: saved.get(k, fresh[k]) for k in E.CONTENT_KEYS}
+    base = target["id"] if target else None
+
+    here = E.load(ws.edits_path(doc_id))
+    if here.get("base") == base and E.content(here) == want:
+        # nothing to go back to, so nothing to record: pressing the place you
+        # are already standing must not leave a step behind
+        return {"checked_out": base or "original", **versions.summary(data, here)}
 
     def fn(edits):
-        fresh = E.blank()
-        content = target["edits"] if target else E.content(fresh)
         for k in E.CONTENT_KEYS:
-            edits[k] = content.get(k, fresh[k])
-        edits["base"] = target["id"] if target else None
-        return {"checked_out": edits["base"] or "original"}
+            edits[k] = copy.deepcopy(want[k])
+        edits["base"] = base
+        edits["undo"] = edits["undo"][-1:]  # `_mutate` just pushed what you had
+        edits["redo"] = []
+        return {"checked_out": base or "original"}
 
     out = _mutate(ws, doc_id, fn)
     out.update(versions.summary(data, E.load(ws.edits_path(doc_id))))
@@ -574,6 +605,78 @@ def set_order(ws: Workspace, doc_id: str, page: int, order: list[str] | None) ->
     return _mutate(ws, doc_id, fn)
 
 
+def _reading_rank(page: dict, chosen: list[dict]) -> dict[str, int]:
+    """Reading order over some of a page's blocks, by the page's own rule."""
+    unit = structure.median_height([pagemap.Box(*l["bbox"]) for l in page["lines"]])
+    items = [(i, pagemap.Box(*b["bbox"])) for i, b in enumerate(chosen)]
+    return {
+        chosen[i]["id"]: rank
+        for rank, i in enumerate(i for leaf in structure.xy_cut(items, unit) for i in leaf)
+    }
+
+
+def _gather(ids: list[str], group: set[str], rank: dict[str, int]) -> list[str]:
+    """The page's ids with the group lifted out and put back as one run, in
+    reading order, starting at the earliest place the group already held.
+
+    The earliest and not, say, the place of the first block in reading order:
+    a selection numbered 12, 33, 34 is already ascending, and a sort in place
+    therefore does nothing to it -- while what the person looking at it means
+    by putting it in order is 12, 13, 14. So the run lands where the selection
+    starts and the blocks it passes shift down. Nothing above the first of its
+    numbers moves, and nothing below the last of them does.
+    """
+    rest = [i for i in ids if i not in group]
+    # A block with no box has no reading order and sorts equal to the others
+    # that have none; a stable sort leaves those in the order they already had.
+    moving = sorted((i for i in ids if i in group), key=lambda i: rank.get(i, len(rank)))
+    first = next(k for k, ident in enumerate(ids) if ident in group)
+    return rest[:first] + moving + rest[first:]
+
+
+def reorder_blocks(ws: Workspace, doc_id: str, blocks: list[str], preview: bool = False) -> dict:
+    """Put a selection in order: one run, in reading order, where it starts.
+
+    Reading order over the *chosen* boxes, which makes choosing them part of
+    the input -- the gutters and bands `xy_cut` cuts on are the ones the chosen
+    boxes leave between them. Leaving a heading that straddles the gutter out
+    of the selection is how the column cut it defeated succeeds.
+
+    `preview` computes the same answer and writes none of it, so the numbers
+    can be shown before the decision is taken.
+    """
+    group = list(dict.fromkeys(blocks))
+    if len(group) < 2:
+        raise ValueError("reorder needs two blocks or more")
+
+    def fn(edits):
+        page, resolved = _page_of(ws, doc_id, group[0], edits)
+        ids = [b["id"] for b in resolved]
+        missing = [g for g in group if g not in ids]
+        if missing:
+            raise ValueError(f"not on page {page['n']}: {missing}")
+        wanted = set(group)
+        hidden = {b["id"] for b in resolved if b.get("hidden")}
+        was = _numbers(ids, hidden)
+        rank = _reading_rank(page, [b for b in resolved if b["id"] in wanted and b.get("bbox")])
+        out = _gather(ids, wanted, rank)
+        now = _numbers(out, hidden)
+        if not preview:
+            E.set_order(edits, page["n"], out)
+        moved = [i for i in out if i in wanted]
+        return {
+            "page": page["n"],
+            "order": out,
+            "moved": moved,
+            "to": next((now[i] for i in moved if i in now), None),
+            "affected": [i for i in out if now.get(i) != was.get(i)],
+        }
+
+    if preview:
+        return fn(E.load(ws.edits_path(ws.check_doc(doc_id))))
+    return _mutate(ws, doc_id, fn)
+
+
 def insert_text(ws: Workspace, doc_id: str, page: int, after: str | None, text: str) -> dict:
     return _mutate(ws, doc_id, lambda e: E.add_insert(e, page, after, text))
 
@@ -600,6 +703,36 @@ def join_blocks(ws: Workspace, doc_id: str, child: str, parent: str) -> dict:
     def fn(edits):
         E.join(edits, child, parent)
         return {"child": child, "parent": parent}
+
+    return _mutate(ws, doc_id, fn)
+
+
+def cut_block(ws: Workspace, doc_id: str, block_id: str, at: list[int]) -> dict:
+    """Cut a block before the given positions in its own lines. No positions
+    puts the whole run it came from back together.
+
+    The other half of a join, and the half that was missing: two blocks the
+    page ran together could be merged but one block the page ran together
+    could not be divided, so fixing a boundary meant deleting the block and
+    typing its words back as a person's insertion -- words that are on the
+    page, marked as not on the page, and dropped from what the gate can trace.
+    """
+
+    def fn(edits):
+        here = _raw_blocks(ws, doc_id, edits).get(block_id)
+        if here is None or here.get("kind") != "text":
+            raise ValueError(f"{block_id} is not a text block")
+        rid = block_id.split("c")[0]
+        # positions are the named block's own, so cutting a fragment again
+        # needs no knowledge of where in the run that fragment starts
+        start = int(block_id[len(rid) + 1 :]) if block_id != rid else 0
+        lines = here.get("lines") or []
+        bad = [k for k in at if not 0 < int(k) < len(lines)]
+        if bad:
+            raise ValueError(f"{block_id} has {len(lines)} lines; cannot cut at {bad}")
+        keep = edits["cuts"].get(rid, []) if at else []
+        cuts = [*keep, *(start + int(k) for k in at)]
+        return {"block": block_id, "at": E.set_cuts(edits, rid, cuts)}
 
     return _mutate(ws, doc_id, fn)
 
@@ -636,7 +769,7 @@ def redo(ws: Workspace, doc_id: str) -> dict:
 def reset_edits(ws: Workspace, doc_id: str) -> dict:
     def fn(edits):
         fresh = E.blank()
-        for k in ("blocks", "order", "inserts", "joins"):
+        for k in E.CONTENT_KEYS:
             edits[k] = fresh[k]
         return {"reset": True}
 
@@ -741,12 +874,66 @@ def _parse_md_line(line: str) -> dict:
     return out
 
 
+#: The shape a markdown line can state about the block it stands for.
+_SHAPE = ("role", "level", "depth", "bold", "italic")
+
+
+def _page_stream(raw_texts: dict, run: list[dict]) -> list[tuple[str, int, list[str]]] | None:
+    """The blocks behind a run of markdown lines, as the page's own lines:
+    (block, position in that block, words). None if any of them is not a block
+    of the page whose lines can be pointed at.
+
+    A marker is stripped where `structure` stripped one -- only a block's first
+    line can carry a printed marker, because one starts a block.
+    """
+    out: list[tuple[str, int, list[str]]] = []
+    seen: set[str] = set()
+    for blk in run:
+        if blk.get("kind") != "text" or blk.get("origin") != "page" or blk.get("joined"):
+            return None
+        rid = blk["id"].split("c")[0]
+        if rid in seen:
+            continue
+        seen.add(rid)
+        for pos, text in enumerate(raw_texts.get(rid, [])):
+            out.append((rid, pos, fidelity.words(text if pos else structure.marker_of(text)[2])))
+    return out
+
+
+def _regroup(
+    stream: list[tuple[str, int, list[str]]], wrote: list[list[str]]
+) -> list[list[int]] | None:
+    """Which of the page's lines make each line the person wrote — or None if
+    those are not the same words in the same order.
+
+    A boundary that falls inside a line has no answer here, because a block is
+    whole lines of the page; the caller then falls back to hiding and
+    inserting, which is what every regrouping used to do.
+    """
+    groups: list[list[int]] = []
+    at = 0
+    for want in wrote:
+        group: list[int] = []
+        got: list[str] = []
+        while got != want:
+            if at >= len(stream) or len(got) > len(want):
+                return None
+            got += stream[at][2]
+            group.append(at)
+            at += 1
+        groups.append(group)
+    return groups if at == len(stream) else None
+
+
 def apply_markdown(ws: Workspace, doc_id: str, text: str, learn: str | None = None) -> dict:
     """Take a freely edited copy of the document's markdown and record the
     difference as edits — one undo step.
 
     - a line that is a block's line with different markup but the same words
       → the block's shape changes (heading level, list kind, depth, bold, italic)
+    - lines carrying the same words as the blocks they replace, split
+      differently → the blocks are cut and joined so the boundaries fall where
+      the person put them, and the words stay the page's
     - a line removed → its block is hidden (an inserted block is removed)
     - a line changed in its words → the block is hidden and the new words are
       inserted after it, as a person's text
@@ -771,9 +958,24 @@ def apply_markdown(ws: Workspace, doc_id: str, text: str, learn: str | None = No
     for page in before["pages"]:
         for b in page["blocks"]:
             blocks_by_id[b["id"]] = b
+    pages_by_n = {p["n"]: p for p in analysis["pages"]}
+    uncut = {b["id"]: b for page in analysis["pages"] for b in page["blocks"]}  # before any cut
+    raw_texts = {
+        bid: [pages_by_n[b["page"]]["lines"][i]["text"] for i in (b.get("lines") or [])]
+        for bid, b in uncut.items()
+        if b.get("kind") == "text"
+    }
 
     E.checkpoint(edits)
-    report = {"shaped": 0, "hidden": 0, "inserted": 0, "updated": 0, "removed": 0, "learned": 0}
+    report = {
+        "shaped": 0,
+        "regrouped": 0,
+        "hidden": 0,
+        "inserted": 0,
+        "updated": 0,
+        "removed": 0,
+        "learned": 0,
+    }
     decisions: list[tuple[str, dict]] = []  # what to learn from, once, at the end
 
     def anchor_before(i: int) -> tuple[int, str | None]:
@@ -803,6 +1005,53 @@ def apply_markdown(ws: Workspace, doc_id: str, text: str, learn: str | None = No
             decisions.append((block_id, {"hidden": True}))
             report["hidden"] += 1
 
+    def regroup(old_idx: list[int], wrote: list[str]) -> bool:
+        """Same words, different lines: record where the boundaries moved."""
+        run = [blocks_by_id[old_lines[i]["block"]] for i in old_idx]
+        stream = _page_stream(raw_texts, run)
+        if stream is None:
+            return False
+        said = [w for i in old_idx for w in fidelity.words(_parse_md_line(old[i])["text"])]
+        if said != [w for _, _, words in stream for w in words]:
+            return False  # the run is not all of what those blocks carry
+        parsed = [_parse_md_line(line) for line in wrote]
+        groups = _regroup(stream, [fidelity.words(p["text"]) for p in parsed])
+        if groups is None:
+            return False
+        cuts: dict[str, list[int]] = {}
+        for group in groups:
+            rid, pos, _ = stream[group[0]]
+            if pos:
+                cuts.setdefault(rid, []).append(pos)
+        for rid in dict.fromkeys(r for r, _, _ in stream):
+            E.set_cuts(edits, rid, cuts.get(rid, []))
+
+        def fragment(k: int) -> str:
+            rid, pos, _ = stream[k]
+            start = max(s for s in [0, *cuts.get(rid, [])] if s <= pos)
+            return rid if start == 0 else f"{rid}c{start}"
+
+        natural = {
+            f["id"]: f
+            for rid in dict.fromkeys(r for r, _, _ in stream)
+            for f in emit.cut_blocks(pages_by_n[uncut[rid]["page"]], uncut[rid], cuts.get(rid, []))
+        }
+        joined = 0
+        for group, shape in zip(groups, parsed):
+            leader = fragment(group[0])
+            for k in group[1:]:
+                if fragment(k) != leader:
+                    E.join(edits, fragment(k), leader)
+                    joined += 1
+            fields = {k2: shape[k2] for k2 in _SHAPE if shape[k2] != natural[leader].get(k2)}
+            if fields:
+                E.set_block(edits, leader, **fields)
+                decisions.append((leader, fields))
+                report["shaped"] += 1
+        if cuts or joined:
+            report["regrouped"] += len(groups)
+        return True
+
     sm = difflib.SequenceMatcher(a=old, b=new, autojunk=False)
     for tag, i1, i2, j1, j2 in sm.get_opcodes():
         if tag == "equal":
@@ -827,6 +1076,8 @@ def apply_markdown(ws: Workspace, doc_id: str, text: str, learn: str | None = No
             report["updated"] += 1
             continue
         new_nonblank = [l for l in new_seg if l.strip()]
+        if old_idx and new_nonblank and regroup(old_idx, new_nonblank):
+            continue
         if len(old_idx) == len(new_nonblank):
             for i, nl in zip(old_idx, new_nonblank):
                 bid = old_lines[i]["block"]

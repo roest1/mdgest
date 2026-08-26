@@ -333,3 +333,29 @@ def test_wording_hidden_here_but_kept_elsewhere_is_not_counted_as_gone(ws):
     assert "Key Points" in ws.md_path(doc).read_text()  # the page-2 copy survives
     assert report.hidden_words == 0
     assert report.hidden_by_rule == []
+
+
+def test_moving_a_boundary_costs_the_gate_nothing(ws):
+    """Splitting a block where the page splits it is a regrouping, and the gate
+    should not be able to tell it happened: the same words, on the same lines,
+    of the same page.
+
+    Before there was a cut, the only way to say it was to hide the block and
+    type its words back, and the gate then read one improvement as two
+    injuries -- every word both hidden and hand-inserted."""
+    doc = _added(ws, DOC_A)
+    page = ws.read_analysis(doc)["pages"][0]
+    para = next(b for b in page["blocks"] if len(b["lines"]) == 3)
+    printed = [page["lines"][i]["text"] for i in para["lines"]]
+    md = ops.view(ws, doc)["markdown"].split("\n")
+    md[md.index(para["text"]) : md.index(para["text"]) + 1] = [
+        printed[0],
+        "",
+        " ".join(printed[1:]),
+    ]
+    ops.apply_markdown(ws, doc, "\n".join(md))
+
+    report = _score(ws, doc)
+    assert report.coverage == 1.0
+    assert report.inserted_words == 0 and report.hidden_words == 0
+    assert report.invented == [] and report.untraceable_headings == []

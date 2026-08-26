@@ -3,12 +3,14 @@
 Not git — nobody has to learn anything — but the shape is git's: the
 **original** is the page read with no edits; a **version** is a named snapshot
 of the edits, with a parent; the **working copy** (`edits.json`) always says
-which version it continues from (`base`). You can go back to any of them,
-and going back never loses what you had (it is one more undoable step).
+which version it continues from (`base`). You can go back to any of them, and
+going back never loses what you had: it is one undoable step, and only one --
+the history of the working copy you left stays with it rather than following
+you to a place you went back to.
 
     .mdgest/<doc>/versions.json
       {"versions": [{"id": "v1", "name": "…", "parent": null, "created": "…",
-                     "edits": {blocks, order, inserts, joins}}]}
+                     "edits": {blocks, order, inserts, joins, cuts}}]}
 """
 
 from __future__ import annotations

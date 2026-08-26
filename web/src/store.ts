@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api } from "./api";
+import { numbering } from "./lib/order";
 import type { Block, DocView, Job, TreeNode } from "./types";
 
 /** Just the modifier keys — a React event, a native one, or a remembered copy. */
@@ -75,8 +76,16 @@ interface State {
   patchBlocks: (blocks: string[], fields: Partial<Block> & { hidden?: boolean }) => Promise<void>;
   resetBlock: (block: string) => Promise<void>;
   moveBlock: (block: string | string[], body: { to?: number; target?: string; place?: "before" | "after" }) => Promise<void>;
+  reorderSelection: () => Promise<void>;
+  // what the badges would read if the selection were sorted — the engine's
+  // own answer, asked for and not committed, so hovering the button shows the
+  // permutation rather than describing it
+  orderPreview: { numbers: Map<string, number>; affected: Set<string> } | null;
+  previewReorder: () => Promise<void>;
+  clearPreview: () => void;
   joinBlock: (child: string, parent: string) => Promise<void>;
   splitBlock: (child: string) => Promise<void>;
+  cutBlock: (block: string, at: number[]) => Promise<void>;
   resetOrder: (page: number) => Promise<void>;
   insertText: (page: number, after: string | null, text: string) => Promise<void>;
   applyMarkdown: (text: string) => Promise<void>;
@@ -93,6 +102,7 @@ interface State {
 }
 
 let toastId = 0;
+let previewToken = 0;
 
 export const useStore = create<State>((set, get) => ({
   tree: null,
@@ -252,7 +262,7 @@ export const useStore = create<State>((set, get) => ({
   checkout: async (version) =>
     mutate(get, set, async (id) => {
       await api.checkout(id, version);
-      get().toast(`now on ${version ?? "the original"} — undo goes back`, "info");
+      get().toast(`now on ${version ?? "the original"} — one undo returns what you had`, "info");
     }),
   deleteVersion: async (v) => mutate(get, set, (id) => api.deleteVersion(id, v)),
   applyRules: async () =>
@@ -276,8 +286,44 @@ export const useStore = create<State>((set, get) => ({
       if (r.affected.length > 1) get().toast(`${what} — ${r.affected.length} renumbered on page ${r.page}`, "info");
       set({ selection: group[0], selected: group });
     }),
+  reorderSelection: async () =>
+    mutate(get, set, async (id) => {
+      const group = get().selected;
+      const r = await api.reorder(id, group);
+      set({ orderPreview: null });
+      get().toast(
+        r.affected.length
+          ? `${group.length} blocks from #${r.to} — ${r.affected.length} renumbered on page ${r.page}`
+          : "already in order, and already neighbors",
+        r.affected.length ? "success" : "info",
+      );
+    }),
+  orderPreview: null,
+  previewReorder: async () => {
+    const { activeDoc, docs, selected } = get();
+    const found = findBlock(activeDoc ? docs[activeDoc] : undefined, selected[0] ?? null);
+    if (!activeDoc || !found || selected.length < 2) return;
+    const token = ++previewToken;
+    let order: string[];
+    try {
+      order = (await api.reorder(activeDoc, selected, true)).order;
+    } catch {
+      return; // a preview that cannot be had says nothing; the press will report why
+    }
+    if (token !== previewToken) return; // a later hover already won
+    const page = docs[activeDoc].pages[found.pageIndex];
+    const hidden = new Set(page.blocks.filter((b) => b.hidden).map((b) => b.id));
+    const was = numbering(page.blocks.map((b) => b.id), hidden);
+    const numbers = numbering(order, hidden);
+    set({ orderPreview: { numbers, affected: new Set(order.filter((i) => numbers.get(i) !== was.get(i))) } });
+  },
+  clearPreview: () => {
+    previewToken++; // a preview still in flight is no longer wanted
+    if (get().orderPreview) set({ orderPreview: null });
+  },
   joinBlock: async (child, parent) => mutate(get, set, (id) => api.joinBlock(id, child, parent)),
   splitBlock: async (child) => mutate(get, set, (id) => api.splitBlock(id, child)),
+  cutBlock: async (block, at) => mutate(get, set, (id) => api.cutBlock(id, block, at)),
   resetOrder: async (page) => mutate(get, set, (id) => api.setOrder(id, page, null)),
   insertText: async (page, after, text) => mutate(get, set, (id) => api.insert(id, page, after, text)),
   applyMarkdown: async (text) =>
@@ -285,6 +331,7 @@ export const useStore = create<State>((set, get) => ({
       const r = await api.putMarkdown(id, text, get().learnScope);
       const parts = [
         r.shaped && `${r.shaped} reshaped`,
+        r.regrouped && `${r.regrouped} regrouped`,
         r.hidden && `${r.hidden} deleted`,
         r.inserted && `${r.inserted} inserted`,
         r.updated && `${r.updated} updated`,

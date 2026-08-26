@@ -75,14 +75,19 @@ export const api = {
   joinBlock: (id: string, child: string, parent: string) =>
     req(`/docs/${id}/blocks/${child}/join`, json("POST", { parent })),
   splitBlock: (id: string, child: string) => req(`/docs/${id}/blocks/${child}/split`, json("POST")),
+  // `at` = the line positions the cut falls before, in the block's own lines
+  cutBlock: (id: string, block: string, at: number[]) =>
+    req<{ block: string; at: number[] }>(`/docs/${id}/blocks/${block}/cut`, json("POST", { at })),
   setOrder: (id: string, page: number, order: string[] | null) =>
     req(`/docs/${id}/pages/${page}/order`, json("PUT", { order })),
+  reorder: (id: string, blocks: string[], preview = false) =>
+    req<{ page: number; order: string[]; affected: string[]; to: number | null }>(`/docs/${id}/reorder`, json("POST", { blocks, preview })),
   insert: (id: string, page: number, after: string | null, text: string) =>
     req<{ id: string }>(`/docs/${id}/inserts`, json("POST", { page, after, text })),
   updateInsert: (id: string, ins: string, text: string) => req(`/docs/${id}/inserts/${ins}`, json("PATCH", { text })),
   removeInsert: (id: string, ins: string) => req(`/docs/${id}/inserts/${ins}`, { method: "DELETE" }),
   putMarkdown: (id: string, text: string, learn: string | null) =>
-    req<{ shaped: number; hidden: number; inserted: number; updated: number; removed: number; learned: number }>(
+    req<{ shaped: number; regrouped: number; hidden: number; inserted: number; updated: number; removed: number; learned: number }>(
       `/docs/${id}/markdown`,
       json("PUT", { text, learn }),
     ),

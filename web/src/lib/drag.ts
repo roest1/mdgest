@@ -64,12 +64,19 @@ export function sameRow(a: Block | undefined, b: Block | undefined): boolean {
   return overlap > 0.5 * Math.min(a.bbox[3] - a.bbox[1], b.bbox[3] - b.bbox[1]);
 }
 
+/** Numbers a badge should show instead of the ones the page has: a drag under
+ * way, or a hovered reorder. */
+export interface Renumbering {
+  numbers: Map<string, number> | null;
+  affected: Set<string>;
+}
+
 /** What a block's number badge shows and how it is ringed — identical in both
  * panes, and it was wrong in one of them every time it changed. */
-export function badgeState(b: Block, drag: DragState | null, selected: boolean) {
+export function badgeState(b: Block, hint: Renumbering | null, selected: boolean) {
   return {
-    label: drag?.numbers?.get(b.id) ?? b.n ?? "—", // a deleted block has no number
-    ring: drag?.affected.has(b.id) ? "ring-2 ring-amber-400" : selected ? "ring-2 ring-blue-400" : "",
+    label: hint?.numbers?.get(b.id) ?? b.n ?? "—", // a deleted block has no number
+    ring: hint?.affected.has(b.id) ? "ring-2 ring-amber-400" : selected ? "ring-2 ring-blue-400" : "",
     dim: b.hidden ? "opacity-60" : "",
   };
 }

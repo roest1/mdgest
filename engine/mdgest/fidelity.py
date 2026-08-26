@@ -55,8 +55,13 @@ def normalize(text: str) -> str:
     return _COMPOUND.sub(" ", text)
 
 
+def words(text: str) -> list[str]:
+    """The words a text says, in order, folded the way the gate folds them."""
+    return WORD_RE.findall(normalize(text))
+
+
 def tokens(text: str) -> Counter[str]:
-    return Counter(WORD_RE.findall(normalize(text)))
+    return Counter(words(text))
 
 
 @dataclass
@@ -340,7 +345,7 @@ def check(analysis: dict, edits: dict) -> Report:
         readings.append(flat)
         readings.append(flat.replace("- ", ""))
         readings.append(normalize(re.sub(r"\s+", " ", _column_reading(page))))
-        printed.append([WORD_RE.findall(normalize(t)) for t in _page_lines(page)])
+        printed.append([words(t) for t in _page_lines(page)])
     untraceable: list[str] = []
     for ln in doc["lines"]:
         bid = ln.get("block")
@@ -352,8 +357,8 @@ def check(analysis: dict, edits: dict) -> Report:
         heading = normalize(re.sub(r"\s+", " ", m.group(2))).strip()
         if not heading or any(heading in reading for reading in readings):
             continue
-        words = WORD_RE.findall(heading)
-        if any(_printed_together(words, page_lines) for page_lines in printed):
+        wanted = WORD_RE.findall(heading)
+        if any(_printed_together(wanted, page_lines) for page_lines in printed):
             continue
         untraceable.append(m.group(2))
 

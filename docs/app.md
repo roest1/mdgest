@@ -100,6 +100,28 @@ Keys in the UI (select a box first): `1`–`6` heading level · `p` paragraph ·
 one block wherever it sits — then any key or drag acts on the whole group · `j`/`k` next/previous block · `J`/`K` move it down/up ·
 `t` / `g` / `#` toggle text / image / number overlays · `⌘Z` undo · `Esc` deselect.
 
+### Joining and cutting: the two things edits may do to words
+
+A block is a run of the page's lines, and which lines make a run is decided by
+geometry alone (`structure._group_lines`). Geometry is not always enough: a
+list whose markers are *drawn* rather than typed has no marker in the text
+layer and no gap the next item does not share with a wrapped line, so it reads
+as one paragraph.
+
+So the boundary is editable both ways — `joins` merges two runs, `cuts` divides
+one at a line. Neither writes text, and that is load-bearing rather than
+incidental: `edits.BLOCK_FIELDS` has no `text` field, so every word in the
+markdown is a word on a page, and `fidelity` can call invention exactly instead
+of approximately.
+
+Fixing a boundary in the markdown pane records it the same way. When the words
+a person wrote are the words the blocks already carried, only differently
+split, `ops.apply_markdown` cuts and joins to match. It falls back to hiding
+the blocks and inserting the text — the old behavior — only when a boundary
+lands inside a printed line, which no cut can express. The difference is not
+cosmetic: hide-and-insert scores those words as both lost and hand-written, so
+the gate reads a correction as two injuries.
+
 ## How the engine reads a page (no model, no network)
 
 `pagemap.py` reads the PDF's own text layer with pypdfium2 — every line, its
@@ -246,8 +268,8 @@ rename, delete, upload pdf/zip/folder), tabs, page rail with thumbnails,
 overlays (text / images / numbers / raw lines) with click-select and
 drag-to-reorder with live blast radius, the shape bar + keyboard, rendered and
 source markdown views with the numbered gutter and the same drag, insert-text
-with the warning, undo/redo, join/split, per-folder `INDEX.md`, and the shell
-commands for ingesting and checking a corpus. Engine tests: `make test`.
+with the warning, undo/redo, join/split/cut, per-folder `INDEX.md`, and the
+shell commands for ingesting and checking a corpus. Engine tests: `make test`.
 
 Not built yet (in order of value):
 
@@ -270,5 +292,4 @@ Not built yet (in order of value):
    Repairing, validating and resolving those tokens against a corpus is the
    other half, and it is deliberately not here: it needs a model in the loop,
    and mdgest stays offline and model-free.
-3. **Block splitting** by line (today a block can be joined to another, not cut).
-4. A relationship graph view over the folder hierarchy + indexes.
+3. A relationship graph view over the folder hierarchy + indexes.

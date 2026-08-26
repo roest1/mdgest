@@ -2,9 +2,9 @@
 
 `analysis.json` regenerates from the PDF; `edits.json` does not. It records
 role/level/nesting/emphasis overrides per block, the reading order per page,
-joins, hidden blocks, and text a person inserted (flagged as such, because it
-is the one thing here that is not on the page). Every mutation pushes the
-previous state onto an undo stack.
+joins and cuts, hidden blocks, and text a person inserted (flagged as such,
+because it is the one thing here that is not on the page). Every mutation
+pushes the previous state onto an undo stack.
 """
 
 from __future__ import annotations
@@ -25,6 +25,12 @@ def blank() -> dict:
         "order": {},  # page -> [ids]
         "inserts": [],  # {id, page, after, text}
         "joins": {},  # child id -> parent id
+        # block id -> the line positions a cut falls before. A block is a run
+        # of the page's lines and `structure._group_lines` chose where the run
+        # ends; a cut moves that boundary. Regrouping is the only thing edits
+        # may do to a block's words, and `fidelity` depends on it: no text
+        # field means no word can enter that is not on the page.
+        "cuts": {},
         "base": None,  # the saved version this working copy continues from (None = the original)
         "undo": [],  # previous states (without their own undo stacks)
         "redo": [],
@@ -47,16 +53,24 @@ def save(path: Path, edits: dict) -> None:
     tmp.replace(path)
 
 
-def _snapshot(edits: dict) -> dict:
-    return {k: copy.deepcopy(v) for k, v in edits.items() if k not in ("undo", "redo")}
-
-
-CONTENT_KEYS = ("blocks", "order", "inserts", "joins")
+CONTENT_KEYS = ("blocks", "order", "inserts", "joins", "cuts")
 
 
 def content(edits: dict) -> dict:
     """Just the decisions — what a version stores and what `is_dirty` compares."""
     return {k: copy.deepcopy(edits.get(k, blank()[k])) for k in CONTENT_KEYS}
+
+
+def _snapshot(edits: dict) -> dict:
+    """What undo remembers: the decisions, and not `base`.
+
+    `base` is where the working copy sits in the version tree, not something a
+    person decided about the document. Restoring it meant that undoing the
+    edit before a save also un-pointed the save -- the version stayed in the
+    tree with nothing pointing at it, and the next save came out its sibling
+    rather than its child.
+    """
+    return content(edits)
 
 
 def is_empty(edits: dict) -> bool:
@@ -146,12 +160,24 @@ def split(edits: dict, child: str) -> bool:
     return edits["joins"].pop(child, None) is not None
 
 
+def set_cuts(edits: dict, block_id: str, at: list[int]) -> list[int]:
+    """Where a block is cut into fragments — positions in its own line list.
+    An empty list puts it back together."""
+    at = sorted({int(k) for k in at if int(k) > 0})
+    if at:
+        edits["cuts"][block_id] = at
+    else:
+        edits["cuts"].pop(block_id, None)
+    return at
+
+
 def summary(edits: dict) -> dict:
     return {
         "blocks": len(edits["blocks"]),
         "pages_reordered": len(edits["order"]),
         "inserts": len(edits["inserts"]),
         "joins": len(edits["joins"]),
+        "cuts": len(edits["cuts"]),
         "undo": len(edits["undo"]),
         "redo": len(edits["redo"]),
     }

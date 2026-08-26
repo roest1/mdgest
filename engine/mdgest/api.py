@@ -306,6 +306,10 @@ def create_app(workspace: Path | None = None) -> FastAPI:
     def join_block(doc_id: str, block_id: str, payload: dict = Body(...)):
         return edit(lambda: ops.join_blocks(ws, doc_id, block_id, payload["parent"]))
 
+    @app.post("/api/docs/{doc_id:path}/blocks/{block_id}/cut")
+    def cut_block(doc_id: str, block_id: str, payload: dict = Body(...)):
+        return edit(lambda: ops.cut_block(ws, doc_id, block_id, payload.get("at") or []))
+
     @app.post("/api/docs/{doc_id:path}/blocks/{block_id}/split")
     def split_block(doc_id: str, block_id: str):
         return edit(lambda: ops.split_block(ws, doc_id, block_id))
@@ -313,6 +317,17 @@ def create_app(workspace: Path | None = None) -> FastAPI:
     @app.put("/api/docs/{doc_id:path}/pages/{n}/order")
     def put_order(doc_id: str, n: int, payload: dict = Body(...)):
         return edit(lambda: ops.set_order(ws, doc_id, n, payload.get("order")))
+
+    @app.post("/api/docs/{doc_id:path}/reorder")
+    def reorder(doc_id: str, payload: dict = Body(...)):
+        return edit(
+            lambda: ops.reorder_blocks(
+                ws,
+                doc_id,
+                payload.get("blocks") or [],
+                preview=bool(payload.get("preview")),  # answer, do not commit
+            )
+        )
 
     @app.post("/api/docs/{doc_id:path}/inserts")
     def post_insert(doc_id: str, payload: dict = Body(...)):

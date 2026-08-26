@@ -180,6 +180,70 @@ def test_group_move_keeps_page_order(ws):
         ops.move_block(ws, doc, [ids[1], ids[2]], target=ids[2])
 
 
+def test_reorder_brings_a_scattered_selection_together_where_it_starts(ws):
+    """Three headings numbered 3, 5 and 10 are already ascending, so a sort in
+    place would call them ordered and do nothing -- while what a person looking
+    at them means by putting them in order is 3, 4, 5. The run lands at the
+    first of their numbers: nothing above it moves, nothing below the last of
+    them moves, and pressing again does nothing."""
+    doc = ws.add_pdf(SAMPLE.read_bytes(), "r.pdf", "x")
+    ops.analyze(ws, doc)
+    blocks = ops.view(ws, doc)["pages"][0]["blocks"]
+    by_text = {b["text"]: b["id"] for b in blocks}
+    heads = [by_text["Overview"], by_text["Required Parts"], by_text["Procedure"]]
+    before = {b["id"]: b["n"] for b in blocks}
+    lo, hi = min(before[h] for h in heads), max(before[h] for h in heads)
+    assert [before[h] for h in heads] == sorted(before[h] for h in heads)  # already ascending
+    assert [before[h] for h in heads] != [lo, lo + 1, lo + 2]  # and not neighbors
+
+    preview = ops.reorder_blocks(ws, doc, heads, preview=True)
+    assert {b["id"]: b["n"] for b in ops.view(ws, doc)["pages"][0]["blocks"]} == before
+
+    r = ops.reorder_blocks(ws, doc, [heads[2], heads[0], heads[1]])  # click order is not the input
+    assert r["order"] == preview["order"] and r["to"] == lo
+    after = {b["id"]: b["n"] for b in ops.view(ws, doc)["pages"][0]["blocks"]}
+    assert [after[h] for h in heads] == [lo, lo + 1, lo + 2]
+    untouched = [i for i, n in before.items() if n is not None and (n < lo or n > hi)]
+    assert all(after[i] == before[i] for i in untouched)
+    assert ops.reorder_blocks(ws, doc, heads)["affected"] == []
+
+
+def test_choosing_the_boxes_is_choosing_the_gutters():
+    """Why re-reading part of a page can beat re-reading the page: `xy_cut`
+    cuts on the gaps the boxes in front of it leave, so a heading that spans
+    both columns hides the gutter and the page is read across. Leave that
+    heading out of the selection and the cut it defeated succeeds."""
+    page = {"lines": [{"bbox": [0, 0, 100, 10]}]}  # a ten-point line: the unit
+    head = {"id": "head", "bbox": [72, 700, 540, 715]}
+    columns = [
+        {"id": "l1", "bbox": [72, 600, 290, 690]},
+        {"id": "l2", "bbox": [72, 500, 290, 590]},
+        {"id": "r1", "bbox": [320, 600, 540, 690]},
+        {"id": "r2", "bbox": [320, 500, 540, 590]},
+    ]
+    across = ops._reading_rank(page, [head, *columns])
+    assert sorted(across, key=across.get) == ["head", "l1", "r1", "l2", "r2"]
+    down = ops._reading_rank(page, columns)
+    assert sorted(down, key=down.get) == ["l1", "l2", "r1", "r2"]
+
+
+def test_an_insertion_has_no_geometry_to_be_read_from(ws):
+    """Reading order comes off the page, and an insertion is not on the page.
+    It is still gathered with the rest -- a run with a hole in it is not a run
+    -- but it trails what can be read, in the order it already had."""
+    doc = ws.add_pdf(SAMPLE.read_bytes(), "i.pdf", "x")
+    ops.analyze(ws, doc)
+    by_text = {b["text"]: b["id"] for b in ops.view(ws, doc)["pages"][0]["blocks"]}
+    overview, procedure = by_text["Overview"], by_text["Procedure"]
+    ins = ops.insert_text(ws, doc, 1, procedure, "A note nobody printed.")["id"]
+
+    r = ops.reorder_blocks(ws, doc, [overview, procedure, ins])
+    numbers = {b["id"]: b["n"] for b in ops.view(ws, doc)["pages"][0]["blocks"]}
+    assert numbers[procedure] == numbers[overview] + 1
+    assert numbers[ins] == numbers[procedure] + 1  # last, being unreadable off the page
+    assert r["to"] == numbers[overview]
+
+
 def test_deleting_a_block_gives_up_its_number(ws):
     """A deleted block keeps its place -- it is there to be restored -- but not
     its number, so #9 on the page is the ninth thing in the markdown. Numbering
@@ -266,6 +330,37 @@ def test_api_group_move(tmp_path):
     assert r.json()["order"][:6] == [ids[0], ids[4], ids[5], ids[1], ids[2], ids[3]]
 
 
+def test_api_reorder_previews_the_same_answer_it_commits(tmp_path):
+    """The button shows the numbers before it is pressed, so the preview has to
+    be the answer and not a guess -- and asking for it may not write."""
+    c = TestClient(api.create_app(tmp_path / "ws"))
+    doc = c.post(
+        "/api/upload",
+        files=[("files", ("a.pdf", SAMPLE.read_bytes(), "application/pdf"))],
+        data={"folder": "k"},
+    ).json()["added"][0]
+    import time
+
+    for _ in range(200):
+        r = c.get(f"/api/docs/{doc}")
+        if r.status_code == 200:
+            break
+        time.sleep(0.05)
+    by_text = {b["text"]: b["id"] for b in r.json()["pages"][0]["blocks"]}
+    heads = [by_text["Overview"], by_text["Required Parts"], by_text["Procedure"]]
+    c.post(f"/api/docs/{doc}/blocks/{heads[0]}/move", json={"target": heads[2], "place": "after"})
+    was = {b["id"]: b["n"] for b in c.get(f"/api/docs/{doc}").json()["pages"][0]["blocks"]}
+
+    p = c.post(f"/api/docs/{doc}/reorder", json={"blocks": heads, "preview": True})
+    assert p.status_code == 200, p.text
+    assert {b["id"]: b["n"] for b in c.get(f"/api/docs/{doc}").json()["pages"][0]["blocks"]} == was
+    assert (
+        c.post(f"/api/docs/{doc}/reorder", json={"blocks": heads}).json()["order"]
+        == p.json()["order"]
+    )
+    assert c.post(f"/api/docs/{doc}/reorder", json={"blocks": heads[:1]}).status_code == 400
+
+
 def test_rules_carry_to_the_next_document(ws):
     a = ws.add_pdf(SAMPLE.read_bytes(), "doc-a.pdf", "acme/manuals/widgets")
     ops.analyze(ws, a)
@@ -325,6 +420,170 @@ def test_versions_chain_and_go_back(ws):
     with pytest.raises(ValueError):
         ops.delete_version(ws, doc, "v1")
     assert v2["saved"] == "v2"
+
+
+def test_the_original_is_the_bottom_of_undo(ws):
+    """Going back to a saved state is going to a place, not making an edit, so
+    the history of the working copy you left does not come with you: one undo
+    returns what you had -- nothing is lost by switching -- and there is no
+    second one that walks from the original *into* an abandoned branch."""
+    doc = ws.add_pdf(SAMPLE.read_bytes(), "u.pdf", "x")
+    ops.analyze(ws, doc)
+    ids = [b["id"] for b in ops.view(ws, doc)["pages"][0]["blocks"]]
+    for i in (1, 2, 3):
+        ops.set_block(ws, doc, ids[i], bold=True)
+
+    ops.checkout(ws, doc, "original")
+    assert [b for b in ops.view(ws, doc)["pages"][0]["blocks"] if b.get("bold")] == []
+
+    assert ops.undo(ws, doc)["undone"] is True
+    assert len([b for b in ops.view(ws, doc)["pages"][0]["blocks"] if b.get("bold")]) == 3
+    assert ops.undo(ws, doc)["undone"] is False  # and no further
+    assert ops.redo(ws, doc)["redone"] is True
+    assert [b for b in ops.view(ws, doc)["pages"][0]["blocks"] if b.get("bold")] == []
+
+
+def test_standing_where_you_already_stand_is_not_a_step(ws):
+    """Checking out the state the working copy is already in changes nothing,
+    so it may not leave an undo step behind. Two presses used to offer two
+    undos on a document nobody had edited."""
+    doc = ws.add_pdf(SAMPLE.read_bytes(), "s.pdf", "x")
+    ops.analyze(ws, doc)
+    ops.checkout(ws, doc, "original")
+    ops.checkout(ws, doc, None)
+    assert ops.view(ws, doc)["edits"]["undo"] == 0
+
+
+def test_a_version_saved_after_an_undo_still_descends_from_its_base(ws):
+    """Undo takes back decisions, not where the working copy sits in the tree.
+    When it took back `base` as well, undoing the edit before a save left the
+    saved version with nothing pointing at it, and the next save came out its
+    sibling rather than its child."""
+    doc = ws.add_pdf(SAMPLE.read_bytes(), "b.pdf", "x")
+    ops.analyze(ws, doc)
+    ids = [b["id"] for b in ops.view(ws, doc)["pages"][0]["blocks"]]
+    ops.set_block(ws, doc, ids[1], bold=True)
+    ops.save_version(ws, doc, "first")
+
+    ops.undo(ws, doc)
+    assert ops.list_versions(ws, doc)["base"] == "v1"
+    assert ops.list_versions(ws, doc)["dirty"] is True  # v1 is not what is on screen
+
+    ops.set_block(ws, doc, ids[2], italic=True)
+    r = ops.save_version(ws, doc, "second")
+    assert next(v for v in r["versions"] if v["id"] == "v2")["parent"] == "v1"
+
+
+def test_reset_forgets_every_kind_of_edit(ws):
+    """`reset every edit` names them one by one, so a kind added later is a
+    kind it quietly keeps."""
+    doc = ws.add_pdf(SAMPLE.read_bytes(), "z.pdf", "x")
+    ops.analyze(ws, doc)
+    page = ws.read_analysis(doc)["pages"][0]
+    para = next(b for b in page["blocks"] if len(b["lines"]) == 3)
+    ops.cut_block(ws, doc, para["id"], [1])
+    ops.set_block(ws, doc, para["id"], bold=True)
+
+    ops.reset_edits(ws, doc)
+    assert not any(E.load(ws.edits_path(doc))[k] for k in E.CONTENT_KEYS)
+    assert ops.view(ws, doc)["edits"]["cuts"] == 0
+
+
+def test_cutting_a_fragment_counts_from_the_fragment(ws):
+    """A cut is addressed in the lines of the block a person is looking at, not
+    of the run it came out of -- otherwise cutting a piece a second time means
+    knowing where that piece starts, which is the engine's bookkeeping and not
+    anything on the screen."""
+    doc = ws.add_pdf(SAMPLE.read_bytes(), "x.pdf", "x")
+    ops.analyze(ws, doc)
+    page = ws.read_analysis(doc)["pages"][0]
+    para = next(b for b in page["blocks"] if len(b["lines"]) == 3)
+    printed = [page["lines"][i]["text"] for i in para["lines"]]
+
+    ops.cut_block(ws, doc, para["id"], [1])
+    blocks = {b["id"]: b for b in ops.view(ws, doc)["pages"][0]["blocks"]}
+    assert blocks[para["id"]]["text"] == printed[0]
+    assert blocks[para["id"] + "c1"]["text"] == " ".join(printed[1:])
+
+    ops.cut_block(ws, doc, para["id"] + "c1", [1])  # the second line of the piece
+    blocks = {b["id"]: b for b in ops.view(ws, doc)["pages"][0]["blocks"]}
+    assert [blocks[i]["text"] for i in (para["id"], para["id"] + "c1", para["id"] + "c2")] == printed
+
+    with pytest.raises(ValueError):
+        ops.cut_block(ws, doc, para["id"], [9])
+    ops.cut_block(ws, doc, para["id"], [])  # the whole run, back together
+    assert ops.view(ws, doc)["markdown"] == ops.write_markdown(ws, doc)
+    assert para["id"] + "c1" not in {b["id"] for b in ops.view(ws, doc)["pages"][0]["blocks"]}
+
+
+def test_a_boundary_moved_is_not_words_retyped(ws):
+    """The fix for a list the page draws its bullets rather than printing them:
+    the analysis reads the items as one wrapped paragraph, and a person splits
+    them in the markdown. The words did not change, so nothing may be hidden
+    and nothing inserted -- the block is cut where they cut it, both halves
+    stay the page's, and applying the same text again changes nothing."""
+    doc = ws.add_pdf(SAMPLE.read_bytes(), "c.pdf", "x")
+    ops.analyze(ws, doc)
+    md = ops.view(ws, doc)["markdown"]
+    page = ws.read_analysis(doc)["pages"][0]
+    para = next(b for b in page["blocks"] if len(b["lines"]) == 3)
+    printed = [page["lines"][i]["text"] for i in para["lines"]]
+    lines = md.split("\n")
+    at = lines.index(para["text"])
+    lines[at : at + 1] = [printed[0], "", " ".join(printed[1:])]
+
+    r = ops.apply_markdown(ws, doc, "\n".join(lines))
+    assert r["regrouped"] == 2 and r["hidden"] == 0 and r["inserted"] == 0
+
+    blocks = {b["id"]: b for b in ops.view(ws, doc)["pages"][0]["blocks"]}
+    head, tail = blocks[para["id"]], blocks[para["id"] + "c1"]
+    assert head["text"] == printed[0] and tail["text"] == " ".join(printed[1:])
+    assert head["origin"] == tail["origin"] == "page"
+    assert head["bbox"][3] > tail["bbox"][3]  # the tail sits below the head
+    assert ops.apply_markdown(ws, doc, ops.view(ws, doc)["markdown"])["regrouped"] == 0
+
+
+def test_a_boundary_moved_across_two_blocks_cuts_one_and_joins_the_other(ws):
+    """The shape the report came in as: a run the analysis broke in the wrong
+    place, so fixing it moves words from one block to the next. That is a cut
+    and a join, and it stays inside what edits may say about a page."""
+    doc = ws.add_pdf(SAMPLE.read_bytes(), "j.pdf", "x")
+    ops.analyze(ws, doc)
+    md = ops.view(ws, doc)["markdown"]
+    page = ws.read_analysis(doc)["pages"][0]
+    para = next(b for b in page["blocks"] if len(b["lines"]) == 3)
+    head = next(b for b in page["blocks"] if b["text"] == "Overview")
+    printed = [page["lines"][i]["text"] for i in para["lines"]]
+    lines = md.split("\n")
+    at = lines.index("## Overview")
+    assert lines[at + 1 : at + 3] == ["", para["text"]]
+    lines[at : at + 3] = [f"## Overview {printed[0]}", " ".join(printed[1:])]
+
+    r = ops.apply_markdown(ws, doc, "\n".join(lines))
+    assert r["regrouped"] == 2 and r["hidden"] == 0 and r["inserted"] == 0
+    blocks = {b["id"]: b for b in ops.view(ws, doc)["pages"][0]["blocks"]}
+    assert blocks[head["id"]]["text"] == f"Overview {printed[0]}"
+    assert blocks[para["id"] + "c1"]["text"] == " ".join(printed[1:])
+    assert para["id"] not in blocks  # its first line went to the heading
+
+
+def test_a_boundary_inside_a_line_is_still_hide_and_insert(ws):
+    """A block is whole lines of the page, so a boundary a person puts in the
+    middle of one cannot be recorded as a cut. It falls back to hiding and
+    inserting -- the old behavior, and the honest one: those words come out
+    of the engine's reach and are marked as not on the page."""
+    doc = ws.add_pdf(SAMPLE.read_bytes(), "m.pdf", "x")
+    ops.analyze(ws, doc)
+    md = ops.view(ws, doc)["markdown"]
+    page = ws.read_analysis(doc)["pages"][0]
+    para = next(b for b in page["blocks"] if len(b["lines"]) == 3)
+    lines = md.split("\n")
+    at = lines.index(para["text"])
+    head, tail = para["text"].split("ahead. ")
+    lines[at : at + 1] = [head + "ahead.", "", tail]
+
+    r = ops.apply_markdown(ws, doc, "\n".join(lines))
+    assert r["regrouped"] == 0 and r["hidden"] == 1 and r["inserted"] == 1
 
 
 def test_apply_markdown_diff(ws):

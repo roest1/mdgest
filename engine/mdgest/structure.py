@@ -127,7 +127,9 @@ def _is_heading(line: Line, body: float, bold_matters: bool) -> bool:
 # ---------------------------------------------------------------- reading order (XY-cut)
 
 
-def _median_height(boxes: list[Box]) -> float:
+def median_height(boxes: list[Box]) -> float:
+    """The unit every gap threshold here is a multiple of. Public because a
+    re-read of part of a page has to cut on the same unit the whole page did."""
     hs = sorted(b.height for b in boxes if b.height > 0)
     return hs[len(hs) // 2] if hs else 10.0
 
@@ -254,7 +256,7 @@ def analyze(pm: PageMap) -> dict:
     all_blocks: list[list[Block]] = []
 
     for page in pm.pages:
-        unit = _median_height([l.box for l in page.lines]) if page.lines else 10.0
+        unit = median_height([l.box for l in page.lines]) if page.lines else 10.0
         leaves = xy_cut([(i, l.box) for i, l in enumerate(page.lines)], unit)
         order = [i for leaf in leaves for i in leaf]
         groups = _group_lines(page, order, body, bold_matters)

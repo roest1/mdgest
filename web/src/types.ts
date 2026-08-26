@@ -100,7 +100,7 @@ export interface DocView {
   pages: Page[];
   markdown: string;
   md_lines: MdLine[];
-  edits: { blocks: number; pages_reordered: number; inserts: number; joins: number; undo: number; redo: number };
+  edits: { blocks: number; pages_reordered: number; inserts: number; joins: number; cuts: number; undo: number; redo: number };
   job?: Job | null;
   pending?: boolean;
   versions?: VersionsSummary;

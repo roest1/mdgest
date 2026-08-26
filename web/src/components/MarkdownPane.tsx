@@ -270,6 +270,7 @@ function PageRows({ docId, page }: { docId: string; page: Page }) {
   const removeInsert = useStore((s) => s.removeInsert);
   const patchBlock = useStore((s) => s.patchBlock);
   const drag = useDrag((s) => s.drag);
+  const preview = useStore((s) => s.orderPreview);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
 
   const onHandleDown = useBlockDrag("md", page);
@@ -280,7 +281,7 @@ function PageRows({ docId, page }: { docId: string; page: Page }) {
         const c = roleColor(b);
         const isSel = selection === b.id || selected.includes(b.id);
         const isHover = hover === b.id;
-        const badge = badgeState(b, drag, isSel);
+        const badge = badgeState(b, drag ?? preview, isSel);
         const isTarget = drag?.target === b.id;
         const breakRow = (
           <div className="flex items-center text-[11px] text-faint font-mono select-none">

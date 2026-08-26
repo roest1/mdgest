@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowUpToLine, Bold, CornerDownLeft, Eraser, IndentDecrease, IndentIncrease, Italic, Merge, Scissors, Stamp, Trash2, Undo2 } from "lucide-react";
+import { ArrowDownToLine, ArrowUpToLine, Bold, CornerDownLeft, Eraser, IndentDecrease, IndentIncrease, Italic, ListOrdered, Merge, Scissors, SeparatorHorizontal, Stamp, Trash2, Undo2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { findBlock, useStore } from "../store";
 import type { Role } from "../types";
@@ -21,13 +21,21 @@ export function ShapeBar() {
     group.length > 1 && group.includes(id) ? patchMany(group, fields) : patchBlockOne(id, fields);
   const resetBlock = useStore((s) => s.resetBlock);
   const moveBlock = useStore((s) => s.moveBlock);
+  const reorderSelection = useStore((s) => s.reorderSelection);
+  const previewReorder = useStore((s) => s.previewReorder);
+  const clearPreview = useStore((s) => s.clearPreview);
   const joinBlock = useStore((s) => s.joinBlock);
   const splitBlock = useStore((s) => s.splitBlock);
+  const cutBlock = useStore((s) => s.cutBlock);
   const busy = useStore((s) => s.busy);
   const found = findBlock(view, selection);
   const [moveTo, setMoveTo] = useState("");
 
   useEffect(() => setMoveTo(found?.block.n ? String(found.block.n) : ""), [found?.block.id, found?.block.n]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A button that vanishes under the pointer -- Escape, or a click on the page
+  // -- never fires its pointerleave, so the selection changing is what has to
+  // take the preview down.
+  useEffect(() => clearPreview, [group.join(","), clearPreview]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!found) return null;
   const b = found.block;
@@ -35,8 +43,15 @@ export function ShapeBar() {
   const prev = page.blocks[page.blocks.findIndex((x) => x.id === b.id) - 1];
   const isList = ["bullet", "numbered", "alpha", "roman"].includes(b.role);
   const setRole = (role: Role, extra: Record<string, unknown> = {}) => patchBlock(b.id, { role, ...extra } as never);
-  const Btn = ({ on, onClick, title, children, disabled }: { on?: boolean; onClick: () => void; title: string; children: React.ReactNode; disabled?: boolean }) => (
-    <button className={`btn btn-sm ${on ? "btn-active" : ""}`} onClick={onClick} title={title} disabled={disabled || busy}>
+  const Btn = ({ on, onClick, onHover, title, children, disabled }: { on?: boolean; onClick: () => void; onHover?: (over: boolean) => void; title: string; children: React.ReactNode; disabled?: boolean }) => (
+    <button
+      className={`btn btn-sm ${on ? "btn-active" : ""}`}
+      onClick={onClick}
+      onPointerEnter={() => onHover?.(true)}
+      onPointerLeave={() => onHover?.(false)}
+      title={title}
+      disabled={disabled || busy}
+    >
       {children}
     </button>
   );
@@ -121,6 +136,31 @@ export function ShapeBar() {
           <Btn onClick={() => splitBlock(b.joined![b.joined!.length - 1])} title="Split the last joined block back out">
             <Scissors className="w-3.5 h-3.5" /> split
           </Btn>
+        )}
+        {/* The other half of join. A list whose markers are drawn rather than
+            typed reads as one wrapped paragraph, and this is what says it is
+            not one — every line its own block, then join back what did wrap. */}
+        {b.kind === "text" && b.lines.length > 1 && (
+          <Btn
+            onClick={() => cutBlock(b.id, b.lines.map((_, i) => i).slice(1))}
+            title={`Cut into ${b.lines.length} blocks, one per printed line — for a list the page read as one paragraph. Join ↑ puts back the ones that really did wrap.`}
+          >
+            <SeparatorHorizontal className="w-3.5 h-3.5" /> cut {b.lines.length}
+          </Btn>
+        )}
+        {group.length > 1 && (
+          <>
+            <span className="w-px h-5 bg-edge mx-1 shrink-0" />
+            {/* Hovering shows the numbers the page would take, so the answer
+                is read off the badges rather than trusted. */}
+            <Btn
+              onClick={() => reorderSelection()}
+              onHover={(over) => (over ? previewReorder() : clearPreview())}
+              title="Bring the selection together as one run, in the order these boxes read on the page, starting at the first number it already has: 12, 33, 34 becomes 12, 13, 14. Hover to see it."
+            >
+              <ListOrdered className="w-3.5 h-3.5" /> reorder
+            </Btn>
+          </>
         )}
         <span className="w-px h-5 bg-edge mx-1 shrink-0" />
         <form

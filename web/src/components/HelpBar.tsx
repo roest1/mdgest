@@ -10,7 +10,7 @@ export function HelpBar({ onClose }: { onClose: () => void }) {
         <span className="min-w-0 leading-relaxed">
           Select a box on the page or a line in the panel to change its shape.{" "}
           <span className="text-faint">
-            Keys: <K>1</K>–<K>4</K> heading · <K>p</K> paragraph · <K>-</K> bullet · <K>n</K> numbered · <K>a</K> lettered · <K>r</K> roman · <K>b</K> bold · <K>i</K> italic · <K>[</K> <K>]</K> depth · <K>h</K> delete · <K>&lt;</K> <K>&gt;</K> page break · <K>⇧click</K> a range · <K>⌘click</K> any one more · or sweep/lasso, then drag the group · <K>⌘Z</K> undo
+            Keys: <K>1</K>–<K>4</K> heading · <K>p</K> paragraph · <K>-</K> bullet · <K>n</K> numbered · <K>a</K> lettered · <K>r</K> roman · <K>b</K> bold · <K>i</K> italic · <K>[</K> <K>]</K> depth · <K>h</K> delete · <K>&lt;</K> <K>&gt;</K> page break · <K>⇧click</K> a range · <K>⌘click</K> any one more · or sweep/lasso, then drag the group — or <b>reorder</b> it, which brings it together in reading order at its first number · <K>⌘Z</K> undo
           </span>
         </span>
         <button className="ghost p-0.5 shrink-0" onClick={onClose} title="Hide — the ? button brings it back">

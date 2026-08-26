@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import re
 
+from .structure import marker_of
+
 ROMAN = [
     "i",
     "ii",
@@ -70,20 +72,60 @@ def _arrange(blocks: list[dict], wanted: list[str]) -> list[dict]:
     return [e[2] for e in placed]
 
 
+def cut_blocks(page: dict, raw: dict, at: list[int]) -> list[dict]:
+    """A block as the fragments a person cut it into, at line boundaries.
+
+    A block is a run of the page's lines, and which lines make a run is a
+    judgment `structure._group_lines` makes from geometry alone -- a list whose
+    markers are drawn rather than typed reads exactly like one wrapped
+    paragraph. A cut moves the boundary. Every word stays on the line, and on
+    the page, it came from, which is why this is the only thing edits may do
+    to a block's words at all.
+    """
+    lines = raw.get("lines") or []
+    at = [k for k in sorted(set(at)) if 0 < k < len(lines)]
+    if not at:
+        return [dict(raw)]
+    texts = [page["lines"][i]["text"] for i in lines]
+    boxes = [page["lines"][i]["bbox"] for i in lines]
+    out: list[dict] = []
+    for n, (a, b) in enumerate(zip([0, *at], [*at, len(lines)])):
+        frag = dict(raw)
+        frag["lines"] = lines[a:b]
+        role, marker, head = marker_of(texts[a])
+        if n:
+            # the first fragment keeps the id every other edit refers to, and
+            # the shape the analysis gave it; a later one is read off its own
+            # first line, falling back to the shape of the run it came out of
+            frag["id"] = f"{raw['id']}c{a}"
+            frag["role"] = role or raw.get("role", "para")
+            frag["marker"] = marker
+        frag["text"] = " ".join(t for t in [head, *texts[a + 1 : b]] if t).strip()
+        frag["bbox"] = [
+            min(x[0] for x in boxes[a:b]),
+            min(x[1] for x in boxes[a:b]),
+            max(x[2] for x in boxes[a:b]),
+            max(x[3] for x in boxes[a:b]),
+        ]
+        out.append(frag)
+    return out
+
+
 def resolve_page(page: dict, edits: dict) -> list[dict]:
     """The page's blocks after joins, overrides, inserts and ordering — numbered 1..N."""
     overrides = edits.get("blocks", {})
     joins = edits.get("joins", {})
     inserts = [i for i in edits.get("inserts", []) if int(i.get("page", 0)) == int(page["n"])]
 
+    cuts = edits.get("cuts", {})
     by_id: dict[str, dict] = {}
     blocks: list[dict] = []
     for raw in page["blocks"]:
-        blk = dict(raw)
-        blk["origin"] = "page"
-        blk["joined"] = []
-        by_id[blk["id"]] = blk
-        blocks.append(blk)
+        for blk in cut_blocks(page, raw, cuts.get(raw["id"]) or []):
+            blk["origin"] = "page"
+            blk["joined"] = []
+            by_id[blk["id"]] = blk
+            blocks.append(blk)
 
     # joins: a child's words go onto its parent, and the child leaves the list
     for child, parent in joins.items():
