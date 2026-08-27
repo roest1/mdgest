@@ -9,11 +9,12 @@ import copy
 import difflib
 import re as _re
 import shutil
+import zipfile
 from pathlib import Path, PurePosixPath
 
 from . import edits as E
 from . import emit, fidelity, occurrences, pagemap, pagenums, rules, structure, versions
-from .store import Workspace
+from .store import Workspace, slug
 
 # ---- analysis ----------------------------------------------------------------
 
@@ -38,13 +39,84 @@ def analyze(ws: Workspace, doc_id: str, force: bool = False) -> dict:
     return analysis
 
 
+def _part_file(n: int, part: dict, doc_id: str, edits: dict) -> str:
+    """The filename a part is written under, naming it the first time.
+
+    The name is frozen into `edits.json` on the write that follows the split
+    and never recomputed, so retitling the heading it was taken from later
+    neither renames the file nor dangles a citation written against it. The
+    number is positional and is not frozen: inserting a split renumbers what
+    follows it, which is what inserting a split did to the reading order too.
+    """
+    key = part["key"]
+    name = (edits.get("parts") or {}).get(key)
+    if not name:
+        fallback = Path(doc_id).name if not key else f"part {n}"
+        name = slug(part["heading"] or fallback)
+        E.set_part_name(edits, key, name)
+    return f"{n:02d}-{name}.md"
+
+
+def _emit(analysis: dict, edits: dict, stem: str) -> tuple[dict, list[dict]]:
+    """The document and its parts, with the assets prefix its files will need.
+
+    A split document's parts sit one directory deeper than an unsplit one, so
+    the figures beside them are one `../` further away. Which it is is only
+    known once the blocks are resolved, so a document that turns out to split
+    is emitted a second time. The second pass costs one walk of the analysis
+    and is skipped by every document that does not split.
+
+    `view` runs it too rather than assuming the shallow prefix: the source
+    pane would otherwise print an image path that is not the one in the file,
+    and the pane and the file being one text is the point of this module.
+    """
+    doc = emit.document_markdown(analysis, edits, assets_prefix=f"{stem}.assets/")
+    pieces = emit.parts(doc)
+    if len(pieces) == 1:
+        return doc, pieces
+    doc = emit.document_markdown(analysis, edits, assets_prefix=f"../{stem}.assets/")
+    return doc, emit.parts(doc)
+
+
 def write_markdown(ws: Workspace, doc_id: str, analysis: dict | None = None) -> str:
+    """Rewrite this document's markdown — one file, or a folder of parts."""
     analysis = analysis or ws.read_analysis(doc_id)
-    edits = E.load(ws.edits_path(doc_id))
-    doc = emit.document_markdown(analysis, edits, assets_prefix=f"{Path(doc_id).name}.assets/")
-    target = ws.md_path(doc_id)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(doc["markdown"], "utf-8")
+    path = ws.edits_path(doc_id)
+    edits = E.load(path)
+    doc, pieces = _emit(analysis, edits, Path(doc_id).name)
+    named = copy.deepcopy(edits.get("parts") or {})
+
+    if len(pieces) == 1:
+        if ws.md_dir(doc_id).is_dir():
+            shutil.rmtree(ws.md_dir(doc_id))
+        target = ws.md_path(doc_id)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(doc["markdown"], "utf-8")
+    else:
+        folder = ws.md_dir(doc_id)
+        folder.mkdir(parents=True, exist_ok=True)
+        if ws.md_path(doc_id).exists():
+            ws.md_path(doc_id).unlink()
+        wanted = {"INDEX.md"}
+        for n, part in enumerate(pieces, 1):
+            name = _part_file(n, part, doc_id, edits)
+            wanted.add(name)
+            (folder / name).write_text(part["markdown"], "utf-8")
+        # A part that moved or went away leaves its file behind, and a stale
+        # one is indistinguishable from a real one to `index` and to export.
+        for stale in folder.glob("*.md"):
+            if stale.name not in wanted:
+                stale.unlink()
+        # The parse's table of contents, written from the parts just written
+        # rather than on demand: it is derived from them entirely, and a
+        # contents page that disagrees with the files beside it is worse than
+        # none at all.
+        from .corpus import document_index
+
+        ws.doc_index_path(doc_id).write_text(document_index(ws, doc_id), "utf-8")
+
+    if (edits.get("parts") or {}) != named:
+        E.save(path, edits)
     return doc["markdown"]
 
 
@@ -56,7 +128,7 @@ def view(ws: Workspace, doc_id: str, include_lines: bool = True) -> dict:
     doc_id = ws.check_doc(doc_id)
     analysis = ws.read_analysis(doc_id)
     edits = E.load(ws.edits_path(doc_id))
-    doc = emit.document_markdown(analysis, edits, assets_prefix=f"{Path(doc_id).name}.assets/")
+    doc, _ = _emit(analysis, edits, Path(doc_id).name)
     pages = []
     for page, resolved in zip(analysis["pages"], doc["pages"]):
         pages.append(
@@ -105,12 +177,15 @@ def _mutate(ws: Workspace, doc_id: str, fn) -> dict:
     return result if result is not None else {}
 
 
-def set_block(
-    ws: Workspace, doc_id: str, block_id: str | list[str], learn: str | None = None, **fields
-) -> dict:
+def set_block(ws: Workspace, doc_id: str, block_id: str | list[str], **fields) -> dict:
     """Override the shape of a block — or of a group, which is one edit and so
-    one undo. With `learn` = a folder on the document's path, also record the
-    decision as a rule there (see `rules.py`).
+    one undo.
+
+    Nothing is learned here. A decision taken while a document is still being
+    worked through is a decision about *this* document; it becomes a rule for
+    the folder when the document is marked done (`set_complete`), and not
+    before. Learning on every keystroke meant a heading level tried and
+    abandoned on page 2 shaped forty-six documents nobody had opened yet.
 
     A group was a request per block until it was not: ten bullets meant ten
     rewrites of the markdown, ten passes over the corpus, and ten presses of
@@ -126,14 +201,11 @@ def set_block(
             raise ValueError(f"unknown role {clean['role']!r}; one of {structure.ROLES}")
         for bid in group:
             E.set_block(edits, bid, **clean)
-        result = {
+        return {
             "block": group[0],
             "blocks": group,
             "override": edits["blocks"].get(group[0], {}),
         }
-        if learn is not None:
-            result["learned"] = _learn(ws, doc_id, learn, [(b, clean) for b in group], edits)
-        return result
 
     return _mutate(ws, doc_id, fn)
 
@@ -325,6 +397,98 @@ def hide(
         return {"scope": scope, "blocks": targets, "preview": preview}
 
     return _mutate(ws, doc_id, fn)
+
+
+def completion_checks(ws: Workspace, doc_id: str) -> list[dict]:
+    """What is asked of a document before a person calls it done.
+
+    A list rather than one call to `verify`, because this is the place the next
+    check goes and a check that has to be wedged into a conditional is a check
+    nobody adds. Every one of them reports; none of them refuses. A document
+    that fails here is still allowed to be done -- the failures are about what
+    reached the output, and the shape rules a person spent an hour on are worth
+    keeping even when a block on page 9 lost three words.
+    """
+    doc_id = ws.check_doc(doc_id)
+    if not ws.has_analysis(doc_id):
+        analyze(ws, doc_id)
+    analysis = ws.read_analysis(doc_id)
+    edits = E.load(ws.edits_path(doc_id))
+    out: list[dict] = []
+
+    report = fidelity.check(analysis, edits)
+    out.append(
+        {
+            "name": "fidelity",
+            "level": "ok" if report.passed else "warn",
+            "message": report.render().splitlines()[0]
+            if report.passed
+            else "; ".join(
+                part
+                for part in (
+                    f"coverage {report.coverage:.1%}",
+                    f"{len(report.invented)} invented" if report.invented else "",
+                    f"{len(report.leaked)} leaked" if report.leaked else "",
+                    f"{len(report.untraceable_headings)} untraceable headings"
+                    if report.untraceable_headings
+                    else "",
+                )
+                if part
+            ),
+        }
+    )
+
+    doc = emit.document_markdown(analysis, edits)
+    levels = [
+        len(m.group(1))
+        for m in (emit.HEADING_RE.match(line["text"]) for line in doc["lines"])
+        if m
+    ]
+    # A heading that jumps a level -- an H4 under an H2 -- is legal markdown and
+    # a broken outline. `corpus.outline` builds the citation anchors from these,
+    # so a skipped level is a retrieval section with no parent to cite.
+    skips = [(a, b) for a, b in zip(levels, levels[1:]) if b > a + 1]
+    out.append(
+        {
+            "name": "headings",
+            "level": "ok" if not skips else "warn",
+            "message": "the outline has no gaps"
+            if not skips
+            else f"{len(skips)} heading level jump(s), first H{skips[0][0]} to H{skips[0][1]}",
+        }
+    )
+    return out
+
+
+def set_complete(ws: Workspace, doc_id: str, complete: bool = True, folder: str | None = None) -> dict:
+    """Mark a document done — the act that promotes its edits to folder rules.
+
+    Completion is the only thing that teaches, so `rules.json` holds decisions
+    from finished documents and nothing else. That is also what settles the
+    precedence question a per-file ranking could not: there is no in-progress
+    rule to lose to, because an in-progress document has not written one.
+
+    Un-completing clears the flag and leaves the rules alone. They are a
+    separate thing once learned -- other documents are already shaped by them,
+    and `rules.forget` is where taking one back lives.
+    """
+    doc_id = ws.check_doc(doc_id)
+    path = ws.edits_path(doc_id)
+    edits = E.load(path)
+    result: dict = {"doc": doc_id, "complete": bool(complete), "checks": [], "learned": []}
+    if complete:
+        result["checks"] = completion_checks(ws, doc_id)
+        # The checks analyze a document that has never been read, and analysis
+        # rewrites the markdown, which is what names a part. Re-read rather
+        # than write back the copy loaded before all that and lose the names.
+        edits = E.load(path)
+        target = _folder_of(doc_id) if folder is None else folder.strip("/")
+        if edits["blocks"]:
+            result["learned"] = _learn(ws, doc_id, target, list(edits["blocks"].items()), edits)
+        result["folder"] = target
+    edits["complete"] = bool(complete)
+    E.save(path, edits)
+    return result
 
 
 def suggest_hides(
@@ -815,15 +979,82 @@ def verify_folder(ws: Workspace, folder: str = "") -> dict:
     }
 
 
+def export_tree(ws: Workspace, folder: str = "") -> list[dict]:
+    """Every document under a folder with the markdown files it wrote.
+
+    What the export screen lists. A document is the unit a person selects, not
+    a file: a split one has several and picking three of its four parts is not
+    a thing anyone means.
+    """
+    out = []
+    for doc_id in ws.docs(folder):
+        paths = ws.md_paths(doc_id)
+        if not paths:
+            continue
+        summary = ws.doc_summary(doc_id)
+        out.append(
+            {
+                "doc": doc_id,
+                "folder": _folder_of(doc_id),
+                "complete": summary["complete"],
+                "files": [str(p.relative_to(ws.markdown).as_posix()) for p in paths],
+                "words": sum(len(p.read_text("utf-8").split()) for p in paths),
+            }
+        )
+    return out
+
+
+def export(ws: Workspace, docs: list[str], dest: Path, as_zip: bool = False) -> dict:
+    """Copy the chosen documents' markdown out of the workspace, tree intact.
+
+    Paths are kept relative to `markdown/`, so a folder of one-sheets arrives
+    with its folders on it and the links between the files still resolve. The
+    figures a document references come with it; nothing else does.
+    """
+    dest = Path(dest)
+    chosen = [ws.check_doc(d) for d in docs]
+    members: list[tuple[Path, str]] = []
+    for doc_id in chosen:
+        for path in [*ws.md_paths(doc_id), ws.doc_index_path(doc_id)]:
+            if path.exists():
+                members.append((path, path.relative_to(ws.markdown).as_posix()))
+        assets = ws.assets_dir(doc_id)
+        if assets.is_dir():
+            for asset in sorted(assets.rglob("*")):
+                if asset.is_file():
+                    members.append((asset, asset.relative_to(ws.markdown).as_posix()))
+    if not members:
+        raise ValueError("nothing to export: none of those documents has markdown yet")
+
+    if as_zip:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
+            for src, rel in members:
+                zf.write(src, rel)
+    else:
+        for src, rel in members:
+            target = dest / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, target)
+    return {"documents": len(chosen), "files": len(members), "dest": str(dest)}
+
+
 def build_index(ws: Workspace, folder: str) -> str:
     """Write INDEX.md over every markdown file under a folder: one entry per
     document with its heading outline and anchors, so a downstream agent can
     decide where to read instead of reading everything.
     """
-    from .corpus import index_markdown
+    from .corpus import document_index, index_markdown
 
     folder = ws.mkdir(folder) if folder else ""
     base = ws.markdown / folder if folder else ws.markdown
+    # Refresh each split document's own contents page first. Every write puts
+    # one there, so this only matters for a document split before there were
+    # any -- but a folder index linking at a file that is not there is the
+    # exact failure the index exists to prevent.
+    for doc_id in ws.docs(folder):
+        if ws.md_dir(doc_id).is_dir():
+            ws.doc_index_path(doc_id).write_text(document_index(ws, doc_id), "utf-8")
     text = index_markdown(ws, folder)
     (base / "INDEX.md").write_text(text, "utf-8")
     return text
@@ -925,7 +1156,7 @@ def _regroup(
     return groups if at == len(stream) else None
 
 
-def apply_markdown(ws: Workspace, doc_id: str, text: str, learn: str | None = None) -> dict:
+def apply_markdown(ws: Workspace, doc_id: str, text: str) -> dict:
     """Take a freely edited copy of the document's markdown and record the
     difference as edits — one undo step.
 
@@ -974,9 +1205,7 @@ def apply_markdown(ws: Workspace, doc_id: str, text: str, learn: str | None = No
         "inserted": 0,
         "updated": 0,
         "removed": 0,
-        "learned": 0,
     }
-    decisions: list[tuple[str, dict]] = []  # what to learn from, once, at the end
 
     def anchor_before(i: int) -> tuple[int, str | None]:
         """(page, block id) of the last block line at or before old index i-1."""
@@ -1002,7 +1231,6 @@ def apply_markdown(ws: Workspace, doc_id: str, text: str, learn: str | None = No
             report["removed"] += 1
         elif not b.get("hidden"):
             E.set_block(edits, block_id, hidden=True)
-            decisions.append((block_id, {"hidden": True}))
             report["hidden"] += 1
 
     def regroup(old_idx: list[int], wrote: list[str]) -> bool:
@@ -1046,7 +1274,6 @@ def apply_markdown(ws: Workspace, doc_id: str, text: str, learn: str | None = No
             fields = {k2: shape[k2] for k2 in _SHAPE if shape[k2] != natural[leader].get(k2)}
             if fields:
                 E.set_block(edits, leader, **fields)
-                decisions.append((leader, fields))
                 report["shaped"] += 1
         if cuts or joined:
             report["regrouped"] += len(groups)
@@ -1091,7 +1318,6 @@ def apply_markdown(ws: Workspace, doc_id: str, text: str, learn: str | None = No
                     }
                     if fields:
                         E.set_block(edits, bid, **fields)
-                        decisions.append((bid, fields))
                         report["shaped"] += 1
                 else:
                     hide(bid)
@@ -1103,8 +1329,6 @@ def apply_markdown(ws: Workspace, doc_id: str, text: str, learn: str | None = No
             hide(old_lines[i]["block"])
         add_insert(i2, new_seg)
 
-    if learn is not None and decisions:
-        report["learned"] = len(_learn(ws, doc_id, learn, decisions, edits))
     E.save(path, edits)
     write_markdown(ws, doc_id)
     return report

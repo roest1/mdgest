@@ -244,10 +244,15 @@ def page_markdown(page: dict, blocks: list[dict], assets_prefix: str = "") -> li
             {"text": text, "block": blk["id"] if blk else None, "n": blk["n"] if blk else None}
         )
 
-    def rule() -> None:
+    def rule(starts: str = "") -> None:
+        """The `---` a break writes. `starts` names the block a file break
+        begins a new part at, so `parts` can slice what it already emitted
+        instead of resolving the block list a second time."""
         if out and out[-1]["text"] != "":
             put("", None)
         put("---", None)
+        if starts:
+            out[-1]["starts_part"] = starts
         put("", None)
 
     def emit_one(blk: dict) -> None:
@@ -307,11 +312,14 @@ def page_markdown(page: dict, blocks: list[dict], assets_prefix: str = "") -> li
 
     for blk in blocks:
         if blk.get("break_before"):
-            rule()
+            rule(blk["id"] if blk["break_before"] == "file" else "")
             prev_list = False
         emit_one(blk)
         if blk.get("break_after"):
-            rule()
+            # A break after this block starts the part at whatever follows,
+            # which this loop has not reached; the block that closed the last
+            # part names it instead, and is as stable a key as the other side.
+            rule(f"{blk['id']}>" if blk["break_after"] == "file" else "")
             prev_list = False
     return out
 
@@ -358,6 +366,41 @@ def document_markdown(analysis: dict, edits: dict, assets_prefix: str = "") -> d
         lines.pop()
     text = "\n".join(l["text"] for l in lines) + "\n"
     return {"markdown": text, "lines": lines, "pages": pages}
+
+
+def parts(doc: dict) -> list[dict]:
+    """The document as the markdown files it is written to, in order.
+
+    One part unless a break was set to `file`. The `---` a file break writes is
+    the boundary and belongs to neither side, so it is dropped here while the
+    `---` of an ordinary page break is kept -- the pane shows one continuous
+    document either way, and only what is written to disk differs.
+
+    Naming stays out: this module knows nothing of the workspace, and a part's
+    name is a decision `ops` freezes into `edits.json` rather than something
+    recomputed from the text on every write.
+    """
+    out: list[dict] = []
+    current: list[dict] = []
+    key = ""
+    for line in doc["lines"]:
+        starts = line.get("starts_part")
+        if starts:
+            out.append({"key": key, "lines": current})
+            current, key = [], starts
+            continue
+        current.append(line)
+    out.append({"key": key, "lines": current})
+    for part in out:
+        while part["lines"] and part["lines"][0]["text"] == "":
+            part["lines"].pop(0)
+        while part["lines"] and part["lines"][-1]["text"] == "":
+            part["lines"].pop()
+        part["markdown"] = "\n".join(l["text"] for l in part["lines"]) + "\n"
+        heads = (HEADING_RE.match(l["text"]) for l in part["lines"])
+        head = next((m for m in heads if m), None)
+        part["heading"] = head.group(2).strip() if head else ""
+    return out
 
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")

@@ -16,6 +16,12 @@ from pathlib import Path
 VERSION = 1
 UNDO_DEPTH = 100
 BLOCK_FIELDS = ("role", "level", "depth", "bold", "italic", "hidden", "break_before", "break_after")
+#: What a break is worth. `page` writes `---` and keeps one file; `file` writes
+#: `---` too and starts a new markdown file there. Stored as a string rather
+#: than a second boolean field because a file break is a page break that also
+#: cuts -- two booleans would admit `file and not page`, which means nothing.
+#: A `True` written before this field carried values reads as `page`.
+BREAKS = ("page", "file")
 
 
 def blank() -> dict:
@@ -31,6 +37,13 @@ def blank() -> dict:
         # may do to a block's words, and `fidelity` depends on it: no text
         # field means no word can enter that is not on the page.
         "cuts": {},
+        # Where a file break starts a part, to the name that part's file
+        # carries: block id -> name, and "" for the part before the first
+        # break. Seeded from the part's first heading the first time it is
+        # written and not touched again, so retitling a heading later does not
+        # rename a file or dangle the citations already written against it.
+        "parts": {},
+        "complete": False,  # a person has said this document is done (see ops.set_complete)
         "base": None,  # the saved version this working copy continues from (None = the original)
         "undo": [],  # previous states (without their own undo stacks)
         "redo": [],
@@ -53,7 +66,7 @@ def save(path: Path, edits: dict) -> None:
     tmp.replace(path)
 
 
-CONTENT_KEYS = ("blocks", "order", "inserts", "joins", "cuts")
+CONTENT_KEYS = ("blocks", "order", "inserts", "joins", "cuts", "parts")
 
 
 def content(edits: dict) -> dict:
@@ -105,6 +118,10 @@ def set_block(edits: dict, block_id: str, **fields) -> dict:
     for k, v in fields.items():
         if k not in BLOCK_FIELDS:
             raise ValueError(f"unknown block field {k!r}")
+        if k in ("break_before", "break_after") and v is not None:
+            v = "page" if v is True else v
+            if v not in BREAKS:
+                raise ValueError(f"{k} must be one of {BREAKS}")
         if v is None:
             entry.pop(k, None)
         else:
@@ -171,6 +188,12 @@ def set_cuts(edits: dict, block_id: str, at: list[int]) -> list[int]:
     return at
 
 
+def set_part_name(edits: dict, at: str, name: str) -> str:
+    """Name the part that starts at a block (`""` for the first one)."""
+    edits["parts"][at] = name
+    return name
+
+
 def summary(edits: dict) -> dict:
     return {
         "blocks": len(edits["blocks"]),
@@ -178,6 +201,8 @@ def summary(edits: dict) -> dict:
         "inserts": len(edits["inserts"]),
         "joins": len(edits["joins"]),
         "cuts": len(edits["cuts"]),
+        "parts": len(edits["parts"]),
+        "complete": bool(edits.get("complete")),
         "undo": len(edits["undo"]),
         "redo": len(edits["redo"]),
     }

@@ -3,16 +3,19 @@ same shape starts ahead.
 
 A **rule** is keyed by how a block is *set on the page* — font size, weight,
 face, the kind of marker in front of it, how far in it sits — never by its
-words, so it carries from `arms.pdf` to `legs.pdf`. Its value is the shape
-you gave such blocks (role, heading level, depth, bold, italic). A **hide
-rule** is the one exception: it is keyed by the block's normalized text
-(digits wildcarded), because a running footer *is* its words.
+words, so it carries from `arms.pdf` to `legs.pdf`. Its value is the shape you
+gave such blocks: role, heading level, depth, bold, italic, and where a break
+falls, so "split at every section banner" carries the way a heading level does.
+A **hide rule** is the one exception: it is keyed by the block's normalized
+text (digits wildcarded), because a running footer *is* its words.
 
-Rules live in `.mdgest/<folder>/rules.json` and apply to every document in
-that folder and below. Where two folders on the path both have an opinion,
-the deeper one wins — body-regions over results-review over the workspace.
-Rules are defaults: they shape `analysis.json` when a document is (re)read;
-a person's `edits.json` always sits on top.
+Rules live in `.mdgest/<folder>/rules.json` and apply to that folder and
+below, the deeper folder winning. They are defaults: they shape
+`analysis.json` when a document is (re)read, and `edits.json` sits on top.
+
+Only a document marked done writes here (`ops.set_complete`): a rule learned
+mid-edit reached documents nobody had opened, on a decision its own author had
+not finished making.
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ from pathlib import Path, PurePosixPath
 from . import pagenums
 from .structure import ROLES
 
-SHAPE_FIELDS = ("role", "level", "depth", "bold", "italic")
+SHAPE_FIELDS = ("role", "level", "depth", "bold", "italic", "break_before", "break_after")
 
 
 _SPACES = re.compile(r"\s+")

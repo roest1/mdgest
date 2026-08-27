@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { api } from "./api";
 import { numbering } from "./lib/order";
-import type { Block, DocView, Job, TreeNode } from "./types";
+import type { Block, CompletionCheck, DocView, Job, TreeNode } from "./types";
 
 /** Just the modifier keys — a React event, a native one, or a remembered copy. */
 export type Mods = { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean };
@@ -60,9 +60,8 @@ interface State {
   scrollRequest: { target: string; side: "pdf" | "md" | "both"; nonce: number } | null;
   scrollTo: (blockId: string, side?: "pdf" | "md" | "both") => void;
 
-  // learning: which folder on the document's path records decisions (null = off)
-  learnScope: string | null;
-  setLearnScope: (f: string | null) => void;
+  // done: the act that promotes this document's edits to folder rules
+  setComplete: (complete: boolean, folder?: string | null) => Promise<CompletionCheck[]>;
 
   // versions
   saveVersion: (name: string) => Promise<void>;
@@ -147,7 +146,6 @@ export const useStore = create<State>((set, get) => ({
       activeDoc: id,
       selection: null,
       selected: [],
-      learnScope: id.includes("/") ? id.slice(0, id.lastIndexOf("/")) : "",
     });
     await get().refreshDoc(id, true);
   },
@@ -164,7 +162,7 @@ export const useStore = create<State>((set, get) => ({
       selected: [],
     });
   },
-  setActive: (id) => set({ activeDoc: id, selection: null, selected: [], learnScope: id.includes("/") ? id.slice(0, id.lastIndexOf("/")) : "" }),
+  setActive: (id) => set({ activeDoc: id, selection: null, selected: [] }),
   refreshDoc: async (id, withLines = false) => {
     try {
       const prev = get().docs[id];
@@ -251,8 +249,31 @@ export const useStore = create<State>((set, get) => ({
   scrollRequest: null,
   scrollTo: (target, side = "both") => set({ scrollRequest: { target, side, nonce: Date.now() } }),
 
-  learnScope: null,
-  setLearnScope: (f) => set({ learnScope: f }),
+  setComplete: async (complete, folder) => {
+    const id = get().activeDoc;
+    if (!id) return [];
+    set({ busy: true });
+    try {
+      const r = await api.setComplete(id, complete, folder);
+      await get().refreshDoc(id, false);
+      get().loadTree();
+      if (!complete) {
+        get().toast("no longer marked done", "info");
+      } else {
+        const learned = r.learned.length;
+        get().toast(
+          learned ? `done — ${learned} rule(s) into ${r.folder || "the workspace"}` : "done",
+          "success",
+        );
+      }
+      return r.checks;
+    } catch (e) {
+      get().toast((e as Error).message, "error");
+      return [];
+    } finally {
+      set({ busy: false });
+    }
+  },
 
   saveVersion: async (name) =>
     mutate(get, set, async (id) => {
@@ -274,9 +295,9 @@ export const useStore = create<State>((set, get) => ({
 
   busy: false,
   patchBlock: async (block, fields) =>
-    mutate(get, set, (id) => api.patchBlock(id, block, withLearn(get(), fields))),
+    mutate(get, set, (id) => api.patchBlock(id, block, fields)),
   patchBlocks: async (blocks, fields) =>
-    mutate(get, set, (id) => api.patchBlocks(id, blocks, withLearn(get(), fields))),
+    mutate(get, set, (id) => api.patchBlocks(id, blocks, fields)),
   resetBlock: async (block) => mutate(get, set, (id) => api.resetBlock(id, block)),
   moveBlock: async (block, body) =>
     mutate(get, set, async (id) => {
@@ -328,7 +349,7 @@ export const useStore = create<State>((set, get) => ({
   insertText: async (page, after, text) => mutate(get, set, (id) => api.insert(id, page, after, text)),
   applyMarkdown: async (text) =>
     mutate(get, set, async (id) => {
-      const r = await api.putMarkdown(id, text, get().learnScope);
+      const r = await api.putMarkdown(id, text);
       const parts = [
         r.shaped && `${r.shaped} reshaped`,
         r.regrouped && `${r.regrouped} regrouped`,
@@ -336,7 +357,6 @@ export const useStore = create<State>((set, get) => ({
         r.inserted && `${r.inserted} inserted`,
         r.updated && `${r.updated} updated`,
         r.removed && `${r.removed} removed`,
-        r.learned && `${r.learned} learned`,
       ].filter(Boolean);
       get().toast(parts.length ? `applied — ${parts.join(", ")}` : "no changes", parts.length ? "success" : "info");
     }),
@@ -362,10 +382,6 @@ export const useStore = create<State>((set, get) => ({
   },
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 }));
-
-function withLearn(s: State, fields: Record<string, unknown>): Record<string, unknown> {
-  return s.learnScope === null ? fields : { ...fields, learn: s.learnScope };
-}
 
 async function mutate(
   get: () => State,

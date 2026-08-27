@@ -126,10 +126,53 @@ def ls(folder: str = typer.Argument(""), as_json: bool = typer.Option(False, "--
                 flags.append("unanalyzed")
             if d["edited"]:
                 flags.append("edited")
+            if d["complete"]:
+                flags.append("done")
+            if d["parts"]:
+                flags.append(f"{len(d['parts'])} parts")
             typer.echo(f"{indent}{d['name']}.pdf  {' '.join(flags)}")
 
     typer.echo(f"{ws.root}")
     walk(tree)
+
+
+@app.command()
+def done(
+    doc: str,
+    undo: bool = typer.Option(False, "--undo", help="take the mark off; the rules it taught stay"),
+    folder: str | None = typer.Option(None, "--learn-into", help="which folder records the rules"),
+):
+    """Mark a document done: run its checks and promote its edits to folder rules."""
+    result = ops.set_complete(_ws(), doc, complete=not undo, folder=folder)
+    if undo:
+        typer.echo(f"{doc}: no longer marked done")
+        return
+    for check in result["checks"]:
+        typer.echo(f"  {'ok  ' if check['level'] == 'ok' else 'warn'}  {check['name']}: {check['message']}")
+    shapes = sum(1 for entry in result["learned"] if entry.get("shape"))
+    hides = sum(1 for entry in result["learned"] if (entry.get("hide") or {}).get("key"))
+    typer.echo(
+        f"{doc}: done — {shapes} shape rule(s), {hides} hide rule(s) into "
+        f"{result['folder'] or '<root>'}"
+    )
+
+
+@app.command()
+def export(
+    dest: str = typer.Argument(..., help="a directory, or a .zip to write"),
+    folder: str = typer.Option("", "--from", help="limit to a folder of the workspace"),
+    all_docs: bool = typer.Option(False, "--all", help="include documents not marked done"),
+):
+    """Copy converted markdown out of the workspace, its folders intact."""
+    ws = _ws()
+    entries = ops.export_tree(ws, folder)
+    chosen = [e["doc"] for e in entries if all_docs or e["complete"]]
+    if not chosen:
+        typer.echo("nothing to export: no document there is marked done (--all overrides).")
+        raise typer.Exit(1)
+    target = Path(dest).expanduser()
+    result = ops.export(ws, chosen, target, as_zip=target.suffix.lower() == ".zip")
+    typer.echo(f"{result['documents']} document(s), {result['files']} file(s) -> {result['dest']}")
 
 
 @app.command()

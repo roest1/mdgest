@@ -30,6 +30,12 @@ export async function saveTextFile(suggestedName: string, contents: string): Pro
   return true;
 }
 
+/** Where to write an export: a directory, or a .zip file to create. */
+export async function pickExportTarget(asZip: boolean, suggested: string): Promise<string | null> {
+  if (!asZip) return pickFolder();
+  return save({ defaultPath: `${suggested}.zip`, filters: [{ name: "Zip", extensions: ["zip"] }] });
+}
+
 /** Links in rendered markdown leave through the system browser. */
 export function openExternal(url: string): Promise<void> {
   return invoke("open_external", { url });

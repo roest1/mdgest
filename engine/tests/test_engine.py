@@ -296,8 +296,9 @@ def test_editing_the_text_teaches_what_the_shape_bar_teaches(ws):
     # the bold run-in label reads as an H3; say it is a paragraph, in the text
     i = next(i for i, l in enumerate(lines) if l.startswith("### Key Points"))
     lines[i] = lines[i].replace("### ", "")
-    r = ops.apply_markdown(ws, a, "\n".join(lines), learn="acme/widgets")
-    assert r["shaped"] == 1 and r["learned"] == 1
+    r = ops.apply_markdown(ws, a, "\n".join(lines))
+    assert r["shaped"] == 1
+    assert len(ops.set_complete(ws, a, folder="acme/widgets")["learned"]) == 1
 
     b = ws.add_pdf(LEGS.read_bytes(), "doc-b.pdf", "acme/widgets")
     ops.analyze(ws, b)
@@ -369,11 +370,13 @@ def test_rules_carry_to_the_next_document(ws):
     # ordinary paragraphs, and learn that for everything under widgets/
     target = next(b for b in v["pages"][0]["blocks"] if b["text"].startswith("Key Points"))
     assert target["role"] == "heading"
-    r = ops.set_block(ws, a, target["id"], learn="acme/manuals/widgets", role="para")
-    assert r["learned"][0]["shape"]["fields"]["role"] == "para"
-    # and hide the copyright footer, learned at the client level
+    ops.set_block(ws, a, target["id"], role="para")
+    # and hide the copyright footer, learned at the client level — a scope the
+    # evidence is shown for, which is a different act from finishing a document
     foot = next(b for b in v["pages"][0]["blocks"] if "Copyright" in b["text"])
-    ops.set_block(ws, a, foot["id"], learn="acme", hidden=True)
+    ops.hide(ws, a, foot["id"], scope="folder", folder="acme")
+    r = ops.set_complete(ws, a, folder="acme/manuals/widgets")
+    assert r["learned"][0]["shape"]["fields"]["role"] == "para"
 
     b = ws.add_pdf(LEGS.read_bytes(), "doc-b.pdf", "acme/manuals/widgets")
     applied = ops.analyze(ws, b)

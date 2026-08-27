@@ -6,6 +6,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  Package,
   Loader2,
   MoreHorizontal,
   Pencil,
@@ -17,6 +18,7 @@ import { api } from "../api";
 import { useStore } from "../store";
 import type { DocSummary, TreeNode } from "../types";
 import { DropZone } from "./DropZone";
+import { ExportPanel } from "./ExportPanel";
 import { Modal } from "./Modal";
 
 const DRAG_DOC = "application/x-mdgest-doc";
@@ -33,6 +35,7 @@ export function Explorer() {
   const toast = useStore((s) => s.toast);
   const [expanded, setExpanded] = useState<Set<string>>(new Set([""]));
   const [newFolderIn, setNewFolderIn] = useState<string | null>(null);
+  const [exportFrom, setExportFrom] = useState<string | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
   const [rename, setRename] = useState<{ path: string; kind: "doc" | "folder"; name: string } | null>(null);
   const [indexPreview, setIndexPreview] = useState<{ folder: string; text: string } | null>(null);
@@ -228,14 +231,15 @@ export function Explorer() {
           working ? (
             <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />
           ) : (
-            <FileText className={`w-3.5 h-3.5 ${failed ? "text-red-400" : d.edited ? "text-blue-300" : "text-muted"}`} />
+            <FileText className={`w-3.5 h-3.5 ${failed ? "text-red-400" : d.complete ? "text-emerald-300" : d.edited ? "text-blue-300" : "text-muted"}`} />
           )
         }
         label={d.name + ".pdf"}
         badge={
           <span className="text-[11px] text-faint font-mono">
             {failed ? "error" : working ? job.status : d.pages != null ? `${d.pages}p` : ""}
-            {d.edited ? " ·" : ""}
+            {d.parts.length > 1 ? ` ·${d.parts.length}md` : ""}
+            {d.complete ? " ✓" : d.edited ? " ·" : ""}
           </span>
         }
         menu={[
@@ -265,6 +269,9 @@ export function Explorer() {
       <div className="flex items-center justify-between px-3 py-2 border-b border-edge/60">
         <span className="text-xs uppercase tracking-wider text-faint font-medium">Explorer</span>
         <div className="flex items-center gap-1">
+          <button className="p-1 rounded hover:bg-raised text-muted" title="Export markdown out of the workspace" onClick={() => setExportFrom(selectedFolder)}>
+            <Package className="w-3.5 h-3.5" />
+          </button>
           <button className="p-1 rounded hover:bg-raised text-muted" title="New folder in selected" onClick={() => setNewFolderIn(selectedFolder)}>
             <FolderPlus className="w-3.5 h-3.5" />
           </button>
@@ -277,6 +284,8 @@ export function Explorer() {
       <div className="p-2 border-t border-edge/60">
         <DropZone compact folder={selectedFolder} onFiles={(files) => upload(files, selectedFolder)} />
       </div>
+
+      {exportFrom !== null && <ExportPanel folder={exportFrom} onClose={() => setExportFrom(null)} />}
 
       {newFolderIn !== null && (
         <Modal title={`New folder in ${newFolderIn || "/"}`} onClose={() => setNewFolderIn(null)} width="max-w-sm">

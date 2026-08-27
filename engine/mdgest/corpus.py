@@ -1,8 +1,12 @@
-"""A corpus index over a folder of converted markdown.
+"""How does an agent find the passage it needs without reading the corpus?
 
-The index is itself markdown: per document, its title, page count and heading
-outline with GitHub-style anchors, plus the first line under each top section
-taken verbatim — nothing here writes prose.
+Two indexes, because a long document parsed into a dozen files is a corpus of
+its own. A **folder index** lists documents; a **document index** lists the
+parts one PDF was split into. An agent reads one small file, then one more,
+then the passage — rather than every heading in the folder to find one section.
+
+Both are markdown, and neither writes prose: a title, a page count, a heading
+outline with anchors, and the first line under each section taken verbatim.
 
 mdgest owns one half of the citation contract: every emitted heading gets a
 stable, unique anchor, and a citable id is the document's folder-relative path
@@ -60,52 +64,130 @@ def outline(md: str) -> list[dict]:
     return out
 
 
-def index_entries(ws: Workspace, folder: str) -> list[dict]:
+def title_of(md: str, fallback: str) -> str:
+    """The name a file goes into an index under.
+
+    Any heading, not only an H1. A part cut out of the middle of a document has
+    no H1 -- the document's title went to the first part -- and titling it by
+    its filename put `03-required-parts` in front of an agent choosing what to
+    read, which is the one job an index has.
+    """
+    heads = outline(md)
+    return heads[0]["text"] if heads else fallback
+
+
+def _part(ws: Workspace, path: Path, link: str, doc_id: str) -> dict:
+    text = path.read_text("utf-8")
+    return {
+        "rel": link,
+        "file": path.name,
+        "id": f"{doc_id}/{path.stem}",
+        "title": title_of(text, path.stem),
+        "words": len(text.split()),
+        "outline": outline(text),
+    }
+
+
+def index_entries(ws: Workspace, folder: str = "") -> list[dict]:
+    """One entry per document — never one per file.
+
+    A document is what a person converted and what they cite; the files are how
+    it came out. Walking `*.md` instead counted a course split into six parts as
+    six documents sitting beside the module next to it.
+    """
     base = ws.markdown / folder if folder else ws.markdown
     entries = []
-    for md_path in sorted(base.rglob("*.md")):
-        if md_path.name == "INDEX.md":
+    for doc_id in ws.docs(folder):
+        paths = ws.md_paths(doc_id)
+        if not paths:
             continue
-        rel = md_path.relative_to(base).with_suffix("")
-        doc_id = str(PurePosixPath(folder) / rel.as_posix()) if folder else rel.as_posix()
-        text = md_path.read_text("utf-8")
-        pages = text.count("\n---\n") + 1
-        words = len(text.split())
+        rel = PurePosixPath(doc_id).relative_to(folder) if folder else PurePosixPath(doc_id)
+        parts = [
+            _part(ws, p, p.relative_to(base).as_posix(), doc_id) for p in paths
+        ]
+        split = ws.md_dir(doc_id).is_dir()
         entries.append(
             {
                 "doc": doc_id,
                 "rel": rel.as_posix(),
-                "title": next(
-                    (h["text"] for h in outline(text) if h["level"] == 1), Path(doc_id).name
-                ),
-                "pages": pages,
-                "words": words,
-                "outline": outline(text),
+                "title": parts[0]["title"],
+                "split": split,
+                "index": f"{rel.as_posix()}/INDEX.md" if split else None,
+                "parts": parts,
+                "words": sum(p["words"] for p in parts),
             }
         )
     return entries
 
 
-def index_markdown(ws: Workspace, folder: str) -> str:
+def index_markdown(ws: Workspace, folder: str = "") -> str:
+    """The folder index: what documents are here, and where to look next.
+
+    A split document is one entry pointing at its own index rather than a dozen
+    inlined outlines. Twelve modules of twelve sections is 144 headings flat and
+    twelve lines here, and an agent that has to read all 144 to choose one is
+    doing the thing the index exists to prevent.
+    """
     entries = index_entries(ws, folder)
     name = folder or "workspace"
+    files = sum(len(e["parts"]) for e in entries)
     lines = [
         f"# Index — {name}",
         "",
-        f"{len(entries)} documents. Cite as `[[doc:{name}/<path>#<anchor>]]`.",
+        f"{len(entries)} documents in {files} files. Cite as `[[doc:<path>#<anchor>]]`,"
+        " where the path is what is printed below.",
         "",
     ]
     for e in entries:
         lines.append(f"## {e['title']}")
         lines.append("")
-        lines.append(
-            f"- doc: `{e['rel']}` · {e['pages']} pages · {e['words']} words · [open]({e['rel']}.md)"
-        )
-        for h in e["outline"]:
+        if e["split"]:
+            lines.append(
+                f"- {len(e['parts'])} parts · {e['words']} words ·"
+                f" [contents]({e['index']})"
+            )
+            for n, part in enumerate(e["parts"], 1):
+                lines.append(f"  {n}. [{part['title']}]({part['rel']}) — `{part['rel'][:-3]}`")
+        else:
+            part = e["parts"][0]
+            lines.append(f"- doc: `{e['rel']}` · {part['words']} words · [open]({part['rel']})")
+            for h in part["outline"]:
+                if h["level"] == 1:
+                    continue
+                indent = "  " * (h["level"] - 1)
+                lead = f" — {h['lead']}" if h["lead"] else ""
+                lines.append(f"{indent}- [{h['text']}]({part['rel']}#{h['anchor']}){lead}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def document_index(ws: Workspace, doc_id: str) -> str:
+    """The document index: the table of contents for one PDF's parse.
+
+    Written beside the parts, so the folder it lives in explains itself without
+    anything outside it. Links are relative to that folder; the ids are
+    workspace-relative, because which prefix a citation carries depends on which
+    folder was indexed and only the full path is true either way.
+    """
+    paths = ws.md_paths(doc_id)
+    parts = [_part(ws, p, p.name, doc_id) for p in paths]
+    name = Path(doc_id).name
+    lines = [
+        f"# {parts[0]['title'] if parts else name} — contents",
+        "",
+        f"`{name}.pdf` in {len(parts)} parts, {sum(p['words'] for p in parts)} words,"
+        " in reading order. Cite a section as `[[doc:<id>#<anchor>]]`.",
+        "",
+    ]
+    for n, part in enumerate(parts, 1):
+        lines.append(f"## {n}. {part['title']}")
+        lines.append("")
+        lines.append(f"- [{part['file']}]({part['rel']}) · {part['words']} words · `{part['id']}`")
+        for h in part["outline"]:
             if h["level"] == 1:
-                continue
-            indent = "  " * (h["level"] - 1)
+                continue  # the document's own title, already this part's name
+            indent = "  " * max(0, h["level"] - 1)
             lead = f" — {h['lead']}" if h["lead"] else ""
-            lines.append(f"{indent}- [{h['text']}]({e['rel']}.md#{h['anchor']}){lead}")
+            lines.append(f"{indent}- [{h['text']}]({part['rel']}#{h['anchor']}){lead}")
         lines.append("")
     return "\n".join(lines)

@@ -117,14 +117,16 @@ def test_an_unknown_scope_is_refused(ws):
         ops.hide(ws, a, _block(ws, a, "Copyright"), scope="everywhere")
 
 
-# ---- the existing --learn path, which the web UI drives ----------------------
+# ---- the same evidence, weighed when the document is marked done -------------
 
 
-def test_learning_a_hide_on_margin_furniture_still_generalizes(ws):
+def test_marking_done_generalizes_a_hide_on_margin_furniture(ws):
     """The workflow that must keep working: hide the footer on the first
-    document in a folder and every later one arrives with it gone."""
+    document in a folder, say that document is done, and every later one
+    arrives with it gone."""
     a, b = _corpus(ws)
-    result = ops.set_block(ws, a, _block(ws, a, "Copyright"), hidden=True, learn="manuals")
+    ops.set_block(ws, a, _block(ws, a, "Copyright"), hidden=True)
+    result = ops.set_complete(ws, a, folder="manuals")
     assert result["learned"][0]["hide"]["key"]
     assert not result["learned"][0]["hide"].get("declined")
 
@@ -132,12 +134,23 @@ def test_learning_a_hide_on_margin_furniture_still_generalizes(ws):
     assert "Copyright" not in ws.md_path(b).read_text()
 
 
-def test_learning_a_hide_on_body_wording_declines_the_generalization(ws):
-    """The bug. The block the person clicked is still hidden — what is
-    declined is letting it reach documents they have not looked at."""
+def test_an_unfinished_document_teaches_nothing(ws):
+    """The reason learning waits for done. A heading level tried and abandoned
+    used to reach every document in the folder before the person who typed it
+    had decided they meant it."""
     a, b = _corpus(ws)
-    result = ops.set_block(ws, a, _block(ws, a, "Key Points"), hidden=True, learn="manuals")
-    hide = result["learned"][0]["hide"]
+    ops.set_block(ws, a, _block(ws, a, "Copyright"), hidden=True)
+    ops.analyze(ws, b, force=True)
+    assert "Copyright" in ws.md_path(b).read_text()
+    assert not any(h["key"] for r in ops.list_rules(ws, a) for h in r["hide"])
+
+
+def test_marking_done_declines_to_generalize_body_wording(ws):
+    """The block the person hid is still hidden — what is declined is letting
+    it reach documents they have not looked at."""
+    a, b = _corpus(ws)
+    ops.set_block(ws, a, _block(ws, a, "Key Points"), hidden=True)
+    hide = ops.set_complete(ws, a, folder="manuals")["learned"][0]["hide"]
     assert hide["declined"] is True
     assert hide["scope"] == "document"
     assert "section heading" in hide["why"]
@@ -148,13 +161,16 @@ def test_learning_a_hide_on_body_wording_declines_the_generalization(ws):
     assert ws.md_path(a).read_text().count("Key Points") == 1  # the clicked one still went
 
 
-def test_unhiding_is_never_declined(ws):
-    """Narrowing a decision is always safe; only widening one needs evidence."""
+def test_unhiding_at_the_folder_takes_the_rule_back(ws):
+    """Narrowing a decision is always safe; only widening one needs evidence.
+    Once a rule exists, unhiding through the scoped path removes it — an
+    override cleared on the document says nothing about the folder."""
     a, _ = _corpus(ws)
     block = _block(ws, a, "Copyright")
-    ops.set_block(ws, a, block, hidden=True, learn="manuals")
-    result = ops.set_block(ws, a, block, hidden=False, learn="manuals")
-    assert result["learned"][0]["hide"].get("removed") is True
+    ops.hide(ws, a, block, scope="folder")
+    assert any(h["key"] for r in ops.list_rules(ws, a) for h in r["hide"])
+    ops.hide(ws, a, block, scope="folder", hidden=False)
+    assert not any(h["key"] for r in ops.list_rules(ws, a) for h in r["hide"])
 
 
 # ---- the index itself --------------------------------------------------------

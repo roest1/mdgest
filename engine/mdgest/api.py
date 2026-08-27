@@ -194,6 +194,25 @@ def create_app(workspace: Path | None = None) -> FastAPI:
         doc_id = ws.check_doc(doc_id)
         return FileResponse(ws.source_path(doc_id), media_type="application/pdf")
 
+    @app.get("/api/docs/{doc_id:path}/checks")
+    def get_checks(doc_id: str):
+        try:
+            return {"checks": ops.completion_checks(ws, doc_id)}
+        except FileNotFoundError as exc:
+            fail(exc, 404)
+        except Exception as exc:
+            fail(exc)
+
+    @app.get("/api/docs/{doc_id:path}/versions")
+    def get_versions(doc_id: str):
+        return edit(lambda: ops.list_versions(ws, doc_id))
+
+    # Every GET under /api/docs whose suffix this one would otherwise swallow
+    # has to sit above it: `{doc_id:path}` is greedy and FastAPI matches in
+    # registration order, so a route registered later reads its own suffix as
+    # part of the id and 404s -- which is what `/versions` did until now,
+    # unnoticed because `view` carries the versions with the document anyway.
+    # New GETs go above this line.
     @app.get("/api/docs/{doc_id:path}")
     def get_doc(doc_id: str, lines: bool = True):
         try:
@@ -244,9 +263,8 @@ def create_app(workspace: Path | None = None) -> FastAPI:
 
     @app.patch("/api/docs/{doc_id:path}/blocks/{block_id}")
     def patch_block(doc_id: str, block_id: str, payload: dict = Body(...)):
-        learn = payload.pop("learn", None)  # folder to record the decision in, or absent
         blocks = payload.pop("blocks", None) or block_id  # a group is one edit, so one undo
-        return edit(lambda: ops.set_block(ws, doc_id, blocks, learn=learn, **payload))
+        return edit(lambda: ops.set_block(ws, doc_id, blocks, **payload))
 
     # ---- rules & versions ------------------------------------------------
 
@@ -267,10 +285,6 @@ def create_app(workspace: Path | None = None) -> FastAPI:
     @app.post("/api/docs/{doc_id:path}/apply-rules")
     def apply_rules(doc_id: str):
         return edit(lambda: ops.apply_rules(ws, doc_id))
-
-    @app.get("/api/docs/{doc_id:path}/versions")
-    def get_versions(doc_id: str):
-        return edit(lambda: ops.list_versions(ws, doc_id))
 
     @app.post("/api/docs/{doc_id:path}/versions")
     def post_version(doc_id: str, payload: dict = Body(...)):
@@ -348,11 +362,7 @@ def create_app(workspace: Path | None = None) -> FastAPI:
     @app.put("/api/docs/{doc_id:path}/markdown")
     def put_markdown(doc_id: str, payload: dict = Body(...)):
         """A freely edited markdown; the difference becomes edits (one undo step)."""
-        return edit(
-            lambda: ops.apply_markdown(
-                ws, doc_id, payload.get("text", ""), learn=payload.get("learn")
-            )
-        )
+        return edit(lambda: ops.apply_markdown(ws, doc_id, payload.get("text", "")))
 
     @app.post("/api/docs/{doc_id:path}/undo")
     def undo(doc_id: str):
@@ -365,6 +375,56 @@ def create_app(workspace: Path | None = None) -> FastAPI:
     @app.post("/api/docs/{doc_id:path}/reset")
     def reset(doc_id: str):
         return edit(lambda: ops.reset_edits(ws, doc_id))
+
+    # ---- done, and getting the markdown out ------------------------------
+
+    @app.post("/api/docs/{doc_id:path}/complete")
+    def complete(doc_id: str, payload: dict = Body(default={})):
+        try:
+            return ops.set_complete(
+                ws,
+                doc_id,
+                bool(payload.get("complete", True)),
+                folder=payload.get("folder"),
+            )
+        except FileNotFoundError as exc:
+            fail(exc, 404)
+        except Exception as exc:
+            fail(exc)
+
+    @app.get("/api/export")
+    def export_list(folder: str = ""):
+        return {"documents": ops.export_tree(ws, folder)}
+
+    @app.post("/api/export")
+    def export(payload: dict = Body(...)):
+        """Copy the chosen documents' markdown to a path on this machine.
+
+        A path rather than a download because the engine is local to the person
+        asking and the shell's webview has no downloads: it picks the
+        destination natively and the engine writes there directly, which also
+        keeps a 200 MB corpus out of webview memory.
+
+        This is the first route that writes outside the workspace, and it will
+        write wherever it is told. Reading outside it already worked that way
+        (`/api/add-paths` walks the folder a person dropped), and the same thing
+        guards both: on the desktop every request carries the per-launch
+        MDGEST_TOKEN, so no other local process can drive the engine.
+        """
+        dest = (payload.get("dest") or "").strip()
+        if not dest:
+            fail(ValueError("where to export to is required"), 400)
+        try:
+            return ops.export(
+                ws,
+                payload.get("docs") or [],
+                Path(dest).expanduser(),
+                as_zip=bool(payload.get("zip")),
+            )
+        except FileNotFoundError as exc:
+            fail(exc, 404)
+        except Exception as exc:
+            fail(exc)
 
     # ---- corpus ---------------------------------------------------------
 

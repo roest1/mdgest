@@ -1,3 +1,5 @@
+export type Break = "page" | "file" | true | false | null | undefined;
+
 export type Role = "heading" | "para" | "bullet" | "numbered" | "alpha" | "roman" | "image" | "insert";
 
 export interface Block {
@@ -22,8 +24,10 @@ export interface Block {
   origin?: "page" | "person";
   joined?: string[];
   after?: string | null;
-  break_before?: boolean;
-  break_after?: boolean;
+  // "page" writes `---`; "file" writes it and starts a new markdown file there.
+  // `true` is what the field meant before it carried values, and reads as "page".
+  break_before?: Break;
+  break_after?: Break;
   font?: string;
   default_role?: Role;
   rule?: { folder: string; key: string; kind: "shape" | "hide" } | null;
@@ -91,6 +95,8 @@ export interface DocSummary {
   analyzed: boolean;
   edited: boolean;
   has_markdown: boolean;
+  complete: boolean;
+  parts: string[]; // the markdown files a split document wrote; empty when it is one file
 }
 
 export interface DocView {
@@ -100,11 +106,25 @@ export interface DocView {
   pages: Page[];
   markdown: string;
   md_lines: MdLine[];
-  edits: { blocks: number; pages_reordered: number; inserts: number; joins: number; cuts: number; undo: number; redo: number };
+  edits: { blocks: number; pages_reordered: number; inserts: number; joins: number; cuts: number; parts: number; complete: boolean; undo: number; redo: number };
   job?: Job | null;
   pending?: boolean;
   versions?: VersionsSummary;
   rules_applied?: number;
+}
+
+export interface CompletionCheck {
+  name: string;
+  level: "ok" | "warn";
+  message: string;
+}
+
+export interface ExportEntry {
+  doc: string;
+  folder: string;
+  complete: boolean;
+  files: string[];
+  words: number;
 }
 
 export interface Job {

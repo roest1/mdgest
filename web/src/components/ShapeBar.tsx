@@ -1,7 +1,8 @@
-import { ArrowDownToLine, ArrowUpToLine, Bold, CornerDownLeft, Eraser, IndentDecrease, IndentIncrease, Italic, ListOrdered, Merge, Scissors, SeparatorHorizontal, Stamp, Trash2, Undo2 } from "lucide-react";
+import { ArrowDownToLine, ArrowUpToLine, Bold, CornerDownLeft, Eraser, FileDown, FileUp, IndentDecrease, IndentIncrease, Italic, ListOrdered, Merge, Scissors, SeparatorHorizontal, Stamp, Trash2, Undo2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { findBlock, useStore } from "../store";
 import type { Role } from "../types";
+import { breakLabel, breakOf, nextBreak } from "../lib/breaks";
 import { ROLE_LABEL } from "../lib/roles";
 
 /**
@@ -116,11 +117,11 @@ export function ShapeBar() {
           </>
         )}
         <span className="w-px h-5 bg-edge mx-1 shrink-0" />
-        <Btn on={!!b.break_before} onClick={() => patchBlock(b.id, { break_before: !b.break_before })} title="Page break (---) before this block (<)">
-          <ArrowUpToLine className="w-3.5 h-3.5" />
+        <Btn on={!!breakOf(b.break_before)} onClick={() => patchBlock(b.id, { break_before: nextBreak(b.break_before) })} title={breakLabel(b.break_before, "before") + " (<)"}>
+          {breakOf(b.break_before) === "file" ? <FileUp className="w-3.5 h-3.5" /> : <ArrowUpToLine className="w-3.5 h-3.5" />}
         </Btn>
-        <Btn on={!!b.break_after} onClick={() => patchBlock(b.id, { break_after: !b.break_after })} title="Page break (---) after this block (>)">
-          <ArrowDownToLine className="w-3.5 h-3.5" />
+        <Btn on={!!breakOf(b.break_after)} onClick={() => patchBlock(b.id, { break_after: nextBreak(b.break_after) })} title={breakLabel(b.break_after, "after") + " (>)"}>
+          {breakOf(b.break_after) === "file" ? <FileDown className="w-3.5 h-3.5" /> : <ArrowDownToLine className="w-3.5 h-3.5" />}
         </Btn>
         <span className="w-px h-5 bg-edge mx-1 shrink-0" />
         <Btn on={!!b.hidden} onClick={() => patchBlock(b.id, { hidden: !b.hidden })} title={b.hidden ? "Restore (h)" : "Delete from the markdown — the page keeps it, struck through (h)"}>

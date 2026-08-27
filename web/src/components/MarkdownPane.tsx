@@ -1,10 +1,9 @@
-import { AlertTriangle, Check, Copy, Download, GripVertical, Pencil, PencilLine, Stamp, Trash2, Undo2, X } from "lucide-react";
+import { AlertTriangle, Check, CheckCheck, Copy, GripVertical, Pencil, PencilLine, Stamp, Trash2, Undo2, X } from "lucide-react";
 import { Modal } from "./Modal";
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../api";
-import { isDesktop, saveTextFile } from "../lib/desktop";
 import { badgeState, hitBlock, useBlockDrag, useDrag } from "../lib/drag";
 import { roleColor } from "../lib/roles";
 import { useStore } from "../store";
@@ -32,13 +31,12 @@ async function copyText(text: string): Promise<void> {
  * with its number in the gutter) and source (the markdown characters, with
  * the block number of each line in an nvim-style gutter).
  */
-export function MarkdownPane({ docId, view }: { docId: string; view: DocView }) {
+export function MarkdownPane({ docId, view, onMarkDone }: { docId: string; view: DocView; onMarkDone: () => void }) {
   const mdMode = useStore((s) => s.mdMode);
   const setMdMode = useStore((s) => s.setMdMode);
   const scrollRequest = useStore((s) => s.scrollRequest);
   const toast = useStore((s) => s.toast);
   const applyMarkdown = useStore((s) => s.applyMarkdown);
-  const learnScope = useStore((s) => s.learnScope);
   const busy = useStore((s) => s.busy);
   const ref = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
@@ -112,7 +110,6 @@ export function MarkdownPane({ docId, view }: { docId: string; view: DocView }) 
             </button>
             <span className="text-xs text-faint ml-1 hidden xl:inline truncate">
               same words, new markup → reshaped · removed line → deleted · new words → inserted as yours
-              {learnScope !== null && " · reshapes and deletions are learned"}
             </span>
           </>
         )}
@@ -134,26 +131,18 @@ export function MarkdownPane({ docId, view }: { docId: string; view: DocView }) 
         >
           {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
         </button>
-        {isDesktop ? (
-          // the webview has no download UI — save through the native dialog
-          <button
-            className="ghost"
-            title="Save .md"
-            onClick={async () => {
-              try {
-                if (await saveTextFile(`${view.doc.name}.md`, view.markdown)) toast("markdown saved", "success");
-              } catch (e) {
-                toast(`save failed: ${(e as Error).message}`, "error");
-              }
-            }}
-          >
-            <Download className="w-3.5 h-3.5" />
-          </button>
-        ) : (
-          <a className="ghost" href={api.markdownUrl(docId)} download={`${view.doc.name}.md`} title="Download .md">
-            <Download className="w-3.5 h-3.5" />
-          </a>
-        )}
+        <button
+          className={`btn btn-sm ${view.doc.complete ? "border-emerald-500/60 text-emerald-200" : ""}`}
+          onClick={onMarkDone}
+          title={
+            view.doc.complete
+              ? "This document is done; its decisions are rules for its folder"
+              : "Say this one is finished — its decisions become rules for the folder, and it is picked by default on export"
+          }
+        >
+          {view.doc.complete ? <CheckCheck className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+          {view.doc.complete ? "done" : "mark done"}
+        </button>
       </div>
       <div ref={ref} className="flex-1 overflow-auto font-sans" onDragStart={(e) => e.preventDefault()}>
         {editing ? (

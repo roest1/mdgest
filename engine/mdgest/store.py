@@ -5,6 +5,8 @@ them however they think (manuals/hydraulics/pumps/...).
     <workspace>/
       sources/<folder...>/<doc>.pdf          what was uploaded
       markdown/<folder...>/<doc>.md          the output, same tree
+                          /<doc>/NN-name.md  ...or a folder, when a file break split it
+                                 /INDEX.md   the table of contents for that parse
                           /<doc>.assets/     extracted figures
                           /<folder>/INDEX.md a corpus index over a folder (mdgest index)
       .mdgest/<folder...>/<doc>/analysis.json   regenerable
@@ -82,7 +84,29 @@ class Workspace:
         return self.sources / f"{doc_id}.pdf"
 
     def md_path(self, doc_id: str) -> Path:
+        """Where an unsplit document's markdown goes."""
         return self.markdown / f"{doc_id}.md"
+
+    def md_dir(self, doc_id: str) -> Path:
+        """Where a split document's parts go — a folder named for the PDF.
+
+        A document that splits becomes a directory rather than a run of
+        prefixed siblings, so it still moves, deletes and exports as one thing,
+        and so `corpus.index_entries` -- which walks `*.md` and strips the
+        suffix -- gives each part the citable id its path already spells.
+        """
+        return self.markdown / doc_id
+
+    def md_paths(self, doc_id: str) -> list[Path]:
+        """The parts this document wrote, in reading order — its own index is
+        not one of them, or it would be numbered, indexed and cited as a part."""
+        if self.md_dir(doc_id).is_dir():
+            return sorted(p for p in self.md_dir(doc_id).glob("*.md") if p.name != "INDEX.md")
+        return [self.md_path(doc_id)] if self.md_path(doc_id).exists() else []
+
+    def doc_index_path(self, doc_id: str) -> Path:
+        """The table of contents for a split document's parse."""
+        return self.md_dir(doc_id) / "INDEX.md"
 
     def assets_dir(self, doc_id: str) -> Path:
         return self.markdown / f"{doc_id}.assets"
@@ -141,6 +165,7 @@ class Workspace:
             for a, b in (
                 (self.source_path(src), self.source_path(dst)),
                 (self.md_path(src), self.md_path(dst)),
+                (self.md_dir(src), self.md_dir(dst)),
                 (self.assets_dir(src), self.assets_dir(dst)),
                 (self.cache_dir(src), self.cache_dir(dst)),
             ):
@@ -219,8 +244,8 @@ class Workspace:
         for p in (self.source_path(doc_id), self.md_path(doc_id)):
             if p.exists():
                 p.unlink()
-        for d in (self.assets_dir(doc_id), self.cache_dir(doc_id)):
-            if d.exists():
+        for d in (self.md_dir(doc_id), self.assets_dir(doc_id), self.cache_dir(doc_id)):
+            if d.is_dir():
                 shutil.rmtree(d)
 
     def has_analysis(self, doc_id: str) -> bool:
@@ -269,12 +294,14 @@ class Workspace:
             except Exception:
                 pages = None
         ep = self.edits_path(doc_id)
+        complete = False
         if ep.exists():
             try:
                 e = json.loads(ep.read_text("utf-8"))
                 edited = bool(
                     e.get("blocks") or e.get("order") or e.get("inserts") or e.get("joins")
                 )
+                complete = bool(e.get("complete"))
             except Exception:
                 pass
         return {
@@ -284,5 +311,7 @@ class Workspace:
             "pages": pages,
             "analyzed": analysis.exists(),
             "edited": edited,
-            "has_markdown": self.md_path(doc_id).exists(),
+            "has_markdown": bool(self.md_paths(doc_id)),
+            "parts": [p.name for p in self.md_paths(doc_id)] if self.md_dir(doc_id).is_dir() else [],
+            "complete": complete,
         }

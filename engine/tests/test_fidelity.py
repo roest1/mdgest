@@ -289,7 +289,8 @@ def test_over_hiding_is_invisible_to_coverage_but_not_to_the_report(ws):
         for blk in page["blocks"]
         if blk.get("text", "").startswith("Copyright")
     )
-    ops.set_block(ws, a, footer, hidden=True, learn="x")
+    ops.set_block(ws, a, footer, hidden=True)
+    ops.set_complete(ws, a, folder="x")
     ops.analyze(ws, a, force=True)
     ops.analyze(ws, b, force=True)
 

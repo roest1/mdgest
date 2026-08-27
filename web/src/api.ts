@@ -1,4 +1,4 @@
-import type { DocView, RuleLevel, TreeResponse, VersionsSummary } from "./types";
+import type { CompletionCheck, DocView, ExportEntry, RuleLevel, TreeResponse, VersionsSummary } from "./types";
 
 // In the browser the API is same-origin under /api. In the desktop app the
 // engine sits on its own ephemeral port behind a per-launch token, and
@@ -86,11 +86,20 @@ export const api = {
     req<{ id: string }>(`/docs/${id}/inserts`, json("POST", { page, after, text })),
   updateInsert: (id: string, ins: string, text: string) => req(`/docs/${id}/inserts/${ins}`, json("PATCH", { text })),
   removeInsert: (id: string, ins: string) => req(`/docs/${id}/inserts/${ins}`, { method: "DELETE" }),
-  putMarkdown: (id: string, text: string, learn: string | null) =>
-    req<{ shaped: number; regrouped: number; hidden: number; inserted: number; updated: number; removed: number; learned: number }>(
+  putMarkdown: (id: string, text: string) =>
+    req<{ shaped: number; regrouped: number; hidden: number; inserted: number; updated: number; removed: number }>(
       `/docs/${id}/markdown`,
-      json("PUT", { text, learn }),
+      json("PUT", { text }),
     ),
+  checks: (id: string) => req<{ checks: CompletionCheck[] }>(`/docs/${id}/checks`),
+  setComplete: (id: string, complete: boolean, folder?: string | null) =>
+    req<{ doc: string; complete: boolean; checks: CompletionCheck[]; learned: unknown[]; folder?: string }>(
+      `/docs/${id}/complete`,
+      json("POST", { complete, folder }),
+    ),
+  exportable: (folder = "") => req<{ documents: ExportEntry[] }>("/export?folder=" + encodeURIComponent(folder)),
+  exportTo: (docs: string[], dest: string, asZip: boolean) =>
+    req<{ documents: number; files: number; dest: string }>("/export", json("POST", { docs, dest, zip: asZip })),
   undo: (id: string) => req<{ undone: boolean }>(`/docs/${id}/undo`, json("POST")),
   redo: (id: string) => req<{ redone: boolean }>(`/docs/${id}/redo`, json("POST")),
   resetEdits: (id: string) => req(`/docs/${id}/reset`, json("POST")),

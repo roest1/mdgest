@@ -1,4 +1,4 @@
-import { CircleHelp, Ellipsis, GitBranch, Hash, Image as ImageIcon, ListRestart, Loader2, Redo2, Ruler, Stamp, Type, Undo2, WrapText, ZoomIn, ZoomOut } from "lucide-react";
+import { CircleHelp, Ellipsis, GitBranch, Hash, Image as ImageIcon, ListRestart, Loader2, Redo2, Ruler, Type, Undo2, WrapText, ZoomIn, ZoomOut } from "lucide-react";
 import { HelpBar } from "./HelpBar";
 import { RulesPanel } from "./RulesPanel";
 import { VersionsPanel } from "./VersionsPanel";
@@ -8,7 +8,9 @@ import { MarkdownPane } from "./MarkdownPane";
 import { Modal } from "./Modal";
 import { PageRail } from "./PageRail";
 import { PdfPane } from "./PdfPane";
+import { DonePanel } from "./DonePanel";
 import { ShapeBar } from "./ShapeBar";
+import { nextBreak } from "../lib/breaks";
 
 /** PDF on the left, markdown on the right, thumbnails on the far left, one bar above. */
 export function DocumentView({ docId }: { docId: string }) {
@@ -31,9 +33,7 @@ export function DocumentView({ docId }: { docId: string }) {
     localStorage.setItem("mdgest-help", v ? "open" : "closed");
   };
   const [showVersions, setShowVersions] = useState(false);
-  const learnScope = useStore((s) => s.learnScope);
-  const setLearnScope = useStore((s) => s.setLearnScope);
-  const folders = ancestorsOf(docId);
+  const [showDone, setShowDone] = useState(false);
   const splitRef = useRef<HTMLDivElement>(null);
 
   useShortcuts(docId);
@@ -91,22 +91,6 @@ export function DocumentView({ docId }: { docId: string }) {
           </button>
         </div>
         <span className="w-2" />
-        <label className="flex items-center gap-1.5 text-xs text-muted shrink-0" title="Every shape decision you make is also recorded as a rule in this folder, so the next document of the same shape starts ahead. Deeper folders win over shallower ones.">
-          <Stamp className="w-3.5 h-3.5" />
-          learn in
-          <select
-            value={learnScope ?? "__off"}
-            onChange={(e) => setLearnScope(e.target.value === "__off" ? null : e.target.value)}
-            className="bg-ground border border-edge rounded px-1 py-0.5 text-xs text-ink outline-none focus:border-blue-500 max-w-[180px]"
-          >
-            <option value="__off">off</option>
-            {folders.map((f) => (
-              <option key={f} value={f}>
-                {f || "(workspace)"}
-              </option>
-            ))}
-          </select>
-        </label>
         <button className="ghost" onClick={() => setShowRules(true)} title="What has been learned on this document's path">
           <Ruler className="w-3.5 h-3.5" />
           rules{view.rules_applied ? ` · ${view.rules_applied}` : ""}
@@ -161,7 +145,7 @@ export function DocumentView({ docId }: { docId: string }) {
           </div>
           <div onPointerDown={startSplit} className="w-1.5 cursor-col-resize bg-edge/60 hover:bg-blue-500/50 transition-colors shrink-0" title="Drag to resize" />
           <div className="flex-1 min-w-0 h-full bg-chrome/40 border-l border-edge">
-            <MarkdownPane docId={docId} view={view} />
+            <MarkdownPane docId={docId} view={view} onMarkDone={() => setShowDone(true)} />
           </div>
         </div>
         <ShapeBar />
@@ -170,6 +154,7 @@ export function DocumentView({ docId }: { docId: string }) {
 
       {showRules && <RulesPanel docId={docId} onClose={() => setShowRules(false)} />}
       {showVersions && <VersionsPanel view={view} onClose={() => setShowVersions(false)} />}
+      {showDone && <DonePanel view={view} onClose={() => setShowDone(false)} />}
       {confirmReset && (
         <Modal title="Forget every edit?" onClose={() => setConfirmReset(false)} width="max-w-sm">
           <p className="text-sm text-ink/90">Every override, reorder, join and insertion on this document goes. Undo can bring it back.</p>
@@ -185,13 +170,6 @@ export function DocumentView({ docId }: { docId: string }) {
       )}
     </div>
   );
-}
-
-function ancestorsOf(docId: string): string[] {
-  const parts = docId.split("/").slice(0, -1);
-  const out = [""];
-  for (let i = 1; i <= parts.length; i++) out.push(parts.slice(0, i).join("/"));
-  return out;
 }
 
 /** Keys for the fast path: select a box, tap a key. */
@@ -249,9 +227,9 @@ function useShortcuts(docId: string) {
         case "h":
           return patch({ hidden: !b.hidden });
         case "<":
-          return patch({ break_before: !b.break_before });
+          return patch({ break_before: nextBreak(b.break_before) });
         case ">":
-          return patch({ break_after: !b.break_after });
+          return patch({ break_after: nextBreak(b.break_after) });
         case "[":
           return patch({ depth: Math.max(0, (b.depth || 0) - 1) });
         case "]":
