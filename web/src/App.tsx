@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { DocTabs } from "./components/DocTabs";
 import { DocumentView } from "./components/DocumentView";
 import { Explorer } from "./components/Explorer";
+import { Mark } from "./components/Mark";
 import { StatusBar } from "./components/StatusBar";
 import { Toasts } from "./components/Toasts";
 import { isDesktop, onFileDrop, openExternal } from "./lib/desktop";
@@ -57,7 +58,7 @@ export default function App() {
           {sidebar ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
         </button>
         <div className="flex items-center gap-2">
-          <span className="w-6 h-6 rounded-md bg-gradient-to-br from-brand-green to-emerald-700 flex items-center justify-center text-[11px] font-bold text-black">md</span>
+          <Mark size={24} />
           <span className="font-display font-semibold text-[15px] tracking-tight text-ink">mdgest</span>
           <span className="text-xs text-faint hidden sm:inline">pdf → markdown, page by page</span>
         </div>

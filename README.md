@@ -1,3 +1,89 @@
+<p align="center">
+  <img src="docs/brand/lockup-wide.svg" alt="mdgest" width="420">
+</p>
+
+<p align="center">
+  <em>pdf → markdown, page by page — offline, and measured back against the page it came from.</em>
+</p>
+
+<!-- ─────────────────────────────────────────────────────────────────────────
+     BADGES. Each one is its own comment, so uncommenting is deleting the
+     two markers around a single line. Four or five is the useful limit;
+     past that a row reads as decoration and people discount all of them.
+
+     Working today, nothing to configure:
+-->
+<!-- [![desktop](https://github.com/roest1/mdgest/actions/workflows/desktop.yml/badge.svg)](https://github.com/roest1/mdgest/actions/workflows/desktop.yml) -->
+<!-- [![license](https://img.shields.io/github/license/roest1/mdgest?color=B01221)](LICENSE) -->
+<!-- ![platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-B01221) -->
+<!-- ![python](https://img.shields.io/badge/python-3.11%2B-B01221) -->
+<!-- [![ruff](https://img.shields.io/badge/lint-ruff-B01221)](https://docs.astral.sh/ruff/) -->
+<!-- [![tauri](https://img.shields.io/badge/built%20with-Tauri%202-B01221)](https://tauri.app) -->
+
+<!-- Needs something set up first:
+
+     release + downloads — only render once you cut a GitHub release
+-->
+<!-- [![release](https://img.shields.io/github/v/release/roest1/mdgest?color=B01221)](https://github.com/roest1/mdgest/releases/latest) -->
+<!-- [![downloads](https://img.shields.io/github/downloads/roest1/mdgest/total?color=B01221)](https://github.com/roest1/mdgest/releases) -->
+
+<!--  coverage — needs a Codecov account and an upload step in CI -->
+<!-- [![coverage](https://img.shields.io/codecov/c/github/roest1/mdgest?color=B01221)](https://codecov.io/gh/roest1/mdgest) -->
+
+<!--  OpenSSF Best Practices — a self assessment questionnaire; swap in your
+      project id once registered at bestpractices.dev. Of everything here this
+      is the strongest "someone thought about supply chain" signal.
+-->
+<!-- [![openssf](https://www.bestpractices.dev/projects/PROJECT_ID/badge)](https://www.bestpractices.dev/projects/PROJECT_ID) -->
+
+<!--  OpenSSF Scorecard — add the scorecard workflow, then this scores itself -->
+<!-- [![scorecard](https://api.securityscorecards.dev/projects/github.com/roest1/mdgest/badge)](https://scorecard.dev/viewer/?uri=github.com/roest1/mdgest) -->
+<!-- OpenSSF Scorecard is more impressive than the badge passing because its a self-assessment questionaire. -->
+<!-- An interesting tool to look into: google/oss-fuzz -->
+<!-- SLSA provenance / sigstore-signed releases  for pypi packages, but this repo won't become one -->
+
+<!-- ─────────────────────────────────────────────────────────────────────────
+     BEYOND BADGES. What actually moves a reader from "interesting" to
+     "I will run this on my own documents", roughly in order of payoff for
+     a desktop app people have to download and trust:
+
+     1. A screenshot, right under the lockup. For anything with a window this
+        is worth more than every badge combined — you already have
+        web/src/assets/hero.png sitting unused.
+          <p align="center"><img src="docs/brand/screenshot.png" width="820"></p>
+
+     2. Install, above the fold. Three platform links and a one-line CLI
+        install, before the architecture. Right now a reader meets the
+        mermaid diagram before they learn how to get it.
+
+     3. Checksums on releases. "Works completely offline" is a security claim,
+        and an unsigned binary from a stranger is the exact thing that claim
+        asks people to run. A SHA256SUMS file per release, and a line saying
+        how to verify, costs one CI step and reads as serious.
+
+     4. SECURITY.md. GitHub gives it a tab and a "Report a vulnerability"
+        button. Three sentences is enough.
+
+     5. CITATION.cff. GitHub renders a "Cite this repository" button. You are
+        pitching RAG and agent pipelines — that is a crowd who cites tooling
+        in papers, and almost no comparable tool makes it easy.
+
+     6. CHANGELOG.md, keepachangelog format. Tells a reader the project is
+        maintained without them having to read commits.
+
+     7. Issue and PR templates under .github/. Cheap, and the repo starts
+        behaving like one that expects contributors.
+
+     8. Prove the offline claim. A test that fails if the engine opens a
+        socket turns your headline feature from an assertion into something
+        CI enforces — then say so here. That is a differentiator no badge
+        can buy.
+
+     9. Table of contents. This file is past 130 lines and growing.
+
+     10. CODE_OF_CONDUCT.md. Expected in any repo hoping for contributors.
+-->
+
 # mdgest
 
 PDF to Markdown. The one missing feature to [pdf.net](https://pdf.net).
@@ -134,4 +220,3 @@ make desktop-build   # AppImage / deb / rpm on Linux; dmg / nsis via CI
 How the shell, the sidecar and the UI fit together: [docs/desktop.md](docs/desktop.md).
 The app in detail (blocks, rules, versions, what the shell is for): [docs/app.md](docs/app.md).
 What has to be fixed before this branch lands: [docs/known-issues.md](docs/known-issues.md).
-
