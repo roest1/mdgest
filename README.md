@@ -3,6 +3,10 @@
 </p>
 
 <p align="center">
+  <img src="docs/brand/lockup-wide.svg" alt="mdgest" width="100%">
+</p>
+
+<p align="center">
   <em>pdf → markdown, page by page — offline, and measured back against the page it came from.</em>
 </p>
 
