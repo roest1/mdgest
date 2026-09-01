@@ -124,7 +124,8 @@ def main() -> int:
     total_prose = sum(r["prose"] for r in rows)
     if not args.check:
         print("-" * 47)
-        print(f"{'all':<20}{total_code:>6}{total_prose:>7}{'':>6}{total_prose / total_code:>8.2f}")
+        ratio = f"{total_prose / total_code:>8.2f}" if total_code else f"{'-':>8}"
+        print(f"{'all':<20}{total_code:>6}{total_prose:>7}{'':>6}{ratio}")
     elif failures:
         print(f"\n{failures} module(s) over the prose budget.", file=sys.stderr)
     return 1 if failures and args.check else 0

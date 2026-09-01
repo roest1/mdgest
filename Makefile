@@ -27,7 +27,7 @@ MDGEST := $(UV) mdgest
 export MDGEST_WORKSPACE := $(WS)
 
 .DEFAULT_GOAL := help
-.PHONY: help setup dev serve build api web add ls index verify test lint fmt typecheck check clean \
+.PHONY: help setup dev serve build api web add ls index verify test lint bench fmt typecheck check clean \
         engine-bin desktop-dev desktop-build
 
 help: ## list these targets
@@ -91,10 +91,15 @@ desktop-build: engine-bin ## build the installable bundles for this OS
 test: ## engine tests
 	cd $(ROOT)/engine && uv run pytest -q
 
-lint: ## ruff + the prose budget + tsc
+lint: ## ruff + tsc, plus the conventions and budgets this repo enforces
 	cd $(ROOT)/engine && uv run ruff check .
 	cd $(ROOT)/engine && uv run python ../scripts/prose_budget.py --check
+	cd $(ROOT) && uv run --project engine python scripts/check_language.py .
+	cd $(ROOT) && uv run --project engine python scripts/bench.py --check
 	$(BUN) run typecheck
+
+bench: ## what it costs, at the shape of a real corpus
+	cd $(ROOT) && uv run --project engine python scripts/bench.py
 
 typecheck: ## tsc only
 	$(BUN) run typecheck

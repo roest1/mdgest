@@ -11,7 +11,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   insert: "Inserted",
 };
 
-/** Colour per role — used by the overlay on the page and the gutter in the panel. */
+/** Color per role — used by the overlay on the page and the gutter in the panel. */
 export function roleColor(b: Block): { border: string; bg: string; text: string; badge: string } {
   if (b.hidden) return { border: "border-stone-600/60", bg: "bg-stone-700/10", text: "text-stone-500", badge: "bg-stone-700 text-stone-300" };
   switch (b.role) {

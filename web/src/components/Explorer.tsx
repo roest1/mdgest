@@ -45,7 +45,7 @@ export function Explorer() {
     loadTree();
   }, [loadTree]);
 
-  // poll while anything is analysing
+  // poll while anything is analyzing
   const pending = useMemo(() => Object.values(jobs).some((j) => j.status === "queued" || j.status === "running"), [jobs]);
   useEffect(() => {
     if (!pending) return;
