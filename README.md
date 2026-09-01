@@ -1,9 +1,5 @@
 <p align="center">
-  <img src="docs/brand/lockup-wide.svg" alt="mdgest" width="420">
-</p>
-
-<p align="center">
-  <img src="docs/brand/lockup-wide.svg" alt="mdgest" width="100%">
+  <img src="docs/brand/lockup-wide.svg" alt="mdgest" width="750">
 </p>
 
 <p align="center">
