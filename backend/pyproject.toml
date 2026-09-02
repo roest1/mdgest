@@ -1,7 +1,10 @@
 [project]
 name = "mdgest"
-version = "1.0.0"
+version = "0.1.0"
 description = "pdf -> markdown engine"
+authors = [
+    { name = "roest1", email = "95721769+roest1@users.noreply.github.com" }
+]
 requires-python = ">=3.14" # 3.15 comes out in October
 dependencies = [
     "python-multipart>=0.0.32",
@@ -13,29 +16,24 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9.1.1", "ruff>=0.16.5", "httpx>=0.28.1", "cairosvg>=2.9"]
+dev = ["pytest>=9.1.1", "ruff>=0.16.5", "httpx2>=2.12.0", "cairosvg>=2.9"]
 build = ["pyinstaller>=6.22.2"]
 
-[project.scripts]
-mdgest = "mdgest.cli:main"
-
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.12.9,<0.13.0"]
+build-backend = "uv_build"
 
-[tool.hatch.build.targets.wheel]
-packages = ["mdgest"]
-
-[tool.ruff]
-line-length = 100
-target-version = "py314"
+[tool.uv.build-backend]
+module-name = "mdgest"
+module-root = ""
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
-[tool.ruff.lint]
+# ruff rules
 # see https://docs.astral.sh/ruff/rules/
 # run ruff check --select <code> to see if more ruff rules are worth adding
+[tool.ruff.lint]
 select = [
     "E",  # pycodestyle errors (E225 missing whitespace around operators, E302 missing blank lines before function def, E711 == instead of `is`)
     "F",  # Pyflakes bugs (F401 unused imports, F821 undefined names, F841 unused local variables, F811 redefining a name before it's used)

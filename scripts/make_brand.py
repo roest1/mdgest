@@ -1,7 +1,7 @@
 """Render every icon the app ships from docs/brand/*.svg.
 
-    uv sync --project engine --extra dev        # brings in cairosvg
-    uv run --project engine python scripts/make_brand.py
+    uv sync --project backend --extra dev        # brings in cairosvg
+    uv run --project backend python scripts/make_brand.py
 
 The SVGs are the only source of truth. Their text is already outlined, so
 nothing here depends on a font being installed — which is what the old

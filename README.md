@@ -160,13 +160,17 @@ curl -fsSL https://bun.com/install | bash
 
 - `pytest`
 - `ruff`
-- `httpx`
+- `httpx2`
 - `pyinstaller`
 
-`hatchling` over `setuptools` because hatchling has reproducable builds by default and hatchling config takes up less files. (only in `backend/pyproject.toml`).
-Also, we could probably get away th `uv_build` as the backend, but we would lose the ability to do any version tagging in the future.
+~~`hatchling` over `setuptools` because hatchling has reproducable builds by default and hatchling config takes up less files.~~
+`uv_build` over `hatchling` because this is a simple Python backend and its faster.
+
+> Thank you [medium.com/@dynamicy/python-build-backends-in-2025-what-to-use-and-why-uv-build-vs-hatchling-vs-poetry-core](https://medium.com/@dynamicy/python-build-backends-in-2025-what-to-use-and-why-uv-build-vs-hatchling-vs-poetry-core-94dd6b92248f)
 
 **webapp**
+
+Vite + React-TS + Tailwind
 
 ---
 
