@@ -165,6 +165,21 @@ def test_token_gate_and_add_paths(tmp_path, monkeypatch):
     assert r.json()["added"] == [] and len(r.json()["errors"]) == 1
 
 
+def test_api_answers_are_never_cached(tmp_path):
+    """Both middlewares are pure ASGI now and nothing had pinned what they do.
+    Every /api answer says no-cache, the render routes included -- their own
+    `max-age` loses on purpose, because a page image is addressed by document
+    path alone. Anything outside /api is left alone."""
+    c = TestClient(api.create_app(tmp_path / "ws"))
+    (tmp_path / "one.pdf").write_bytes(blank_pdf())
+    r = c.post("/api/add-paths", json={"paths": [str(tmp_path / "one.pdf")]})
+    doc = r.json()["added"][0]
+    assert c.get("/api/health").headers["cache-control"] == "no-cache"
+    png = c.get(f"/api/docs/{doc}/page/1.png")
+    assert png.status_code == 200 and png.headers["cache-control"] == "no-cache"
+    assert "cache-control" not in c.get("/not-an-api-path").headers
+
+
 def test_group_move_keeps_page_order(ws):
     pdf = SAMPLE.read_bytes()
     doc = ws.add_pdf(pdf, "g.pdf", "x")

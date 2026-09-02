@@ -14,42 +14,89 @@ from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFil
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from . import ops, render
 from .store import Workspace, default_workspace
 
 
+class NoCacheApi:
+    """`Cache-Control: no-cache` on every /api answer, and nothing else.
+
+    Pure ASGI rather than `@app.middleware("http")`, which is
+    `BaseHTTPMiddleware`: that runs the rest of the app in a task group and
+    pumps the whole response body through a memory stream so the decorated
+    function can hold a `Response`. The bodies under /api are page renders and
+    source PDFs, so a 200 MB document crossed that pump 64 KB at a time in order
+    to have one header set on it. A send wrapper leaves the body where it is.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not scope["path"].startswith("/api"):
+            await self.app(scope, receive, send)
+            return
+
+        # Unconditional, so it also wins over the `max-age` the render routes
+        # ask for. Page images are addressed by document path and nothing else,
+        # so a document re-added at a path it held before would serve the
+        # previous document's renders for the rest of the hour.
+        async def no_cache(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)["Cache-Control"] = "no-cache"
+            await send(message)
+
+        await self.app(scope, receive, no_cache)
+
+
+class RequireToken:
+    """The per-launch token gate: an `x-mdgest-token` header, or `?t=` for the
+    URLs that end up in <img src>.
+
+    Pure ASGI for the reason in `NoCacheApi`, and stacking made it twice as
+    expensive: two decorated middlewares put every /api response body through
+    two memory-stream pumps, and neither of them wants the body. This one reads
+    the request and either answers or stands aside.
+    """
+
+    def __init__(self, app: ASGIApp, token: str) -> None:
+        self.app = app
+        self.token = token
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not scope["path"].startswith("/api"):
+            await self.app(scope, receive, send)
+            return
+        request = Request(scope)
+        supplied = request.headers.get("x-mdgest-token") or request.query_params.get("t") or ""
+        if not secrets.compare_digest(supplied, self.token):
+            answer = JSONResponse({"detail": "missing or bad engine token"}, status_code=401)
+            await answer(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 def create_app(workspace: Path | None = None) -> FastAPI:
     ws = Workspace(workspace or default_workspace())
     app = FastAPI(title="mdgest", version="0.2.0")
-    app.add_middleware(
-        CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
-    )
-    app.state.ws = ws
     jobs: dict[str, dict] = {}
     lock = threading.Lock()
 
-    @app.middleware("http")
-    async def no_cache(request: Request, call_next):
-        response = await call_next(request)
-        if request.url.path.startswith("/api"):
-            response.headers["Cache-Control"] = "no-cache"
-        return response
-
+    # Added innermost first: the token is checked before any of this runs, and
+    # CORS sits inside it, so a 401 answers without CORS headers.
+    app.add_middleware(
+        CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
+    )
+    app.add_middleware(NoCacheApi)
     # When supervised by the desktop app, a per-launch token gates every /api
     # request — otherwise any local process could drive the engine (it can read
-    # arbitrary paths via /api/add-paths). Sent as a header, or as ?t= for the
-    # URLs that end up in <img src>.
+    # arbitrary paths via /api/add-paths).
     token = os.environ.get("MDGEST_TOKEN") or ""
     if token:
-
-        @app.middleware("http")
-        async def require_token(request: Request, call_next):
-            if request.url.path.startswith("/api"):
-                supplied = request.headers.get("x-mdgest-token") or request.query_params.get("t") or ""
-                if not secrets.compare_digest(supplied, token):
-                    return JSONResponse({"detail": "missing or bad engine token"}, status_code=401)
-            return await call_next(request)
+        app.add_middleware(RequireToken, token=token)
 
     def fail(exc: Exception, status: int = 400):
         raise HTTPException(status_code=status, detail=str(exc) or exc.__class__.__name__)
