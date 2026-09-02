@@ -40,10 +40,11 @@ class NoCacheApi:
             await self.app(scope, receive, send)
             return
 
-        # Unconditional, so it also wins over the `max-age` the render routes
-        # ask for. Page images are addressed by document path and nothing else,
-        # so a document re-added at a path it held before would serve the
-        # previous document's renders for the rest of the hour.
+        # Unconditional. The render routes used to ask for `max-age` and were
+        # overruled here without anyone noticing; they no longer ask. A page
+        # image is addressed by document path and nothing else, so a document
+        # re-added at a path it held before would serve the previous one's
+        # renders for the rest of the hour.
         async def no_cache(message: Message) -> None:
             if message["type"] == "http.response.start":
                 MutableHeaders(scope=message)["Cache-Control"] = "no-cache"
@@ -209,7 +210,7 @@ def create_app(workspace: Path | None = None) -> FastAPI:
             path = render.render_page(ws.source_path(doc_id), ws.renders_dir(doc_id), n)
         except Exception as exc:
             fail(exc, 404)
-        return FileResponse(path, headers={"Cache-Control": "max-age=3600"})
+        return FileResponse(path)
 
     @app.get("/api/docs/{doc_id:path}/thumb/{n}.png")
     def thumb_png(doc_id: str, n: int):
@@ -218,7 +219,7 @@ def create_app(workspace: Path | None = None) -> FastAPI:
             path = render.render_thumb(ws.source_path(doc_id), ws.renders_dir(doc_id), n)
         except Exception as exc:
             fail(exc, 404)
-        return FileResponse(path, headers={"Cache-Control": "max-age=3600"})
+        return FileResponse(path)
 
     @app.get("/api/docs/{doc_id:path}/assets/{name}")
     def asset(doc_id: str, name: str):
@@ -226,7 +227,7 @@ def create_app(workspace: Path | None = None) -> FastAPI:
         path = ws.assets_dir(doc_id) / Path(name).name
         if not path.exists():
             raise HTTPException(404)
-        return FileResponse(path, headers={"Cache-Control": "max-age=3600"})
+        return FileResponse(path)
 
     @app.get("/api/docs/{doc_id:path}/markdown")
     def markdown(doc_id: str):
@@ -494,14 +495,20 @@ def create_app(workspace: Path | None = None) -> FastAPI:
 
     dist = Path(
         os.environ.get("MDGEST_WEB_DIST", Path(__file__).resolve().parents[2] / "web" / "dist")
-    )
+    ).resolve()
     if dist.exists():
         app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
 
         @app.get("/{path:path}")
         def spa(path: str):
-            candidate = dist / path
-            if path and candidate.is_file():
+            # `dist / path` served any file the engine could read. A browser
+            # normalizes `../` away before sending, so it took an encoded
+            # `/%2e%2e/secret.txt` to see it -- and this is the one route
+            # MDGEST_TOKEN does not gate, because index.html has to load before
+            # the app has a token to send. Resolved and compared rather than
+            # screened for `..`, since a symlink out of dist reads the same way.
+            candidate = (dist / path).resolve()
+            if path and candidate.is_relative_to(dist) and candidate.is_file():
                 return FileResponse(candidate)
             return FileResponse(dist / "index.html")
 

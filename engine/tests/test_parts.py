@@ -437,6 +437,31 @@ def test_the_api_exports_to_a_path_rather_than_a_download(tmp_path):
     assert client.post("/api/export", json={"docs": [doc], "dest": ""}).status_code == 400
 
 
+def test_the_spa_route_serves_only_what_was_built(tmp_path, monkeypatch):
+    """The catch-all joined a caller's path onto the built web app and served
+    whatever came out, so `/%2e%2e/secret.txt` read a file outside it. Encoded
+    because a browser normalizes `../` before sending; ungated because
+    index.html has to load before the app has a token, which is why the engine
+    token below does not save it."""
+    from fastapi.testclient import TestClient
+
+    from mdgest import api
+
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("spa", "utf-8")
+    (dist / "favicon.svg").write_text("icon", "utf-8")
+    (tmp_path / "secret.txt").write_text("TOP SECRET", "utf-8")
+    (dist / "escape.txt").symlink_to(tmp_path / "secret.txt")
+    monkeypatch.setenv("MDGEST_WEB_DIST", str(dist))
+    monkeypatch.setenv("MDGEST_TOKEN", "s3cret")
+    client = TestClient(api.create_app(tmp_path / "ws"))
+    # the last one is a symlink out of dist, which screening for `..` would miss
+    for attempt in ("/%2e%2e/secret.txt", "/..%2fsecret.txt", "/%2e%2e%2fsecret.txt", "/escape.txt"):
+        assert client.get(attempt).text == "spa", attempt
+    assert client.get("/favicon.svg").text == "icon"  # a real file inside dist still serves
+
+
 def test_a_doc_id_shaped_route_does_not_eat_its_own_suffix(tmp_path):
     """`{doc_id:path}` is greedy and FastAPI matches in registration order, so a
     GET registered after the catch-all reads its suffix as part of the id. Both
