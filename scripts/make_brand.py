@@ -117,7 +117,6 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=ICONS)
     ap.add_argument("--favicon", type=Path, default=FAVICON,
                     help="where the web favicon SVG is copied")
-    ap.add_argument("--no-favicon", help="leave the web favicon alone")
     ap.add_argument("--sources", action="store_true", help="also keep the 1024px source PNGs")
     args = ap.parse_args()
 
@@ -139,9 +138,8 @@ def main() -> None:
         for kind, px, pt in ICNS_CHUNKS
     })
 
-    if not args.no_favicon:
-        args.favicon.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(small, args.favicon)
+    args.favicon.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(small, args.favicon)
 
     if args.sources:
         render(full, 1024).save(out / "source.png")
@@ -149,8 +147,7 @@ def main() -> None:
         render(macos, 1024).save(out / "source-macos.png")
 
     print(f"wrote {len(FLAT)} png + icon.ico + icon.icns -> {out}")
-    if not args.no_favicon:
-        print(f"copied mark-small.svg -> {args.favicon.relative_to(ROOT)}")
+    print(f"copied mark-small.svg -> {args.favicon.relative_to(ROOT)}")
     print(f"  arrow art at {SMALL_PT}pt and below; full mark above; macOS from the inset drawing")
 
 
