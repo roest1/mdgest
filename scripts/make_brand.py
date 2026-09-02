@@ -11,11 +11,16 @@ Art is chosen by the size a person *sees*, not by pixel count: at 16pt the
 three-element mark is mush, so those slots get the arrow instead. Everywhere
 else gets the full mark, and macOS gets it from the inset drawing because
 Apple's grid expects app art to sit inside its canvas rather than fill it.
+
+The web favicon is the odd one out: it ships as the small mark's SVG, copied
+rather than rendered, so the browser keeps a vector at every zoom level. It
+lives under the frontend's public/ and so has its own destination flag.
 """
 
 from __future__ import annotations
 
 import argparse
+import shutil
 import struct
 from io import BytesIO
 from pathlib import Path
@@ -26,6 +31,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 BRAND = ROOT / "docs" / "brand"
 ICONS = ROOT / "src-tauri" / "icons"
+FAVICON = ROOT / "frontend" / "public" / "favicon.svg"
 
 SMALL_PT = 16          # at or below this displayed size, the arrow wins
 
@@ -109,6 +115,9 @@ def write_icns(dest: Path, art: dict[str, Image.Image]) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", type=Path, default=ICONS)
+    ap.add_argument("--favicon", type=Path, default=FAVICON,
+                    help="where the web favicon SVG is copied")
+    ap.add_argument("--no-favicon", help="leave the web favicon alone")
     ap.add_argument("--sources", action="store_true", help="also keep the 1024px source PNGs")
     args = ap.parse_args()
 
@@ -130,12 +139,18 @@ def main() -> None:
         for kind, px, pt in ICNS_CHUNKS
     })
 
+    if not args.no_favicon:
+        args.favicon.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(small, args.favicon)
+
     if args.sources:
         render(full, 1024).save(out / "source.png")
         render(small, 1024).save(out / "source-small.png")
         render(macos, 1024).save(out / "source-macos.png")
 
     print(f"wrote {len(FLAT)} png + icon.ico + icon.icns -> {out}")
+    if not args.no_favicon:
+        print(f"copied mark-small.svg -> {args.favicon.relative_to(ROOT)}")
     print(f"  arrow art at {SMALL_PT}pt and below; full mark above; macOS from the inset drawing")
 
 
