@@ -21,6 +21,7 @@ interface State {
   workspace: string;
   selectedFolder: string;
   loadTree: () => Promise<void>;
+  loadJobs: () => Promise<void>;
   setSelectedFolder: (p: string) => void;
 
   // desktop: a native OS drag is over the window; drops arrive as paths
@@ -114,6 +115,23 @@ export const useStore = create<State>((set, get) => ({
       set({ tree: r.tree, jobs: r.jobs, workspace: r.workspace });
     } catch (e) {
       get().toast(`cannot reach the engine: ${(e as Error).message}`, "error");
+    }
+  },
+  // What the explorer polls while a batch analyzes. Nothing in a document's
+  // tree entry -- pages, analyzed, edited, has_markdown, parts, complete --
+  // changes until its analysis finishes, so the walk is worth paying for on
+  // that transition and at no other time. Failure stays quiet: a toast a
+  // second is not a report, and the next thing the user does says it properly.
+  loadJobs: async () => {
+    try {
+      const jobs = await api.jobs();
+      const prev = get().jobs;
+      const settled = (j?: Job) => j?.status === "done" || j?.status === "error";
+      const finished = Object.keys(jobs).some((id) => settled(jobs[id]) && !settled(prev[id]));
+      set({ jobs });
+      if (finished) await get().loadTree();
+    } catch {
+      /* left to loadTree and to whatever the user does next */
     }
   },
   setSelectedFolder: (p) => set({ selectedFolder: p }),

@@ -1,4 +1,4 @@
-import type { CompletionCheck, DocView, ExportEntry, RuleLevel, TreeResponse, VersionsSummary } from "./types";
+import type { CompletionCheck, DocView, ExportEntry, Job, RuleLevel, TreeResponse, VersionsSummary } from "./types";
 
 // In the browser the API is same-origin under /api. In the desktop app the
 // engine sits on its own ephemeral port behind a per-launch token, and
@@ -43,6 +43,8 @@ const json = (method: string, body?: unknown): RequestInit => ({
 
 export const api = {
   tree: () => req<TreeResponse>("/tree"),
+  // /tree walks the workspace once per document; /jobs is a dict copy
+  jobs: () => req<Record<string, Job>>("/jobs"),
   mkdir: (path: string) => req<{ path: string }>("/folders", json("POST", { path })),
   rmdir: (path: string) => req("/folders/" + path, { method: "DELETE" }),
   move: (src: string, dst: string) => req<{ path: string }>("/move", json("POST", { src, dst })),

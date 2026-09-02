@@ -48,6 +48,30 @@ def test_hierarchy_and_markdown_mirror(ws):
     assert tree["folders"][0]["name"] == "acme"
 
 
+def test_the_tree_reads_a_page_count_without_the_analysis(ws):
+    """`analysis.json` is 13.7 kB of pagemap and the explorer wants one integer
+    out of it, once per document, once a second while a batch runs. Corrupting
+    the analysis leaves the count standing, which is the whole claim."""
+    doc = ws.add_pdf(SAMPLE.read_bytes(), "a.pdf", "x")
+    ops.analyze(ws, doc)
+    pages = ws.doc_summary(doc)["pages"]
+    assert pages and pages > 0
+    ws.analysis_path(doc).write_text("not json at all", "utf-8")
+    assert ws.doc_summary(doc)["pages"] == pages
+
+
+def test_a_workspace_analyzed_before_the_page_count_existed_heals(ws):
+    """Workspaces predate this file. Falling back to the parse is not enough on
+    its own -- without leaving the answer behind, an old corpus pays the parse
+    forever and the change buys nothing for the people who already have one."""
+    doc = ws.add_pdf(SAMPLE.read_bytes(), "a.pdf", "x")
+    ops.analyze(ws, doc)
+    pages = ws.doc_summary(doc)["pages"]
+    ws.page_count_path(doc).unlink()
+    assert ws.doc_summary(doc)["pages"] == pages
+    assert ws.page_count_path(doc).read_text("utf-8") == str(pages)
+
+
 def test_edits_roundtrip_and_undo(ws):
     pdf = SAMPLE.read_bytes()
     doc = ws.add_pdf(pdf, "a.pdf", "x")

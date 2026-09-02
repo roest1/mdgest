@@ -11,6 +11,7 @@ them however they think (manuals/hydraulics/pumps/...).
                           /<folder>/INDEX.md a corpus index over a folder (mdgest index)
       .mdgest/<folder...>/<doc>/analysis.json   regenerable
                                  /edits.json     precious
+                                 /page_count     regenerable; the tree reads it, not analysis.json
                                  /renders/       regenerable page images
 
 A document's id is its path under sources/ without the extension, e.g.
@@ -119,6 +120,16 @@ class Workspace:
 
     def edits_path(self, doc_id: str) -> Path:
         return self.cache_dir(doc_id) / "edits.json"
+
+    def page_count_path(self, doc_id: str) -> Path:
+        """The page count on its own, beside the analysis it was taken from.
+
+        `tree()` wants one integer per document, and `analysis.json` is 13.7 kB
+        of pagemap: parsing all of it for `page_count` was 77 ms of the 141 ms a
+        thousand-document tree cost, paid once a second for as long as a batch
+        was analyzing.
+        """
+        return self.cache_dir(doc_id) / "page_count"
 
     def versions_path(self, doc_id: str) -> Path:
         return self.cache_dir(doc_id) / "versions.json"
@@ -258,6 +269,34 @@ class Workspace:
         p = self.analysis_path(doc_id)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(analysis, ensure_ascii=False), "utf-8")
+        self._write_page_count(doc_id, analysis.get("page_count"))
+
+    def _write_page_count(self, doc_id: str, count: object) -> None:
+        if not isinstance(count, int):
+            return
+        p = self.page_count_path(doc_id)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        # Written aside and moved into place: analyses run on a worker thread
+        # while the explorer reads the tree, and a half-written file would parse
+        # as a smaller number rather than as nothing.
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(str(count), "utf-8")
+        tmp.replace(p)
+
+    def page_count(self, doc_id: str) -> int | None:
+        try:
+            return int(self.page_count_path(doc_id).read_text("utf-8"))
+        except (OSError, ValueError):
+            pass
+        # Analyzed before this file existed. Pay the full parse once and leave
+        # the answer behind, so an old workspace costs it once per document
+        # rather than once per document per tree.
+        try:
+            count = json.loads(self.analysis_path(doc_id).read_text("utf-8")).get("page_count")
+        except (OSError, ValueError):
+            return None
+        self._write_page_count(doc_id, count)
+        return count if isinstance(count, int) else None
 
     # ---- the tree --------------------------------------------------------
     def tree(self) -> dict:
@@ -285,14 +324,9 @@ class Workspace:
 
     def doc_summary(self, doc_id: str) -> dict:
         analysis = self.analysis_path(doc_id)
-        pages = None
+        analyzed = analysis.exists()
+        pages = self.page_count(doc_id) if analyzed else None
         edited = False
-        if analysis.exists():
-            try:
-                data = json.loads(analysis.read_text("utf-8"))
-                pages = data.get("page_count")
-            except Exception:
-                pages = None
         ep = self.edits_path(doc_id)
         complete = False
         if ep.exists():
@@ -309,7 +343,7 @@ class Workspace:
             "name": Path(doc_id).name,
             "folder": str(PurePosixPath(doc_id).parent) if "/" in doc_id else "",
             "pages": pages,
-            "analyzed": analysis.exists(),
+            "analyzed": analyzed,
             "edited": edited,
             "has_markdown": bool(self.md_paths(doc_id)),
             "parts": [p.name for p in self.md_paths(doc_id)] if self.md_dir(doc_id).is_dir() else [],

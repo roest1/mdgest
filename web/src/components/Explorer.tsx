@@ -13,7 +13,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { useStore } from "../store";
 import type { DocSummary, TreeNode } from "../types";
@@ -26,8 +26,8 @@ const DRAG_FOLDER = "application/x-mdgest-folder";
 
 export function Explorer() {
   const tree = useStore((s) => s.tree);
-  const jobs = useStore((s) => s.jobs);
   const loadTree = useStore((s) => s.loadTree);
+  const loadJobs = useStore((s) => s.loadJobs);
   const selectedFolder = useStore((s) => s.selectedFolder);
   const setSelectedFolder = useStore((s) => s.setSelectedFolder);
   const openDoc = useStore((s) => s.openDoc);
@@ -45,13 +45,20 @@ export function Explorer() {
     loadTree();
   }, [loadTree]);
 
-  // poll while anything is analyzing
-  const pending = useMemo(() => Object.values(jobs).some((j) => j.status === "queued" || j.status === "running"), [jobs]);
+  // poll while anything is analyzing -- jobs, not the tree: the tree costs a
+  // walk of every document, and `loadJobs` refetches it when one finishes.
+  //
+  // Selected as a boolean, never as the map. The poll replaces `jobs` wholesale
+  // every second, so subscribing to it here re-rendered every row in the tree
+  // once a second for as long as a batch ran, whether or not anything had
+  // changed. A boolean comes back equal by value and only wakes this component
+  // when it flips; the rows read their own status themselves.
+  const pending = useStore((s) => Object.values(s.jobs).some((j) => j.status === "queued" || j.status === "running"));
   useEffect(() => {
     if (!pending) return;
-    const t = setInterval(loadTree, 1000);
+    const t = setInterval(loadJobs, 1000);
     return () => clearInterval(t);
-  }, [pending, loadTree]);
+  }, [pending, loadJobs]);
 
   const upload = useCallback(
     async (files: File[], folder: string) => {
@@ -213,9 +220,6 @@ export function Explorer() {
   };
 
   const renderDoc = (d: DocSummary, depth: number) => {
-    const job = jobs[d.id];
-    const working = job && (job.status === "queued" || job.status === "running");
-    const failed = job?.status === "error";
     return (
       <Row
         key={d.id}
@@ -227,21 +231,9 @@ export function Explorer() {
           e.dataTransfer.setData(DRAG_DOC, d.id);
           e.dataTransfer.effectAllowed = "move";
         }}
-        icon={
-          working ? (
-            <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />
-          ) : (
-            <FileText className={`w-3.5 h-3.5 ${failed ? "text-red-400" : d.complete ? "text-emerald-300" : d.edited ? "text-blue-300" : "text-muted"}`} />
-          )
-        }
+        icon={<DocIcon doc={d} />}
         label={d.name + ".pdf"}
-        badge={
-          <span className="text-[11px] text-faint font-mono">
-            {failed ? "error" : working ? job.status : d.pages != null ? `${d.pages}p` : ""}
-            {d.parts.length > 1 ? ` ·${d.parts.length}md` : ""}
-            {d.complete ? " ✓" : d.edited ? " ·" : ""}
-          </span>
-        }
+        badge={<DocBadge doc={d} />}
         menu={[
           { label: "Re-analyze", icon: <RefreshCw className="w-3 h-3" />, run: async () => { await api.reanalyze(d.id); loadTree(); } },
           { label: "Rename", icon: <Pencil className="w-3 h-3" />, run: () => setRename({ path: d.id, kind: "doc", name: d.name }) },
@@ -358,6 +350,30 @@ export function Explorer() {
         </Modal>
       )}
     </div>
+  );
+}
+
+// A job is the only thing that changes a row without changing the tree, so
+// these two subscribe per document: a status tick re-renders one spinner and
+// one badge rather than the whole explorer. `jobs[id]` is a fresh object on
+// every poll, so both select the status string -- zustand compares what a
+// selector returns by value, and a string is the same string.
+function DocIcon({ doc }: { doc: DocSummary }) {
+  const status = useStore((s) => s.jobs[doc.id]?.status);
+  if (status === "queued" || status === "running") return <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />;
+  const tone = status === "error" ? "text-red-400" : doc.complete ? "text-emerald-300" : doc.edited ? "text-blue-300" : "text-muted";
+  return <FileText className={`w-3.5 h-3.5 ${tone}`} />;
+}
+
+function DocBadge({ doc }: { doc: DocSummary }) {
+  const status = useStore((s) => s.jobs[doc.id]?.status);
+  const working = status === "queued" || status === "running";
+  return (
+    <span className="text-[11px] text-faint font-mono">
+      {status === "error" ? "error" : working ? status : doc.pages != null ? `${doc.pages}p` : ""}
+      {doc.parts.length > 1 ? ` ·${doc.parts.length}md` : ""}
+      {doc.complete ? " ✓" : doc.edited ? " ·" : ""}
+    </span>
   );
 }
 
