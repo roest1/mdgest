@@ -1,20 +1,13 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["cairosvg>=2.7", "pillow>=10.0"]
+# ///
 """Render every icon the app ships from docs/brand/*.svg.
 
-    uv sync --project backend --extra dev        # brings in cairosvg
-    uv run --project backend python scripts/make_brand.py
+    uv run scripts/make_brand.py
 
 The SVGs are the only source of truth. Their text is already outlined, so
-nothing here depends on a font being installed — which is what the old
-make_icon.py did, and why it died on machines that lacked Liberation Sans.
-
-Art is chosen by the size a person *sees*, not by pixel count: at 16pt the
-three-element mark is mush, so those slots get the arrow instead. Everywhere
-else gets the full mark, and macOS gets it from the inset drawing because
-Apple's grid expects app art to sit inside its canvas rather than fill it.
-
-The web favicon is the odd one out: it ships as the small mark's SVG, copied
-rather than rendered, so the browser keeps a vector at every zoom level. It
-lives under the frontend's public/ and so has its own destination flag.
+nothing here depends on a font being installed.
 """
 
 from __future__ import annotations
@@ -30,9 +23,21 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 BRAND = ROOT / "docs" / "brand"
-ICONS = ROOT / "src-tauri" / "icons"
-FAVICON = ROOT / "frontend" / "public" / "favicon.svg"
+#: The rendered set lives beside the SVGs it comes from rather than beside a
+#: consumer. Nothing ships these today -- the web app wants the vectors, not
+#: the PNGs -- but a platform that demands a .ico or an .icns later should find
+#: them already made rather than needing cairo installed to get one.
+ICONS = BRAND / "icons"
+PUBLIC = ROOT / "public"
 
+# Brand SVGs served verbatim by the SPA, by source stem: mark-small is the
+# favicon, mark is the in-app header. Add a stem here and it ships; there is
+# no second place to update.
+WEB_SVGS = ("mark-small", "mark")
+
+# at 16pt the three-element mark is mush, so those slots get the arrow instead. Everywhere
+# else gets the full mark, and macOS gets it from the inset drawing because
+# Apple's grid expects app art to sit inside its canvas rather than fill it.
 SMALL_PT = 16          # at or below this displayed size, the arrow wins
 
 # Tauri's flat PNG set, all from the full mark.
@@ -115,8 +120,8 @@ def write_icns(dest: Path, art: dict[str, Image.Image]) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", type=Path, default=ICONS)
-    ap.add_argument("--favicon", type=Path, default=FAVICON,
-                    help="where the web favicon SVG is copied")
+    ap.add_argument("--public", type=Path, default=PUBLIC,
+                    help=f"where {', '.join(n + '.svg' for n in WEB_SVGS)} are copied")
     ap.add_argument("--sources", action="store_true", help="also keep the 1024px source PNGs")
     args = ap.parse_args()
 
@@ -138,8 +143,9 @@ def main() -> None:
         for kind, px, pt in ICNS_CHUNKS
     })
 
-    args.favicon.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(small, args.favicon)
+    args.public.mkdir(parents=True, exist_ok=True)
+    for name in WEB_SVGS:
+        shutil.copyfile(BRAND / f"{name}.svg", args.public / f"{name}.svg")
 
     if args.sources:
         render(full, 1024).save(out / "source.png")
@@ -147,7 +153,7 @@ def main() -> None:
         render(macos, 1024).save(out / "source-macos.png")
 
     print(f"wrote {len(FLAT)} png + icon.ico + icon.icns -> {out}")
-    print(f"copied mark-small.svg -> {args.favicon.relative_to(ROOT)}")
+    print(f"copied {len(WEB_SVGS)} svg -> {args.public.relative_to(ROOT)}")
     print(f"  arrow art at {SMALL_PT}pt and below; full mark above; macOS from the inset drawing")
 
 

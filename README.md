@@ -73,7 +73,7 @@ flowchart TB
 
     subgraph DECIDE ["2 &nbsp; DECIDE &nbsp;&mdash;&nbsp; the only step with a person in it"]
         direction LR
-        UI["<b>UI &middot; API</b><br/>numbered boxes on the page,<br/>the same numbers in the markdown"]
+        UI["<b>UI</b><br/>numbered boxes on the page,<br/>the same numbers in the markdown"]
         ED["<b>edits.json</b><br/>role, level, order, joins,<br/>hides, inserts<br/><i>precious &mdash; the one file<br/>that does not regenerate</i>"]
         UI --> ED
     end
@@ -110,9 +110,11 @@ flowchart TB
 
 ## The more technical: Workspaces, rules, and how learning works
 
-A workspace is a directory. Folders are yours to organize however you like — mdgest mirrors them. Say you upload `invoice1.pdf` into an `invoices` folder:
+A workspace is a tree in your browser's own storage, and an export of it is a
+folder on your disk. Folders are yours to organize however you like — mdgest
+mirrors them. Say you upload `invoice1.pdf` into an `invoices` folder:
 
-    workspace/
+    <workspace>/
       sources/invoices/invoice1.pdf            the source PDF, untouched
       markdown/invoices/invoice1.md            the output, same tree
       .mdgest/invoices/invoice1/
@@ -137,49 +139,36 @@ The second document in `invoices/` that shares a template edits faster than the 
 
 ## Requirements
 
-- `backend`: _uv_ (python) package / project manager
-- `frontend`: _bun_ (package manager / runtime)
+- bun
 
 ```bash
-curl -fsSL https://astral.sh/uv/install.sh | bash
 curl -fsSL https://bun.com/install | bash
+bun install
+bun run dev
 ```
 
 ## Tech stack
 
-**mdgest**
+**the app** — one bundle, hosted as static files on Cloudflare Pages
 
-- `python-multipart` for pdf uploads
-- `pypdfium2` for pdf parsing
-- `pilow`
-- `fastapi`
-- `uvicorn` python webserver
-- `typer` CLI builder
+- `vite` + `react` + `typescript`, `tailwind` for styling, `oxlint` for linting
+- `pdf.js` reads the PDF: every line with its box, size and weight, and every
+  picture with its drawn bounds.
+- **OPFS** is the workspace. The origin-private file system is the only storage
+  every browser has (Chrome/Edge 86+, Firefox 111+, Safari 15.2+, iOS
+  included), and the only one with a synchronous handle — which is what lets
+  the engine stay synchronous instead of turning every call into a promise.
+  It runs in a worker, because that handle is not exposed on the main thread.
 
-**mdgest CI deps**
+**where the work lives**
 
-- `pytest`
-- `ruff`
-- `httpx2`
-- `pyinstaller`
+Browser storage is evictable and there is no account, so **exporting is what
+saving means**. An export is a folder you keep:
 
-~~`hatchling` over `setuptools` because hatchling has reproducable builds by default and hatchling config takes up less files.~~
-`uv_build` over `hatchling` because this is a simple Python backend and its faster.
+- `mdgest.json` carrying every decision
+- `sources/` as you gave them
+- `markdown/` as it came out.
 
-> Thank you [medium.com/@dynamicy/python-build-backends-in-2025-what-to-use-and-why-uv-build-vs-hatchling-vs-poetry-core](https://medium.com/@dynamicy/python-build-backends-in-2025-what-to-use-and-why-uv-build-vs-hatchling-vs-poetry-core-94dd6b92248f)
-
-**webapp**
-
-Vite + React-TS + Tailwind
-
----
-
-**[TBD] desktop app**
-
-Install rust and cargo
-
-```bash
-curl https://sh.rustup.rs -sSf | sh
-```
+Hand it back later and you carry on where you left off. Nothing in it is hidden.
 
 ---
