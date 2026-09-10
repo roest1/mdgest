@@ -1,0 +1,5 @@
+# Every path serves the app, because the router is a BrowserRouter and the
+# paths it owns exist only in the client. Without this, /edit/<doc> 404s on
+# Cloudflare Pages — and only there: the dev server already falls back to
+# index.html, so deleting this file breaks nothing until it is deployed.
+/* /index.html 200

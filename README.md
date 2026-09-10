@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <em>pdf → markdown, page by page — offline, and measured back against the page it came from.</em>
+  <em>pdf to markdown converter, page by page, your data stays on your machine.</em>
 </p>
 
 # mdgest
@@ -159,6 +159,17 @@ bun run dev
   included), and the only one with a synchronous handle — which is what lets
   the engine stay synchronous instead of turning every call into a promise.
   It runs in a worker, because that handle is not exposed on the main thread.
+  That worker is a module worker, which is what actually sets the floor on
+  Firefox: 114, not the 111 that OPFS alone would ask for.
+- fonts
+  - jetbrains-mono
+  - liberata
+  - geist-sans
+- icons (lucide-react)
+- react (dom, router)
+- state management: zustand
+- rendering (react-markdown and remark-gfm)
+- maybe pdfjs-dist
 
 **where the work lives**
 
