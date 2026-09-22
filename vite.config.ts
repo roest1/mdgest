@@ -25,5 +25,16 @@ export default defineConfig({
     // which means "pick a random port".
     port: Number(process.env.WEB_PORT) || 2048,
   },
-  build: { outDir: "dist", emptyOutDir: true },
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+    // Never inline an asset. The default 4 KB limit caught exactly one thing:
+    // the JetBrains Mono Cyrillic-Extended subset, 2.4 KB gzipped, base64'd
+    // into the render-blocking stylesheet for every visitor. A @font-face with
+    // a unicode-range is fetched only when a glyph in that range is rendered,
+    // so inlining it does not save a request — it creates one nobody needed.
+    // Keeping this at 0 is also what lets public/_headers say `font-src 'self'`
+    // with no `data:`.
+    assetsInlineLimit: 0,
+  },
 });

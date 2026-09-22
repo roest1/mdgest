@@ -1,0 +1,43 @@
+# Cloudflare Pages reads this at deploy time; nothing in the dev server or the
+# preview server honours it, so a policy that breaks the app breaks it only in
+# production. After changing anything here, load the deployed page and check
+# the console for "Refused to …" — that is the only place it is enforced.
+
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin
+  Permissions-Policy: accelerometer=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()
+
+# Why each directive survives contact with this build:
+#
+#   script-src 'self'     Vite emits the entry as an external module script and
+#                         no inline <script>. Verify with
+#                         `grep -c '<script>' dist/index.html` after a build.
+#   style-src  'self'     Tailwind ships one external stylesheet. The JSX
+#                         `style={{…}}` props are not inline CSS: React assigns
+#                         them through the CSSOM, which CSP does not police.
+#                         A literal style="" in index.html would need
+#                         'unsafe-inline' and is the thing to avoid.
+#   font-src   'self'     vite.config.ts sets `assetsInlineLimit: 0`, so every
+#                         woff2 is a file. Restoring the default 4 KB limit
+#                         base64s one JetBrains Mono subset into the CSS and
+#                         this directive then needs `data:` back.
+#   worker-src 'self'     engine.worker.ts is built to /assets/*.js and started
+#                         with `new Worker(new URL(…, import.meta.url))`, so it
+#                         is a same-origin file, not a blob:.
+#   frame-ancestors       Replaces X-Frame-Options, which is not repeated here.
+#
+# Expect to touch this when the document surface lands:
+#
+#   PDF rendering to a canvas, or any object-URL preview, needs
+#   `img-src 'self' blob:` — and the PDF still must never reach an <embed>,
+#   <object> or <iframe>; object-src and frame-src are 'none' to make that
+#   failure loud rather than silent. pdf.js belongs in the worker with
+#   `isEvalSupported: false`; if a wasm build of it ever needs
+#   'wasm-unsafe-eval', that is a deliberate widening, not a fix for a console
+#   error. Text pulled out of a PDF is attacker-controlled: render it as text
+#   nodes. CSP is the second line there, not the first — it cannot save a
+#   dangerouslySetInnerHTML.
