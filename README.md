@@ -117,7 +117,7 @@ mirrors them. Say you upload `invoice1.pdf` into an `invoices` folder:
     <workspace>/
       sources/invoices/invoice1.pdf            the source PDF, untouched
       markdown/invoices/invoice1.md            the output, same tree
-      .mdgest/invoices/invoice1/
+      .mdgest/invoices/invoice1.pdf/
         analysis.json                          the engine's read of the PDF (blocks, fonts, roles) — regenerable, deletable
         edits.json                             your corrections: role/level overrides, hidden blocks, splits, inserts — the one precious file
         versions.json                          named snapshots of edits.json you can roll back to
@@ -137,11 +137,10 @@ The second document in `invoices/` that shares a template edits faster than the 
 
 ---
 
-## Requirements
-
-- bun
+## Getting Started
 
 ```bash
+git clone https://github.com/roest1/mdgest.git && cd mdgest
 curl -fsSL https://bun.com/install | bash
 bun install
 bun run dev
@@ -155,12 +154,13 @@ bun run dev
 - `pdf.js` reads the PDF: every line with its box, size and weight, and every
   picture with its drawn bounds.
 - **OPFS** is the workspace. The origin-private file system is the only storage
-  every browser has (Chrome/Edge 86+, Firefox 111+, Safari 15.2+, iOS
+  every browser has (Chrome/Edge 102+, Firefox 111+, Safari 15.2+, iOS
   included), and the only one with a synchronous handle — which is what lets
   the engine stay synchronous instead of turning every call into a promise.
   It runs in a worker, because that handle is not exposed on the main thread.
   That worker is a module worker, which is what actually sets the floor on
-  Firefox: 114, not the 111 that OPFS alone would ask for.
+  Firefox: 114, not the 111 that OPFS alone would ask for. Web Locks, which
+  keep two tabs from writing one workspace at once, set Safari's: 15.4.
 - fonts
   - jetbrains-mono
   - liberata
