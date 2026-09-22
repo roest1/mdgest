@@ -57,58 +57,13 @@ Every image and text is boxed, using `pdfium`, into indexed items for you to man
 
 > Fixing in the markdown editor applies and records changes in the same way.
 
-```mermaid
-flowchart TB
-    PDF[("source.pdf")]
-
-    subgraph READ ["1 &nbsp; READ &nbsp;&mdash;&nbsp; deterministic, no model, no network"]
-        direction LR
-        PM["<b>pagemap</b><br/>every line with its box, size<br/>and weight; runs on one baseline<br/>rejoined by re-reading their union"]
-        ST["<b>structure</b><br/>recursive XY-cut for reading order,<br/>headings by size, list nesting<br/>by marker indent"]
-        PM --> ST
-    end
-
-    RU["<b>rules.json</b><br/>per folder, deeper wins<br/>shape keyed by how a block is <i>set</i><br/>hide keyed by its <i>words</i>"]
-    AN["<b>analysis.json</b><br/>blocks and their default roles<br/><i>regenerable</i>"]
-
-    subgraph DECIDE ["2 &nbsp; DECIDE &nbsp;&mdash;&nbsp; the only step with a person in it"]
-        direction LR
-        UI["<b>UI</b><br/>numbered boxes on the page,<br/>the same numbers in the markdown"]
-        ED["<b>edits.json</b><br/>role, level, order, joins,<br/>hides, inserts<br/><i>precious &mdash; the one file<br/>that does not regenerate</i>"]
-        UI --> ED
-    end
-
-    EM["<b>emit</b><br/>resolve(analysis, edits)<br/>blocks &rarr; markdown"]
-    MD[("markdown/&lt;doc&gt;.md")]
-    GA{{"<b>fidelity</b> &mdash; the gate<br/>coverage &middot; invention<br/>leaks &middot; headings"}}
-
-    PDF ==> PM
-    ST ==> AN
-    RU -.->|"shapes the defaults<br/>before anyone sees them"| AN
-    AN ==> UI
-    AN ==> EM
-    ED ==> EM
-    EM ==> MD
-    MD ==> GA
-    PM -.->|"<b>the loop</b><br/>measured against the page it<br/>came from, not a reference"| GA
-    ED -.->|"margin furniture becomes a rule;<br/>body wording stays put"| RU
-
-    classDef source fill:#475569,stroke:#334155,stroke-width:2px,color:#f8fafc
-    classDef regen fill:#94a3b8,stroke:#64748b,stroke-width:1px,color:#0f172a
-    classDef precious fill:#f59e0b,stroke:#b45309,stroke-width:2px,color:#1c1917
-    classDef gate fill:#10b981,stroke:#047857,stroke-width:2px,color:#052e16
-    classDef step fill:#e0e7ff,stroke:#6366f1,stroke-width:1px,color:#1e1b4b
-
-    class PDF,MD source
-    class AN,RU regen
-    class ED precious
-    class GA gate
-    class PM,ST,EM,UI step
-```
-
 - **Only `edits.json` is important**. It holds what you decided and nothing else does. This is where rules come from.
 
 ## The more technical: Workspaces, rules, and how learning works
+
+<p align="center">
+  <img src="docs/diagrams/workspace.svg" alt="Drop files from your disk into the stage, commit them to the workspace in browser storage, export the workspace back to disk" width="100%">
+</p>
 
 A workspace is a tree in your browser's own storage, and an export of it is a
 folder on your disk. Folders are yours to organize however you like — mdgest
