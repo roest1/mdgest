@@ -12,12 +12,14 @@
 export type FileKind = "pdf" | "md" | "json";
 
 /** A word in a file's trailing slot, for the rows that deviate from what the
- *  listing as a whole is about to do: a `warn` mark needs a look, a `muted`
- *  one is information. `dim` draws the row as not quite there, which is what
- *  a document with a manifest entry and no file is. */
+ *  listing as a whole is about to do, drawn as a small tag in its `tone`.
+ *  Tones are hues rather than meanings so each status can have its own; the
+ *  caller decides which one a status reads as. `dim` draws the row as not
+ *  quite there, which is what a document with a manifest entry and no file
+ *  is. */
 export interface Mark {
   text: string;
-  tone: "muted" | "warn";
+  tone: "stone" | "blue" | "amber" | "orange" | "red";
   dim?: boolean;
 }
 

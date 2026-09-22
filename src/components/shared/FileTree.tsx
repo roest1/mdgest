@@ -18,8 +18,11 @@ const FILE_TINT: Record<FileKind, string> = {
 };
 
 const MARK_TINT: Record<Mark["tone"], string> = {
-  muted: "text-faint",
-  warn: "text-amber-400/90",
+  stone: "text-muted bg-muted/18",
+  blue: "text-blue-400 bg-blue-400/18",
+  amber: "text-amber-400 bg-amber-400/18",
+  orange: "text-orange-400 bg-orange-400/18",
+  red: "text-red-400 bg-red-400/18",
 };
 
 /** Each level indents by one icon width, so a child's glyph sits under its
@@ -104,7 +107,10 @@ function Row({
           <Icon className={`h-3.5 w-3.5 shrink-0 ${FILE_TINT[node.kind]}`} aria-hidden />
           <span className="min-w-0 flex-1 truncate">{node.name}</span>
           {node.mark && (
-            <span className={`shrink-0 text-[10px] ${MARK_TINT[node.mark.tone]}`}>
+            <span
+              className={`shrink-0 rounded-[3px] px-[5px] py-[3px] font-sans text-[9px]
+                leading-none font-semibold tracking-[0.06em] uppercase ${MARK_TINT[node.mark.tone]}`}
+            >
               {node.mark.text}
             </span>
           )}

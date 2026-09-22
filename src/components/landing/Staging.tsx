@@ -12,11 +12,11 @@ import { basename, renamedId } from "src/lib/workspace";
  *  fresh workspace `new` says nothing either, since every row is. */
 const MARKS: Record<Status, Mark | null> = {
   unchanged: null,
-  new: { text: "new", tone: "muted" },
-  revised: { text: "revised", tone: "warn" },
-  missing: { text: "missing", tone: "warn", dim: true },
-  duplicate: { text: "duplicate", tone: "muted" },
-  conflict: { text: "conflict", tone: "warn" },
+  new: { text: "new", tone: "blue" },
+  revised: { text: "revised", tone: "amber" },
+  missing: { text: "missing", tone: "orange", dim: true },
+  duplicate: { text: "duplicate", tone: "stone" },
+  conflict: { text: "conflict", tone: "red" },
 };
 
 /** The order the summary line counts in, worst first. */
