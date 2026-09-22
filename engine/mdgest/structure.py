@@ -269,6 +269,35 @@ def analyze(pm: PageMap) -> dict:
             first = lines[0]
             role, marker, rest = marker_of(first.text)
             texts = [rest] + [l.text for l in lines[1:]]
+            # TODO(join_wrapped): a word broken across two printed lines loses
+            # to this join, and both readers lose it differently. Set
+            # `early-stage` with the break after the hyphen and pdfium reads
+            # the glyph as U+0002 -- an unmapped control character, which
+            # `_WHITESPACE` then eats, so the line ends `early` and this
+            # produces `early stage`. pdf.js resolves the same glyph through
+            # ToUnicode to U+002D, so its line ends `early-` and this produces
+            # `early- stage`. The page says `early-stage` and neither of us
+            # does.
+            #
+            # The space is always wrong and can always go: a `join_wrapped()`
+            # here, joining on "" after a trailing hyphen and " " otherwise,
+            # fixes every occurrence in the corpus (`early-stage`,
+            # `under-resourced`, `low-resource`).
+            #
+            # The hyphen is the part that cannot be decided here. A hyphen at
+            # a line end is either a compound's own (keep it) or one the
+            # typesetter added to break a word (drop it, `admin-` + `istration`
+            # is `administration`), and nothing in the text distinguishes
+            # them -- pdf.js maps both to U+002D and neither reader surfaces a
+            # discretionary hyphen. Telling them apart needs a lexicon, which
+            # is a model in the loop, which this engine does not have.
+            #
+            # So `join_wrapped()` would be right about the space, right about
+            # compounds, and wrong about genuine soft hyphens -- which makes it
+            # a default a person corrects, not a fact. It is left undone
+            # because it moves the goldens and wants that decision made on
+            # purpose. `tests/test_reader_conformance.py` holds the three live
+            # examples; `mdgest/pdfjs.py` explains the reader half.
             text = " ".join(t for t in texts if t).strip()
             blk = Block(
                 id=f"p{page.number}b{gi}",

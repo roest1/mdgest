@@ -20,6 +20,7 @@ A document's id is its path under sources/ without the extension, e.g.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -130,6 +131,20 @@ class Workspace:
         was analyzing.
         """
         return self.cache_dir(doc_id) / "page_count"
+
+    def source_hash_path(self, doc_id: str) -> Path:
+        """The digest of the PDF this document was read from.
+
+        Beside the page count and for the same reason: it answers a question
+        the explorer and the importer ask about every document, and hashing a
+        20 MB source to answer it is not a thing to do in a loop.
+
+        It is metadata and never identity. A document's id is its path under
+        `sources/` and `edits.json` is keyed to that, so a matching digest may
+        start a conversation -- "this is already here", "the source under this
+        name changed" -- and may never move a decision by itself.
+        """
+        return self.cache_dir(doc_id) / "source.sha256"
 
     def versions_path(self, doc_id: str) -> Path:
         return self.cache_dir(doc_id) / "versions.json"
@@ -282,6 +297,34 @@ class Workspace:
         tmp = p.with_name(p.name + ".tmp")
         tmp.write_text(str(count), "utf-8")
         tmp.replace(p)
+
+    def source_hash(self, doc_id: str) -> str | None:
+        """SHA-256 of the source PDF, computed once and cached.
+
+        Read in 1 MiB blocks rather than `read_bytes()`: the digest is wanted
+        for every document in a corpus and a whole-file read would hold a
+        source in memory per call for no gain.
+        """
+        cached = self.source_hash_path(doc_id)
+        try:
+            digest = cached.read_text("utf-8").strip()
+            if len(digest) == 64:
+                return digest
+        except OSError:
+            pass
+        src = self.source_path(doc_id)
+        if not src.exists():
+            return None
+        h = hashlib.sha256()
+        with src.open("rb") as fh:
+            while block := fh.read(1 << 20):
+                h.update(block)
+        digest = h.hexdigest()
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cached.with_name(cached.name + ".tmp")
+        tmp.write_text(digest, "utf-8")
+        tmp.replace(cached)
+        return digest
 
     def page_count(self, doc_id: str) -> int | None:
         try:

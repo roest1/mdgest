@@ -100,6 +100,10 @@ def cut_blocks(page: dict, raw: dict, at: list[int]) -> list[dict]:
             frag["id"] = f"{raw['id']}c{a}"
             frag["role"] = role or raw.get("role", "para")
             frag["marker"] = marker
+        # The same join as `structure.analyze`, and the same open question
+        # about a word broken across two lines -- see the TODO(join_wrapped)
+        # there. Whatever lands has to land in both places or a cut fragment
+        # will space its hyphens differently from the block it came out of.
         frag["text"] = " ".join(t for t in [head, *texts[a + 1 : b]] if t).strip()
         frag["bbox"] = [
             min(x[0] for x in boxes[a:b]),

@@ -42,8 +42,10 @@ class Content:
     def __init__(self) -> None:
         self.ops: list[str] = []
 
-    def text(self, x: float, y: float, size: float, s: str, *, bold: bool = False) -> None:
-        font = "/F2" if bold else "/F1"
+    def text(
+        self, x: float, y: float, size: float, s: str, *, bold: bool = False, font: str = ""
+    ) -> None:
+        font = font or ("/F2" if bold else "/F1")
         self.ops.append(f"BT {font} {size:g} Tf 1 0 0 1 {x:g} {y:g} Tm ({esc(s)}) Tj ET")
 
     def paragraph(self, x: float, y: float, lines: list[str], size: float = BODY) -> float:
@@ -93,23 +95,52 @@ class Pdf:
 IMAGE_BYTES = bytes([0x30, 0x60, 0xA0, 0xC0, 0x50, 0x30, 0xE0, 0xC0, 0x40, 0x20, 0x30, 0x70])
 
 
-def write(path: Path, title: str, page1: Content, page2: Content) -> None:
+def described(pdf: Pdf, name: str, flags: int, weight: int, angle: int) -> int:
+    """A font the reader can only judge by its /FontDescriptor.
+
+    Not embedded and not a base-14 name, so both readers substitute a face to
+    draw with -- which is the point. `ABCDEF+FoundryText` says nothing about
+    weight or slant, so a reader that only sniffs the name learns nothing and
+    one that reads /Flags and /FontWeight learns everything. That is exactly
+    the disagreement the pdfium and pdf.js paths need pinned.
+    """
+    desc = pdf.add(
+        f"<< /Type /FontDescriptor /FontName /{name} /Flags {flags} "
+        f"/FontBBox [-200 -250 1000 900] /ItalicAngle {angle} /Ascent 900 /Descent -250 "
+        f"/CapHeight 700 /StemV {160 if weight >= 700 else 80} /FontWeight {weight} >>".encode()
+    )
+    widths = " ".join(["556"] * (255 - 32 + 1))
+    return pdf.add(
+        f"<< /Type /Font /Subtype /Type1 /BaseFont /{name} /Encoding /WinAnsiEncoding "
+        f"/FirstChar 32 /LastChar 255 /Widths [{widths}] /FontDescriptor {desc} 0 R >>".encode()
+    )
+
+
+def write(path: Path, title: str, *pages_in: Content, described_fonts: bool = False) -> None:
     pdf = Pdf()
     f1 = pdf.add(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
     f2 = pdf.add(
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"
     )
+    fonts = f"/F1 {f1} 0 R /F2 {f2} 0 R"
+    if described_fonts:
+        f3 = pdf.add(
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique"
+            b" /Encoding /WinAnsiEncoding >>"
+        )
+        # Nonsymbolic(32) + ForceBold(262144); Nonsymbolic(32) + Italic(64).
+        f4 = described(pdf, "ABCDEF+FoundryText", 262176, 700, 0)
+        f5 = described(pdf, "ABCDEF+FoundrySlant", 96, 400, -12)
+        fonts += f" /F3 {f3} 0 R /F4 {f4} 0 R /F5 {f5} 0 R"
     im = pdf.stream(
         "/Type /XObject /Subtype /Image /Width 2 /Height 2 "
         "/ColorSpace /DeviceRGB /BitsPerComponent 8",
         IMAGE_BYTES,
     )
-    resources = (
-        f"/Font << /F1 {f1} 0 R /F2 {f2} 0 R >> /XObject << /Im1 {im} 0 R >>"
-    )
-    pages_ref = len(pdf.objects) + 1 + 2 * 2  # contents+page for each of the 2 pages
+    resources = f"/Font << {fonts} >> /XObject << /Im1 {im} 0 R >>"
+    pages_ref = len(pdf.objects) + 1 + 2 * len(pages_in)  # contents+page for each
     page_refs = []
-    for content in (page1, page2):
+    for content in pages_in:
         c = pdf.stream("", content.render())
         page_refs.append(
             pdf.add(
@@ -202,10 +233,84 @@ def manual(subject: str, verb: str) -> tuple[Content, Content]:
     return p1, p2
 
 
+#: Left and right column boxes, and the gutter between them. The gutter is
+#: wider than any inter-word space and the columns' paragraph breaks line up
+#: across it, so a reader that splits bands before columns reads straight
+#: across and produces interleaved nonsense. That is what this page catches.
+COL_L, COL_R, COL_W = 72.0, 330.0, 210.0
+
+
+def spread() -> Content:
+    """Two columns under one spanning heading -- the XY-cut's actual job."""
+    page = Content()
+    page.text(COL_L, 740, H1, "Two Column Layout", bold=True)
+    page.text(COL_L, 706, H2, "Left Column", bold=True)
+    page.paragraph(
+        COL_L,
+        686,
+        [
+            "The left column runs down the page and its",
+            "paragraph breaks line up with the right",
+            "column's, which is what makes a band split",
+            "before a gutter split read across the page.",
+        ],
+    )
+    page.paragraph(
+        COL_L,
+        620,
+        [
+            "A second left paragraph, set at the same",
+            "indent and the same size as the first one.",
+        ],
+    )
+    page.text(COL_R, 706, H2, "Right Column", bold=True)
+    page.paragraph(
+        COL_R,
+        686,
+        [
+            "The right column is a separate reading run",
+            "and every one of its lines belongs after",
+            "the whole of the left one, never woven",
+            "between the left column's own lines.",
+        ],
+    )
+    page.paragraph(
+        COL_R,
+        620,
+        [
+            "A second right paragraph, matching the",
+            "left one's leading exactly.",
+        ],
+    )
+    furniture(page, 1)
+    return page
+
+
+def styles() -> Content:
+    """One line per style signal, spaced so no layout decision is in play.
+
+    Three of these are the cases doc-a and doc-b cannot see: an italic run at
+    all, a bold face whose name does not say "bold", and an italic face whose
+    name does not say "italic". The last two are readable only from the
+    /FontDescriptor, so they separate a reader that consults it from one that
+    sniffs the font name.
+    """
+    page = Content()
+    page.text(LEFT, 740, H2, "Style Signals", bold=True)
+    page.text(LEFT, 700, BODY, "This line is set in the plain body face.")
+    page.text(LEFT, 670, BODY, "This line is set italic and says so in its name.", font="/F3")
+    page.text(LEFT, 640, BODY, "This line is bold by descriptor, not by name.", font="/F4")
+    page.text(LEFT, 610, BODY, "This line is italic by descriptor, not by name.", font="/F5")
+    page.text(LEFT, 580, BODY, "This line is bold and named for it.", bold=True)
+    furniture(page, 2)
+    return page
+
+
 def main() -> None:
     write(HERE / "doc-a.pdf", "Widget Assembly Manual", *manual("Assembly", "assembly"))
     write(HERE / "doc-b.pdf", "Widget Maintenance Manual", *manual("Maintenance", "service"))
-    for p in ("doc-a.pdf", "doc-b.pdf"):
+    write(HERE / "doc-c.pdf", "Layout and Style Probes", spread(), styles(), described_fonts=True)
+    for p in ("doc-a.pdf", "doc-b.pdf", "doc-c.pdf"):
         print(f"wrote {HERE / p} ({(HERE / p).stat().st_size} bytes)")
 
 

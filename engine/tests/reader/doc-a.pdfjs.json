@@ -1,0 +1,1100 @@
+{
+ "source": "doc-a.pdf",
+ "pages": [
+  {
+   "n": 1,
+   "width": 612,
+   "height": 792,
+   "items": [
+    {
+     "str": "Widget Assembly Manual",
+     "transform": [
+      20,
+      0,
+      0,
+      20,
+      72,
+      740
+     ],
+     "width": 241.16,
+     "height": 20,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      14,
+      0,
+      0,
+      14,
+      72,
+      705
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Overview",
+     "transform": [
+      14,
+      0,
+      0,
+      14,
+      72,
+      705
+     ],
+     "width": 62.258,
+     "height": 14,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      685
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "The assembly proceeds in four stages. Each stage depends on the one",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      685
+     ],
+     "width": 315.73,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "before it, so do not skip ahead. Read this section end to end",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      673
+     ],
+     "width": 266.27,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "before you pick up a single tool.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      661
+     ],
+     "width": 140.63,
+     "height": 10,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      14,
+      0,
+      0,
+      14,
+      72,
+      620
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Required Parts",
+     "transform": [
+      14,
+      0,
+      0,
+      14,
+      72,
+      620
+     ],
+     "width": 99.582,
+     "height": 14,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      598
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "• Frame plate, anodized",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      598
+     ],
+     "width": 105.77,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "• Hex bolts, eight of them",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      584
+     ],
+     "width": 111.33,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "- Washers ship in the bolt bag",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      90,
+      570
+     ],
+     "width": 132.28,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "• Torque wrench, calibrated this year",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      556
+     ],
+     "width": 162.45,
+     "height": 10,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      14,
+      0,
+      0,
+      14,
+      72,
+      520
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Procedure",
+     "transform": [
+      14,
+      0,
+      0,
+      14,
+      72,
+      520
+     ],
+     "width": 69.244,
+     "height": 14,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      498
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "1. Seat the frame plate flat on the jig.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      498
+     ],
+     "width": 163.43,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "2. Thread every bolt by hand before torquing any of them.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      484
+     ],
+     "width": 255.14,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "3. Torque to spec in a star pattern, never in a circle.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      470
+     ],
+     "width": 228.44,
+     "height": 10,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      434
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Key Points:",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      434
+     ],
+     "width": 55.01,
+     "height": 10,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      418
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "A hand-thread that binds means the plate is not seated. Back it out",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      418
+     ],
+     "width": 295.17,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "and start the stage again rather than forcing the bolt.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      406
+     ],
+     "width": 232.36,
+     "height": 10,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      72,
+      772
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Widget Corp - Internal Use Only",
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      72,
+      772
+     ],
+     "width": 113.368,
+     "height": 8,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Copyright 2026 Fixture Press. Synthetic test data.",
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      72,
+      72
+     ],
+     "width": 176.08,
+     "height": 8,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Page 1",
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      300,
+      56
+     ],
+     "width": 25.352,
+     "height": 8,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    }
+   ]
+  },
+  {
+   "n": 2,
+   "width": 612,
+   "height": 792,
+   "items": [
+    {
+     "str": "Verification",
+     "transform": [
+      14,
+      0,
+      0,
+      14,
+      72,
+      740
+     ],
+     "width": 76.244,
+     "height": 14,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      718
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Verify the assembly cold, before the first run. A warm frame hides",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      718
+     ],
+     "width": 289.55,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "the very gap you are looking for.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      706
+     ],
+     "width": 142.85,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "a. Check the gap with a feeler gauge at all four corners.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      670
+     ],
+     "width": 245.68,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "b. Re-torque after ten minutes of rest.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      656
+     ],
+     "width": 166.19,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "c. Record the final reading in the build log.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      642
+     ],
+     "width": 186.76,
+     "height": 10,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      14,
+      0,
+      0,
+      14,
+      72,
+      606
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Troubleshooting",
+     "transform": [
+      14,
+      0,
+      0,
+      14,
+      72,
+      606
+     ],
+     "width": 110.446,
+     "height": 14,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      584
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Key Points:",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      584
+     ],
+     "width": 55.01,
+     "height": 10,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      568
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "A reading that drifts between the first and second torque pass is a",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      568
+     ],
+     "width": 290.71,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "seating problem, not a calibration problem.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      556
+     ],
+     "width": 188.97,
+     "height": 10,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      72,
+      772
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Widget Corp - Internal Use Only",
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      72,
+      772
+     ],
+     "width": 113.368,
+     "height": 8,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Copyright 2026 Fixture Press. Synthetic test data.",
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      72,
+      72
+     ],
+     "width": 176.08,
+     "height": 8,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Page 2",
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      300,
+      56
+     ],
+     "width": 25.352,
+     "height": 8,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    }
+   ]
+  }
+ ]
+}

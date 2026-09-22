@@ -1,0 +1,893 @@
+{
+ "source": "doc-c.pdf",
+ "pages": [
+  {
+   "n": 1,
+   "width": 612,
+   "height": 792,
+   "items": [
+    {
+     "str": "Two Column Layout",
+     "transform": [
+      20,
+      0,
+      0,
+      20,
+      72,
+      740
+     ],
+     "width": 191.12,
+     "height": 20,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      14,
+      0,
+      0,
+      14,
+      72,
+      706
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Left Column",
+     "transform": [
+      14,
+      0,
+      0,
+      14,
+      72,
+      706
+     ],
+     "width": 81.662,
+     "height": 14,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      686
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "The left column runs down the page and its",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      686
+     ],
+     "width": 191.21,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "paragraph breaks line up with the right",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      674
+     ],
+     "width": 170.08,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "column's, which is what makes a band split",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      662
+     ],
+     "width": 190.31,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "before a gutter split read across the page.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      650
+     ],
+     "width": 185.1,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "A second left paragraph, set at the same",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      620
+     ],
+     "width": 180.1,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "indent and the same size as the first one.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      608
+     ],
+     "width": 182.32,
+     "height": 10,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      14,
+      0,
+      0,
+      14,
+      330,
+      706
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Right Column",
+     "transform": [
+      14,
+      0,
+      0,
+      14,
+      330,
+      706
+     ],
+     "width": 91.77,
+     "height": 14,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      330,
+      686
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "The right column is a separate reading run",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      330,
+      686
+     ],
+     "width": 187.86,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "and every one of its lines belongs after",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      330,
+      674
+     ],
+     "width": 171.2,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "the whole of the left one, never woven",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      330,
+      662
+     ],
+     "width": 168.43,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "between the left column's own lines.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      330,
+      650
+     ],
+     "width": 159.76,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "A second right paragraph, matching the",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      330,
+      620
+     ],
+     "width": 175.09,
+     "height": 10,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "left one's leading exactly.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      330,
+      608
+     ],
+     "width": 111.41,
+     "height": 10,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      72,
+      772
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Widget Corp - Internal Use Only",
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      72,
+      772
+     ],
+     "width": 113.368,
+     "height": 8,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Copyright 2026 Fixture Press. Synthetic test data.",
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      72,
+      72
+     ],
+     "width": 176.08,
+     "height": 8,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Page 1",
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      300,
+      56
+     ],
+     "width": 25.352,
+     "height": 8,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    }
+   ]
+  },
+  {
+   "n": 2,
+   "width": 612,
+   "height": 792,
+   "items": [
+    {
+     "str": "Style Signals",
+     "transform": [
+      14,
+      0,
+      0,
+      14,
+      72,
+      740
+     ],
+     "width": 87.15,
+     "height": 14,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      700
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "This line is set in the plain body face.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      700
+     ],
+     "width": 163.41,
+     "height": 10,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      670
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica-Oblique",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 2,
+      "fsSelection": 1,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "This line is set italic and says so in its name.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      670
+     ],
+     "width": 196.18,
+     "height": 10,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica-Oblique",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 2,
+      "fsSelection": 1,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      640
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "ABCDEF+FoundryText",
+      "ascent": 0.9,
+      "descent": -0.25,
+      "weight": null,
+      "macStyle": null,
+      "fsSelection": null,
+      "italicAngle": null
+     }
+    },
+    {
+     "str": "This line is bold by descriptor, not by name.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      640
+     ],
+     "width": 250.2,
+     "height": 10,
+     "hasEOL": false,
+     "font": {
+      "name": "ABCDEF+FoundryText",
+      "ascent": 0.9,
+      "descent": -0.25,
+      "weight": null,
+      "macStyle": null,
+      "fsSelection": null,
+      "italicAngle": null
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      610
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "ABCDEF+FoundrySlant",
+      "ascent": 0.9,
+      "descent": -0.25,
+      "weight": null,
+      "macStyle": null,
+      "fsSelection": null,
+      "italicAngle": null
+     }
+    },
+    {
+     "str": "This line is italic by descriptor, not by name.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      610
+     ],
+     "width": 261.32,
+     "height": 10,
+     "hasEOL": false,
+     "font": {
+      "name": "ABCDEF+FoundrySlant",
+      "ascent": 0.9,
+      "descent": -0.25,
+      "weight": null,
+      "macStyle": null,
+      "fsSelection": null,
+      "italicAngle": null
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      580
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "This line is bold and named for it.",
+     "transform": [
+      10,
+      0,
+      0,
+      10,
+      72,
+      580
+     ],
+     "width": 158.93,
+     "height": 10,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica-Bold",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 700,
+      "macStyle": 1,
+      "fsSelection": 32,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "",
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      72,
+      772
+     ],
+     "width": 0,
+     "height": 0,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Widget Corp - Internal Use Only",
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      72,
+      772
+     ],
+     "width": 113.368,
+     "height": 8,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Copyright 2026 Fixture Press. Synthetic test data.",
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      72,
+      72
+     ],
+     "width": 176.08,
+     "height": 8,
+     "hasEOL": true,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    },
+    {
+     "str": "Page 2",
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      300,
+      56
+     ],
+     "width": 25.352,
+     "height": 8,
+     "hasEOL": false,
+     "font": {
+      "name": "Helvetica",
+      "ascent": 0.9052734375,
+      "descent": -0.2119140625,
+      "weight": 400,
+      "macStyle": 0,
+      "fsSelection": 64,
+      "italicAngle": 0
+     }
+    }
+   ]
+  }
+ ]
+}
