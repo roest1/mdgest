@@ -1,8 +1,11 @@
 /** Where things live in a workspace, and what a name is allowed to be.
  *
- * The layout is the engine's and does not change:
+ * Every workspace has a folder of its own under `workspaces/` at the OPFS
+ * root, and everything below is relative to that folder. The layout is the
+ * engine's and does not change:
  *
- *   <workspace>
+ *   workspaces/<id>/
+ *     mdgest.json                         the manifest
  *     sources/<folder…>/<doc>.pdf         what was uploaded
  *     markdown/<folder…>/<doc>.md         what came out
  *     markdown/<folder…>/<doc>.assets/    its figures
@@ -13,6 +16,14 @@
  * and no folder may, so a folder and a document never claim one name -- see
  * `cleanFolder`.
  */
+
+/** The OPFS folder that holds one folder per workspace. */
+export const WORKSPACES = "workspaces";
+
+/** The one workspace this build keeps. A browser holds one at a time -- see
+ *  `stage.ts` -- but it lives under an id all the same, so holding several
+ *  is a change to who picks the id rather than to where anything is. */
+export const WORKSPACE_ID = "default";
 
 export const SOURCES = "sources";
 export const MARKDOWN = "markdown";
@@ -219,7 +230,7 @@ export function renamedId(docId: string, name: string): string {
 /** The visible manifest an exported workspace carries at its root, and the
  *  one file at the root of the OPFS workspace too. Its presence is what makes
  *  a folder or archive a project to continue rather than PDFs to add -- see
- *  docs/storage.md, "Continuing is its own operation". */
+ *  the README, "Adding, continuing, and replacing". */
 export const MANIFEST = "mdgest.json";
 
 /** What a manifest looks like from the landing's side of it.

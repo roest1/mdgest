@@ -10,8 +10,7 @@
  * Storage here is evictable and `edits.json` does not regenerate, so the page
  * asks for persistence when a workspace is committed -- `persist()` is not
  * exposed in a worker -- and an export is the only real durability. Why OPFS
- * and not the File System Access API, and what the export format is:
- * docs/storage.md.
+ * is the README's tech stack; what the export format is, docs/storage.md.
  */
 
 import {
@@ -19,6 +18,8 @@ import {
   MANIFEST,
   MARKDOWN,
   SOURCES,
+  WORKSPACE_ID,
+  WORKSPACES,
   assetsDir,
   byCodePoint,
   cacheDir,
@@ -49,6 +50,10 @@ declare global {
   }
 }
 
+/** The workspace's folder, as path segments from the OPFS root. Every path
+ *  this module takes is relative to it. */
+const HOME = [WORKSPACES, WORKSPACE_ID];
+
 async function root(): Promise<FileSystemDirectoryHandle> {
   return navigator.storage.getDirectory();
 }
@@ -66,14 +71,15 @@ export async function space(): Promise<{ usage: number; quota: number; free: num
   return { usage, quota, free: Math.max(0, quota - usage) };
 }
 
-/** Walk to a directory, optionally creating it. `null` when it is not there
- *  and `create` was not asked for, so callers can branch instead of catching. */
+/** Walk to a directory in the workspace, optionally creating it. `null` when
+ *  it is not there and `create` was not asked for, so callers can branch
+ *  instead of catching. */
 async function dirAt(
   path: string[],
   create = false,
 ): Promise<FileSystemDirectoryHandle | null> {
   let dir = await root();
-  for (const name of path) {
+  for (const name of [...HOME, ...path]) {
     try {
       dir = await dir.getDirectoryHandle(name, { create });
     } catch {
@@ -276,14 +282,17 @@ export async function writeManifest(manifest: Manifest): Promise<void> {
   await writeJson([MANIFEST], manifest);
 }
 
-/** Empty the workspace: sources, outputs, cache and manifest. One workspace
- *  lives in a browser at a time, so continuing from another means this one
- *  goes -- which is why the landing confirms before calling it. */
+/** Empty the workspace by removing its folder whole: sources, outputs, cache,
+ *  manifest, and anything else that found its way in. One workspace lives in
+ *  a browser at a time, so continuing from another means this one goes --
+ *  which is why the landing confirms before calling it. */
 export async function clearWorkspace(): Promise<void> {
-  await Promise.all([
-    ...[SOURCES, MARKDOWN, CACHE].map((name) => remove([name], true)),
-    remove([MANIFEST]),
-  ]);
+  const all = await (await root()).getDirectoryHandle(WORKSPACES, { create: true });
+  await all.removeEntry(WORKSPACE_ID, { recursive: true }).catch((cause: unknown) => {
+    // As in `remove`: already gone is what was asked for, and anything else
+    // is a discard that did not happen.
+    if (!(cause instanceof DOMException && cause.name === "NotFoundError")) throw cause;
+  });
   await ensureWorkspace();
 }
 

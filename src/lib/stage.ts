@@ -41,6 +41,7 @@ import {
   renamedId,
   sourcePath,
   stem,
+  WORKSPACE_ID,
   type Manifest,
 } from "./workspace";
 
@@ -101,7 +102,7 @@ function same(a: Snapshot, b: Snapshot | null): boolean {
   );
 }
 
-const WORKSPACE_LOCK = "mdgest-workspace";
+const WORKSPACE_LOCK = `mdgest-workspace:${WORKSPACE_ID}`;
 
 /** Run `fn` holding the workspace against every other tab of this origin.
  *

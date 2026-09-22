@@ -22,8 +22,8 @@ export type Origin = "workspace" | "loose" | "browser";
 
 /** What a row in the staged listing is, relative to the workspace it will
  *  join. On a fresh workspace every row is `new` and the landing says nothing;
- *  on a continue it marks only what deviates. See docs/storage.md,
- *  "Refusing to lose work". */
+ *  on a continue it marks only what deviates. The README's "Adding,
+ *  continuing, and replacing" has the table a person reads. */
 export type Status =
   /** In the manifest, and the same bytes. */
   | "unchanged"

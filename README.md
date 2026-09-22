@@ -38,7 +38,7 @@ Upload any collection of pdfs:
 
 **Human Review/Edit**
 
-Every image and text is boxed, using `pdfium`, into indexed items for you to manipulate:
+Every image and text is boxed, using `pdf.js`, into indexed items for you to manipulate:
 
 - click to select, (esc) to deselect
 - click-and-drag style reording of text and images.
@@ -70,6 +70,7 @@ folder on your disk. Folders are yours to organize however you like — mdgest
 mirrors them. Say you upload `invoice1.pdf` into an `invoices` folder:
 
     <workspace>/
+      mdgest.json                              the manifest: each document's SHA-256 and every decision
       sources/invoices/invoice1.pdf            the source PDF, untouched
       markdown/invoices/invoice1.md            the output, same tree
       .mdgest/invoices/invoice1.pdf/
@@ -77,6 +78,60 @@ mirrors them. Say you upload `invoice1.pdf` into an `invoices` folder:
         edits.json                             your corrections: role/level overrides, hidden blocks, splits, inserts — the one precious file
         versions.json                          named snapshots of edits.json you can roll back to
       .mdgest/invoices/rules.json            what the engine has learned from documents in this folder
+
+In the browser, the workspace lives at `workspaces/default/` in the site's own
+storage. Only one workspace is kept at a time, but it already has a folder of
+its own so that more can sit beside it later.
+
+### Adding, continuing, and replacing
+
+Everything you drop — PDFs, folders, zips — is listed before anything is
+written. The list says what the button under it will do to each file, and
+nothing reaches the workspace until you press it.
+
+**A project to continue is recognized by one file.** A folder or zip with
+`mdgest.json` at its root is an earlier export, and it continues where it left
+off. Anything else is PDFs to add. Loose PDFs join whichever workspace is
+there, whether you just dropped it or it's left over from a previous visit.
+
+**One workspace per browser.** A second project is refused until the first is
+discarded. Continuing an old export replaces what the browser holds as a whole.
+Documents are never mixed between the two. Discarding the browser's workspace
+asks first, because it holds the only copy of anything you haven't exported.
+
+**A document is its path.** `invoices/invoice1` is the id its edits are keyed
+to. A file's SHA-256 is evidence about it, never its identity. Each
+row in the list gets one of these marks:
+
+| mark        | meaning                                                                                  |
+| ----------- | ---------------------------------------------------------------------------------------- |
+| _(none)_    | new, and added as-is                                                                     |
+| `unchanged` | already here, byte for byte. Nothing is written                                          |
+| `revised`   | here already, with different bytes under the same name. You're asked again before commit |
+| `missing`   | listed in the manifest with no PDF. The decisions are kept and wait for the file         |
+| `duplicate` | the same bytes as another row, under another name. Both are kept unless you take one out |
+| `conflict`  | two different files for one name. Keep one or rename the other before you can continue   |
+
+Dropping a file the workspace already holds, under the same name, adds no
+row; the drop just says it was already uploaded.
+
+Matching is exact, with no fuzzy "this looks like the same PDF". The case that
+really happens is the same file picked again from the same folder, and exact
+equality catches it without false positives. Two PDFs that are only _similar_
+have different block layouts, so their edits wouldn't transfer anyway.
+
+**Revised is the one to be careful with.** A block's id is its position
+(`p{page}b{index}`), not its content. Replace a PDF with a new version and
+every edit still resolves, but to whatever block now sits in that position.
+That is why the drop tells revised files apart from unchanged ones, and why
+committing one asks a second time.
+
+**Before writing**, the list checks there is room: twice the size of what
+arrives, because markdown and analysis come out of it later. It also checks
+that no other tab has changed the workspace since the list was drawn. If one
+has, nothing is written, and you're asked to reload. Committing also asks the
+browser to keep the site's storage, but that request can be refused, so
+exporting is still what saving means.
 
 ### What gets learned, and when
 

@@ -42,7 +42,7 @@ export const MAX_ENTRIES = 10_000;
 export const MAX_DROP = 4 * 1024 * 1024 * 1024;
 
 /** An `mdgest.json`. It carries decisions and never bytes -- a sixty-document
- *  corpus is a few hundred kilobytes, see docs/storage.md -- so a file near
+ *  corpus is a few hundred kilobytes, see docs/storage.md, "Export" -- so a file near
  *  this size is not a manifest. Checked before it is read: decoding it to a
  *  string and parsing that string each cost a multiple of its size, and
  *  otherwise the only ceiling on it would be `MAX_FILE`. */
