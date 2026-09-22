@@ -13,7 +13,7 @@ flowchart TB
         CFG["vite.config.ts &middot; tsconfig.*.json<br/>.oxlintrc.json &middot; package.json &middot; bun.lock"]
     end
 
-    subgraph CI ["2 &nbsp; GATE &nbsp;&mdash;&nbsp; GitHub Actions, .github/workflows/web.yml"]
+    subgraph CI ["2 &nbsp; GATE &nbsp;&mdash;&nbsp; GitHub Actions, .github/workflows/ci.yml"]
         direction LR
         I["bun install<br/>--frozen-lockfile"] --> L["oxlint"] --> T["tsc -b"] --> B["vite build<br/>(rolldown)"]
     end
@@ -158,11 +158,11 @@ sequenceDiagram
 
 ## Browser floor
 
-| Requirement | Chrome / Edge | Firefox | Safari |
-| --- | --- | --- | --- |
-| OPFS with sync access handle | **102** | 111 | 15.2 |
-| module worker (`type: "module"`) | 80 | **114** | 15 |
-| Web Locks (`navigator.locks`) | 69 | 96 | **15.4** |
+| Requirement                      | Chrome / Edge | Firefox | Safari   |
+| -------------------------------- | ------------- | ------- | -------- |
+| OPFS with sync access handle     | **102**       | 111     | 15.2     |
+| module worker (`type: "module"`) | 80            | **114** | 15       |
+| Web Locks (`navigator.locks`)    | 69            | 96      | **15.4** |
 
 The floor is the highest number in each column: the sync access handle sets
 Chrome's (`getDirectory` alone is 86, the handle is not), the module worker
