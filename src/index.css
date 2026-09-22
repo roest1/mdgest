@@ -1,0 +1,256 @@
+/* @import must precede every other rule — CSS, not a Tailwind quirk. */
+@import "tailwindcss";
+@import "@fontsource/geist-sans/400.css";
+@import "@fontsource/geist-sans/500.css";
+@import "@fontsource/geist-sans/600.css";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource-variable/literata/opsz.css";
+
+/* ── tokens ─────────────────────────────────────────────────────────────
+   The two brand hexes are the mark's gradient stops. docs/brand/ is
+   upstream; nothing enforces the match, so change both. */
+@theme {
+  --font-sans:
+    "Geist Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono:
+    "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-serif: "Literata Variable", Georgia, serif;
+
+  --color-brand: #b01221; /* mark gradient, dark stop */
+  --color-brand-lit: #f0522a; /* mark gradient, light stop */
+  --color-accent: #3b82f6;
+  --color-accent-lit: #60a5fa;
+
+  --color-ground: #14120f;
+  --color-chrome: #1b1815;
+  --color-raised: #242018;
+  --color-edge: #2f2a23;
+  --color-edge-strong: #453d32;
+
+  --color-ink: #ece7dd;
+  --color-muted: #a2988a;
+  --color-faint: #776e62;
+}
+
+/* ── base ───────────────────────────────────────────────────────────── */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply m-0 p-0 font-sans text-ink antialiased;
+    /* plain black by default; the landing page's own wallpaper lives on
+       .landing-page below, not here, so a route that renders nothing
+       else on top of body (the editor) is just black. */
+    background-color: #000;
+    /* an app shell, not a document: panes scroll, the page does not */
+    overflow: hidden;
+  }
+
+  /* lucide draws for a 24px grid; at 12–14px the default 2px stroke muddies
+     — thin it once, everywhere */
+  svg.lucide {
+    stroke-width: 1.75;
+  }
+
+  /* visible keyboard focus, for a tool driven by keys */
+  :focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--color-accent-lit) 70%, transparent);
+    outline-offset: 1px;
+  }
+}
+
+/* ── scrollbars ─────────────────────────────────────────────────────── */
+:root {
+  --scrollbar-size: 8px;
+  --scrollbar-thumb: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-brand-lit) 85%, transparent),
+    color-mix(in srgb, var(--color-brand) 85%, transparent)
+  );
+  --scrollbar-thumb-hover: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-brand-lit) 100%, white 8%),
+    color-mix(in srgb, var(--color-brand) 100%, white 8%)
+  );
+  --scrollbar-glow: 0 0 10px
+    color-mix(in srgb, var(--color-brand-lit) 30%, transparent);
+  /* Firefox cannot paint a gradient thumb — flat brand is the closest match */
+  --scrollbar-thumb-flat: color-mix(
+    in srgb,
+    var(--color-brand) 85%,
+    transparent
+  );
+}
+
+::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+  box-shadow: var(--scrollbar-glow);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb-flat) transparent;
+  }
+}
+
+/* ── components ─────────────────────────────────────────────────────────
+   This lives in the components layer on purpose. Unlayered CSS beats every
+   Tailwind utility, so a bare `.landing-page` would win against
+   `class="landing-page p-8"` and force `!p-8` at the call site. Inside
+   @layer components the utility wins, which is the whole point. */
+@layer components {
+  /* The drop zone's border, at rest and on hover both. It is an SVG rect and
+     not `border-style: dashed` because a CSS dashed border exposes no offset
+     to animate — and because the two cannot be swapped at hover without the
+     dashes visibly resizing: Chrome stretches border dashes to divide each
+     edge evenly, so its dash length depends on the box's dimensions and never
+     lands on a round number. Drawing the resting border here means hover adds
+     motion and changes nothing else.
+
+     `6 4` matches the 3:2 rhythm Chrome was painting (measured at 6/4 device
+     px on a 672px-wide box). The box's own border stays at border-2 but
+     transparent, so the metrics it contributes are unchanged.
+
+     Scoped to `.upload-zone:hover` and not Tailwind's `group-hover:` on
+     purpose: the pick buttons inside are already groups, and `group-hover:`
+     matches any hovered `.group` ancestor — sharing the marker would light
+     both glyphs up whenever the cursor entered the box.
+
+     The animation lives on the :hover rule so nothing loops while the pointer
+     is elsewhere; prefers-reduced-motion (below) freezes it back to a plain
+     dashed outline. */
+  .dash {
+    stroke-dasharray: 6 4;
+    transition: color 0.2s ease-out;
+  }
+  .upload-zone:hover .dash {
+    animation: march 0.6s linear infinite;
+  }
+
+  /* The landing is a document now, not an app shell: the hero is one
+     viewport, the sections below scroll past it. `body` keeps overflow hidden
+     for the editor's sake, so this is the scroll container. */
+  .landing-page {
+    @apply h-screen overflow-y-auto;
+    background-color: var(--color-ground);
+  }
+
+  /* The hero owns the wallpaper. The two glows sit where the two backdrop
+     glyphs do — the PDF page leaning north-west, the Markdown mark leaning
+     north-east — and fade out well inside the hero, so scrolling past it
+     leaves plain ground and nothing else. The backdrop is positioned against
+     this box, which is why it is `relative`.
+
+     No `overflow-hidden`: the file listing hangs off the bottom of the centered
+     block, out of flow, and past the hero's edge once it is tall enough.
+     Nothing here needs clipping anyway -- the backdrop's <svg> is inset-0 and
+     `slice` crops inside its own viewport, and a background-image cannot
+     escape its box. */
+  .landing-hero {
+    @apply relative flex min-h-screen flex-col items-center justify-center p-4;
+    background-image:
+      radial-gradient(
+        ellipse 45% 55% at 14% 30%,
+        color-mix(in srgb, var(--color-brand) 16%, transparent),
+        transparent
+      ),
+      radial-gradient(
+        ellipse 45% 55% at 86% 30%,
+        color-mix(in srgb, var(--color-accent-lit) 13%, transparent),
+        transparent
+      );
+  }
+}
+
+/* ── motion ─────────────────────────────────────────────────────────── */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* `forwards` matters twice over: it holds the drawn state after the run, and
+   it is what makes the reduced-motion override below land on a finished line
+   rather than an invisible one. */
+/* -10 is one full `6 4` cycle, so the loop is seamless. Negative offset walks
+   the dashes forward along the path, and an SVG <rect> is drawn clockwise from
+   its top-left — flip the sign to march the other way. */
+@keyframes march {
+  to {
+    stroke-dashoffset: -10;
+  }
+}
+
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* `1 2`, never a bare `1`. With pathLength=1 a lone value means [1 on, 1 off],
+   so offset 1 lands a zero-length dash exactly on the path's end point — which
+   a round linecap paints as a full-diameter dot. A gap wider than the path
+   keeps every dash boundary off it. */
+@layer utilities {
+  .animate-draw {
+    stroke-dasharray: 1 2;
+    animation: draw 1.15s cubic-bezier(0.6, 0, 0.3, 1) forwards;
+  }
+  /* `both` rather than `forwards`: the fill has to run backward through the
+     delay too, or the head sits on screen fully formed for the second the line
+     spends catching up. 1.02s against the line's 1.15s overlaps them slightly,
+     which is what makes them read as one gesture. Stroke order is the SVG's
+     business — see Backdrop.tsx. */
+  .animate-draw-head {
+    stroke-dasharray: 1 2;
+    animation: draw 0.3s cubic-bezier(0.4, 0, 0.5, 1) 1.02s both;
+  }
+  .animate-fade-in {
+    animation: fade-in 0.15s ease-out;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    /* Collapsing duration alone is not enough once anything is choreographed
+       with a delay: the backdrop's arrowhead waits 1.02s for the line to
+       arrive, so without this it would still pop in a second after an
+       otherwise-instant page. A delay is motion too. */
+    animation-delay: 0s !important;
+  }
+}
