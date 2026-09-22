@@ -30,7 +30,7 @@ images, because one of them is displayed at 16pt on a retina screen.
 
 Apple's icon grid expects app art to sit inside its canvas — roughly 824 of 1024,
 with transparent margin. A full-bleed tile renders visibly larger than every native
-neighbour in the Dock. `mark-macos.svg` is the same drawing at that inset.
+neighbor in the Dock. `mark-macos.svg` is the same drawing at that inset.
 
 ## Specification
 
