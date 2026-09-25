@@ -120,15 +120,6 @@ dist-ssr/
 # TernJS port file
 .tern-port
 
-# pdf workspace
-workspace/
-
-# Tauri
-target/
-binaries/
-schemas/
-.pyinstaller/
-
 *.local
 .vscode/*
 ~.vscode/extensions.json
