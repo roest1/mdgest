@@ -731,3 +731,23 @@ export function commit(): Promise<{ docs: string[] }> {
     return { docs: await opfs.docs() };
   });
 }
+
+/** The workspace's documents as OPFS holds them now, for the editor.
+ *
+ * Read under the lock, so a commit in another tab is never listed halfway,
+ * and read fresh rather than from the stage: after a commit the stage is
+ * empty, and what the editor lists is the workspace, not an upload. */
+export function docs(): Promise<string[]> {
+  return locked(opfs.docs);
+}
+
+/** One committed document's bytes, for the editor to render. Under the lock
+ *  for the same reason as `docs`: a commit in another tab writes sources one
+ *  at a time, and this should see one either before it or after. */
+export function source(docId: string): Promise<Uint8Array<ArrayBuffer>> {
+  return locked(async () => {
+    const bytes = await opfs.readFile(sourcePath(docId));
+    if (!bytes) throw new Error(`${docId} is not in this workspace.`);
+    return bytes;
+  });
+}

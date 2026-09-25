@@ -101,4 +101,6 @@ export const engine = {
   discardWorkspace: () => call("discardWorkspace", undefined),
   stageView: () => call("stageView", undefined),
   commit: () => call("commit", undefined),
+  docs: () => call("docs", undefined),
+  source: (docId: string) => call("source", { docId }),
 };

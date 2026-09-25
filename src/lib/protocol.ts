@@ -100,6 +100,11 @@ export interface Engine {
   stageView: { params: void; result: StageView };
   /** Write the stage to OPFS and clear it. Throws while a conflict stands. */
   commit: { params: void; result: { docs: string[] } };
+  /** The committed workspace's documents, by id, for the editor to list. */
+  docs: { params: void; result: string[] };
+  /** One committed document's bytes, for the editor to render. Moved to the
+   *  page rather than copied, so a large PDF is not held twice. */
+  source: { params: { docId: string }; result: Uint8Array<ArrayBuffer> };
 }
 
 export type Method = keyof Engine;
