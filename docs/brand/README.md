@@ -1,22 +1,32 @@
 # The mark
 
-`mark.svg` is the source of truth. Everything else in `src-tauri/icons/` and
-`frontend/public/` is rendered from it by `scripts/make_brand.py` — never drawn by hand,
-never edited downstream.
+`mark.svg` is the source of truth. Everything downstream of it — the PNGs, the
+`.ico`, the `.icns` in `docs/brand/icons/`, and the SVGs the app serves from
+`public/` — is rendered from it by `scripts/make_brand.py`. Never drawn by
+hand, never edited downstream.
 
 ```
-uv sync --project engine --extra dev          # brings in cairosvg
-uv run --project engine python scripts/make_brand.py
+uv run scripts/make_brand.py          # PEP 723: cairosvg and pillow come with it
 ```
 
-## The four files
+The script needs no project and no virtualenv of its own; its dependencies are
+declared in its header and `uv` resolves them per run. Nothing in the web build
+depends on it — the app ships the vectors, and the raster set is made ahead of
+a platform that demands a `.ico` or an `.icns` rather than in response to one.
 
-| File              | What it is                | Where it goes             |
-| ----------------- | ------------------------- | ------------------------- |
-| `mark.svg`        | the full mark, `pdf → md` | every slot at 24px and up |
-| `mark-small.svg`  | the arrow alone           | 16px slots only           |
-| `mark-macos.svg`  | the full mark, inset      | `icon.icns`, all sizes    |
-| `lockup-wide.svg` | mark + wordmark on paper  | README, docs, About       |
+## The four drawings
+
+| File              | What it is                | Where it goes                        |
+| ----------------- | ------------------------- | ------------------------------------ |
+| `mark.svg`        | the full mark, `pdf → md` | every slot at 24px and up; `public/` |
+| `mark-small.svg`  | the arrow alone           | 16px slots only; the favicon         |
+| `mark-macos.svg`  | the full mark, inset      | `icon.icns`, all sizes               |
+| `lockup-wide.svg` | mark + wordmark on paper  | README, docs, About                  |
+
+`WEB_SVGS` in the script is the list of what the app serves: add a stem there
+and it ships, and there is no second place to update. The rendered set lands in
+`docs/brand/icons/`, beside the SVGs it comes from rather than beside a
+consumer, because it has more than one possible consumer and no current one.
 
 ## Why there are two drawings
 

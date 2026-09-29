@@ -1,5 +1,5 @@
 # Cloudflare Pages reads this at deploy time; nothing in the dev server or the
-# preview server honours it, so a policy that breaks the app breaks it only in
+# preview server honors it, so a policy that breaks the app breaks it only in
 # production. After changing anything here, load the deployed page and check
 # the console for "Refused to …" — that is the only place it is enforced.
 

@@ -16,7 +16,10 @@ PDF to Markdown. The one missing feature to [pdf.net](https://pdf.net).
 
 ## How it works
 
-Instead of one function that takes a .pdf and outputs a .md, `mdgest` is an offline, pdf->md tool where a human in the loop can verify the markdown is right page-by-page.
+Instead of one function that takes a `.pdf` and returns a `.md`, `mdgest` is an
+offline pdf→md tool where a human in the loop can verify the markdown is right,
+page by page. Nothing is uploaded anywhere: the conversion runs in your browser,
+and the workspace lives in your browser's own storage.
 
 Upload any collection of pdfs:
 
@@ -24,40 +27,64 @@ Upload any collection of pdfs:
 - a zip of pdfs
 - a folder with pdfs in it
 
-**100% Guarantees:**
+**What every conversion guarantees:**
 
-- all text from pdf makes it into the markdown
-- all pictures from pdf make it into the markdown
+- all text from the pdf makes it into the markdown
+- every picture large enough to be a figure is written beside the markdown and
+  linked from it. Images below the figure thresholds — hairline rules, bullet
+  glyphs drawn as bitmaps, stretched one-pixel shims — are decoration, and are
+  left out on purpose (`src/lib/read.ts`).
 
-**Not yet implemented:**
+Nothing is summarized, rewritten or dropped for being hard to place: a block the
+engine cannot make sense of comes out as a paragraph, where you can see it and
+fix it.
 
-- Math equations
-- Tables
-- Hyperlinks
-- Rotate
+**Working today**
 
-**Human Review/Edit**
+- the conversion: pdf.js reads every line and picture, `structure.ts` makes
+  blocks in reading order and gives each a role, `emit.ts` writes the markdown.
+  The result is cached as `analysis.json` and written to `markdown/<doc>.md`
+  with its figures beside it
+- review: every block boxed and numbered on the page, the same numbers beside
+  the markdown lines they became, click to select, `shift`-click for a range,
+  `ctrl`/`cmd`-click for distinct blocks, `esc` to deselect
+- a guided tour on a bundled two-page example, so none of this has to be learned
+  on your own document
 
-Every image and text is boxed, using `pdf.js`, into indexed items for you to manipulate:
+**Not built yet** — in the order they matter
 
-- click to select, (esc) to deselect
-- click-and-drag style reording of text and images.
-  - (shift + click) select range
-  - (ctrl + click) select distinct
-- control groups of text: **join** two groups into one, or **divide** one group into two.
+|                              |                                                                                                                   |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `edits.json`                 | every correction below. The one precious file, and the one nothing writes yet                                     |
+| export                       | browser storage is evictable, and nothing writes a workspace back to disk. See [docs/storage.md](docs/storage.md) |
+| `rules.json`                 | what the engine learns from a folder's documents                                                                  |
+| tables                       | read as the lines they are printed as, not as a table                                                             |
+| math                         | read as the glyphs it is set in, not as `$…$`                                                                     |
+| hyperlinks                   | link annotations are disabled at read time; a url comes through as its text                                       |
+| repeated headers and footers | no detection, so running heads and page numbers come through on every page                                        |
+| rotate                       | a page's own rotation is applied, but a block cannot be turned by hand                                            |
+
+### Review and edit — the design, not yet the app
+
+Every image and line of text is already boxed into indexed blocks. What the
+toolbar will do with a selection:
+
+- click-and-drag reordering of text and images
+- control groups of text: **join** two blocks into one, or **divide** one into two
 - modify markdown headings: (**H1**, `#`), (**H2**, `##`), (**H3**, `###`), (**H4**, `####`)
 - edit font styles: **bold** and _italics_
-- lists: (unordered: `-`), (ordered: `1.`, `a.`, `i.` - numerical, alpha, or roman)
+- lists: (unordered: `-`), (ordered: `1.`, `a.`, `i.` — numerical, alpha, or roman)
 - insert space (paragraph, indentation)
-- `---` page breaks (before/after line)
+- `---` page breaks (before/after line). Today one is written between every page
 - page numbers (on by default)
-- hide
-  - decisions record on _wording_, not position.
+- hide — decisions record on _wording_, not position
 - (ctrl + z) undo / with version history
 
 > Fixing in the markdown editor applies and records changes in the same way.
 
-- **Only `edits.json` is important**. It holds what you decided and nothing else does. This is where rules come from.
+**Only `edits.json` is important.** It holds what you decided and nothing else
+does. The analysis regenerates from the pdf; the markdown regenerates from the
+analysis and the edits. This is also where rules come from.
 
 ## The more technical: Workspaces, rules, and how learning works
 
@@ -65,6 +92,15 @@ Every image and text is boxed, using `pdf.js`, into indexed items for you to man
   <img src="docs/diagrams/workspace.svg" alt="Drop files from your disk into the stage, commit them to the workspace in browser storage, export the workspace back to disk" width="100%">
 </p>
 
+Browser storage is evictable and there is no account, so **exporting is what
+saving means**. An export is a folder you keep:
+
+- `mdgest.json` carrying every decision
+- `sources/` as you gave them
+- `markdown/` as it came out.
+
+Hand it back later and you carry on where you left off. Nothing in it is hidden.
+Export is the next thing to build.
 A workspace is a tree in your browser's own storage, and an export of it is a
 folder on your disk. Folders are yours to organize however you like — mdgest
 mirrors them. Say you upload `invoice1.pdf` into an `invoices` folder:
@@ -73,11 +109,16 @@ mirrors them. Say you upload `invoice1.pdf` into an `invoices` folder:
       mdgest.json                              the manifest: each document's SHA-256 and every decision
       sources/invoices/invoice1.pdf            the source PDF, untouched
       markdown/invoices/invoice1.md            the output, same tree
+      markdown/invoices/invoice1.assets/       its figures, as PNGs
       .mdgest/invoices/invoice1.pdf/
         analysis.json                          the engine's read of the PDF (blocks, fonts, roles) — regenerable, deletable
         edits.json                             your corrections: role/level overrides, hidden blocks, splits, inserts — the one precious file
         versions.json                          named snapshots of edits.json you can roll back to
       .mdgest/invoices/rules.json            what the engine has learned from documents in this folder
+
+`analysis.json` and the markdown are written today; `edits.json`, `versions.json`
+and `rules.json` are the layer above, and the rest of this section is the design
+they are being built to.
 
 In the browser, the workspace lives at `workspaces/default/` in the site's own
 storage. Only one workspace is kept at a time, but it already has a folder of
@@ -124,7 +165,8 @@ have different block layouts, so their edits wouldn't transfer anyway.
 (`p{page}b{index}`), not its content. Replace a PDF with a new version and
 every edit still resolves, but to whatever block now sits in that position.
 That is why the drop tells revised files apart from unchanged ones, and why
-committing one asks a second time.
+committing one asks a second time. What a revised source is to do to its edits
+is decided and written down in [docs/storage.md](docs/storage.md).
 
 **Before writing**, the list checks there is room: twice the size of what
 arrives, because markdown and analysis come out of it later. It also checks
@@ -134,6 +176,8 @@ browser to keep the site's storage, but that request can be refused, so
 exporting is still what saving means.
 
 ### What gets learned, and when
+
+_Designed, not built._
 
 A rule maps how a block looks on the page — font size, weight, indent, marker — to the role you decided it should have. Not the text, the shape: "14pt bold, indent 2 → heading level 2." Text-based rules exist too, for repeated headers/footers, keyed by wording with digits wildcarded so page numbers don't break the match.
 
@@ -153,43 +197,48 @@ The second document in `invoices/` that shares a template edits faster than the 
 git clone https://github.com/roest1/mdgest.git && cd mdgest
 curl -fsSL https://bun.com/install | bash
 bun install
-bun run dev
+bun run dev          # http://127.0.0.1:2048, or set WEB_PORT
 ```
+
+`bun run lint` (oxlint), `bun run typecheck` (`tsc -b`) and `bun run build`
+(`tsc -b` then vite) are what CI runs, in that order.
 
 ## Tech stack
 
-**the app** — one bundle, hosted as static files on Cloudflare Pages
+**the app** — one bundle, hosted as static files on Cloudflare Pages. No server,
+no account, no network call after the page loads.
 
-- `vite` + `react` + `typescript`, `tailwind` for styling, `oxlint` for linting
-- `pdf.js` reads the PDF: every line with its box, size and weight, and every
-  picture with its drawn bounds.
-- **OPFS** is the workspace. The origin-private file system is the only storage
-  every browser has (Chrome/Edge 102+, Firefox 111+, Safari 15.2+, iOS
-  included), and the only one with a synchronous handle — which is what lets
-  the engine stay synchronous instead of turning every call into a promise.
-  It runs in a worker, because that handle is not exposed on the main thread.
-  That worker is a module worker, which is what actually sets the floor on
-  Firefox: 114, not the 111 that OPFS alone would ask for. Web Locks, which
-  keep two tabs from writing one workspace at once, set Safari's: 15.4.
-- fonts
-  - jetbrains-mono
-  - liberata
-  - geist-sans
-- icons (lucide-react)
-- react (dom, router)
-- state management: zustand
-- rendering (react-markdown and remark-gfm)
-- maybe pdfjs-dist
+|          |                                                                                                                                                   |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| build    | `vite` 8 (rolldown), `typescript` 7, `oxlint`                                                                                                     |
+| ui       | `react` 19, `react-router` 8, `tailwind` 4, `lucide-react` icons                                                                                  |
+| state    | `zustand` — one store for what both editor panes read                                                                                             |
+| pdf      | `pdfjs-dist` 6, with cmaps, standard fonts and the wasm fallback emitted as assets by a plugin in `vite.config.ts`                                |
+| markdown | `react-markdown` + `remark-gfm` for the rendered view                                                                                             |
+| archives | `fflate` — unzip on the way in. The zip writer arrives with export                                                                                |
+| fonts    | Literata (serif), Geist Sans (ui), JetBrains Mono (code), Caveat (the landing's hand) — self-hosted via `@fontsource`, never a request off-origin |
 
-**where the work lives**
+**pdf.js reads the PDF.** Every line with its box, size and weight, and every
+picture with the bounds it was drawn to. It was chosen over pdfium by
+measurement, not preference — see [docs/storage.md](docs/storage.md). Its own
+parsing worker does the decoding; `src/lib/read.ts` does the geometry.
 
-Browser storage is evictable and there is no account, so **exporting is what
-saving means**. An export is a folder you keep:
+**OPFS is the workspace.** The origin-private file system is the only storage
+every browser has, and the only one with a synchronous handle — which is what
+lets the engine stay synchronous instead of turning every call into a promise.
+It runs in a worker, because that handle is not exposed on the main thread.
+That worker is a module worker, which is what actually sets the floor on
+Firefox: 114, not the 111 that OPFS alone would ask for. Web Locks, which keep
+two tabs from writing one workspace at once, set Safari's: 15.4. The whole
+table is in [docs/deployment.md](docs/deployment.md).
 
-- `mdgest.json` carrying every decision
-- `sources/` as you gave them
-- `markdown/` as it came out.
+## Documentation
 
-Hand it back later and you carry on where you left off. Nothing in it is hidden.
+|                                              |                                                                                               |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [docs/pipeline.md](docs/pipeline.md)         | how a page becomes markdown: read → structure → emit, and every threshold either one leans on |
+| [docs/storage.md](docs/storage.md)           | what is left in the workspace story: export, where edits live, what a revised source does     |
+| [docs/deployment.md](docs/deployment.md)     | commit to edge to browser, the worker boundary, the browser floor                             |
+| [docs/brand/README.md](docs/brand/README.md) | the mark, and why there are two drawings of it                                                |
 
 ---

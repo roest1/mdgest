@@ -1,51 +1,22 @@
-import { PanelLeftClose, PanelLeftOpen, SquarePen } from "lucide-react";
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { CircleHelp, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
+import { MarkdownPane } from "src/components/editor/MarkdownPane";
 import { PdfPane } from "src/components/editor/PdfPane";
 import { Split } from "src/components/editor/Split";
 import { TabBar } from "src/components/editor/TabBar";
+import { Toolbar } from "src/components/editor/Toolbar";
+import { Tour } from "src/components/editor/Tour";
 import { FileTree } from "src/components/shared/FileTree";
 import { Spinner } from "src/components/shared/Spinner";
+import { releaseAssets } from "src/lib/assets";
 import { engine } from "src/lib/engine";
+// For its listener alone: it is what keeps every glint on one clock.
+import "src/lib/glint";
+import { useEditor } from "src/lib/store";
+import { TOUR_DOC } from "src/lib/tour-doc";
 import type { Entry } from "src/lib/tree";
 import { messageOf } from "src/lib/words";
-
-function Placeholder({ label }: { label: string }) {
-  return (
-    <div className="flex h-full items-center justify-center text-xs text-faint">
-      {label}
-    </div>
-  );
-}
-
-type View = "rendered" | "raw";
-
-/** How the markdown pane shows its document: typeset, or as source. The
- *  choice is the editor's, so the pane can act on it once it exists. */
-function ViewToggle({ view, onView }: { view: View; onView: (view: View) => void }) {
-  return (
-    <div
-      role="radiogroup"
-      aria-label="Markdown view"
-      className="flex rounded-md border border-edge bg-raised/40 p-0.5"
-    >
-      {(["rendered", "raw"] as const).map((v) => (
-        <button
-          key={v}
-          type="button"
-          role="radio"
-          aria-checked={view === v}
-          onClick={() => onView(v)}
-          className={`cursor-pointer rounded px-2.5 py-0.5 text-xs transition-colors ${
-            view === v ? "bg-raised text-ink" : "text-muted hover:text-ink"
-          }`}
-        >
-          {v}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 /** What fills both panes while no document is open: one surface, not a
  *  split, since there is nothing yet to put side by side. */
@@ -90,11 +61,15 @@ function Explorer({ docId }: { docId: string }) {
     };
   }, []);
 
+  // The walkthrough's example is listed while the walkthrough runs, and
+  // only then: it is not in the workspace, and should not look as if it is.
+  const touring = useEditor((s) => s.tour !== null);
+
   // Memoised so the tree is rebuilt when the listing changes, not each time
   // a document is opened.
   const entries = useMemo<Entry[]>(
-    () => (docs ?? []).map((path) => ({ path, kind: "pdf" })),
-    [docs],
+    () => [...(docs ?? []), ...(touring ? [TOUR_DOC] : [])].map((path) => ({ path, kind: "pdf" })),
+    [docs, touring],
   );
 
   if (problem) return <p className="p-3 text-xs text-red-300">{problem}</p>;
@@ -125,17 +100,34 @@ function Explorer({ docId }: { docId: string }) {
   );
 }
 
+/** Escape clears the selection, from anywhere but a field -- the page
+ *  number's input uses Escape to give up what was typed, and only that. */
+function useEscapeDeselects() {
+  const deselect = useEditor((s) => s.deselect);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      deselect();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [deselect]);
+}
+
 export default function Editor() {
   const docId = useParams()["*"] || "";
   const [sidebar, setSidebar] = useState(true);
   const navigate = useNavigate();
-  // Not yet acted on: the markdown pane will read it once it exists.
-  const [view, setView] = useState<View>("rendered");
+  useEscapeDeselects();
 
   // Every document visited stays open as a tab until its tab is closed, in
   // the order first opened. Adjusted during render, like the tree's reveal,
   // so a document never draws without its tab.
-  const [openDocs, setOpenDocs] = useState<string[]>(() => (docId ? [docId] : []));
+  const [openDocs, setOpenDocs] = useState<string[]>(() =>
+    docId ? [docId] : [],
+  );
   if (docId && !openDocs.includes(docId)) {
     setOpenDocs((prev) => (prev.includes(docId) ? prev : [...prev, docId]));
   }
@@ -147,6 +139,7 @@ export default function Editor() {
   // and a removal that landed first would still be on the closed document's
   // route, where the block above would only put the tab back.
   const closeTab = (doc: string) => {
+    releaseAssets(doc);
     startTransition(() => {
       const rest = openDocs.filter((d) => d !== doc);
       setOpenDocs(rest);
@@ -157,6 +150,58 @@ export default function Editor() {
       }
     });
   };
+
+  // The walkthrough runs on its own example document, in a tab of its own,
+  // so it disturbs nothing of the person's. Starting it opens that tab and
+  // remembers where they were; its end closes the tab and goes back.
+  const tour = useEditor((s) => s.tour);
+  const setTour = useEditor((s) => s.setTour);
+  const returnTo = useRef<string | null>(null);
+  const touring = useRef(false);
+  const startTour = () => {
+    if (docId !== TOUR_DOC) {
+      returnTo.current = docId || null;
+      navigate(editPath(TOUR_DOC));
+    }
+    setTour(0);
+  };
+  useEffect(() => {
+    if (tour !== null) {
+      touring.current = true;
+      return;
+    }
+    if (!touring.current) return;
+    touring.current = false;
+    // The example is the person's document in nothing but looks: its
+    // reading and its figures go with the tour, as convert.ts promises,
+    // and the next run reads it afresh.
+    releaseAssets(TOUR_DOC);
+    useEditor.getState().setReading(TOUR_DOC, undefined);
+    startTransition(() => {
+      setOpenDocs((prev) => prev.filter((d) => d !== TOUR_DOC));
+      const back = returnTo.current;
+      returnTo.current = null;
+      // A tour that ended on the example -- Escape, or its last step --
+      // goes back to where the person was. One ended by their opening
+      // another document stays on the document they went to.
+      if (docId === TOUR_DOC) navigate(back ? editPath(back) : "/edit", { replace: true });
+    });
+    // Only on the tour's own transitions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tour]);
+
+  // The tour lives on its example alone: opening another document while it
+  // runs is leaving it, not a step of it. Guarded by having arrived, since
+  // starting the tour navigates and the route may land a render later.
+  const onExample = useRef(false);
+  useEffect(() => {
+    if (tour === null) {
+      onExample.current = false;
+      return;
+    }
+    if (docId === TOUR_DOC) onExample.current = true;
+    else if (onExample.current) setTour(null);
+  }, [tour, docId, setTour]);
 
   return (
     <div className="flex h-screen flex-col">
@@ -178,18 +223,30 @@ export default function Editor() {
           {docId || "no document selected"}
         </span>
 
+        {/* The walkthrough, replayable: it shows itself once, the first time
+            a document is open to be clicked on, and lives here after. */}
+        <button
+          type="button"
+          title="Show me around"
+          data-tour="help"
+          onClick={startTour}
+          className="ml-auto cursor-pointer rounded p-1 text-muted transition-colors hover:text-ink"
+        >
+          <CircleHelp className="h-4 w-4" />
+        </button>
+
         {/* The way back, where the GitHub link sits on the landing: far right,
             out of the way of everything the header is actually for. */}
         <Link
           to="/"
           title="mdgest"
-          className="ml-auto shrink-0 rounded p-1 opacity-80 transition-opacity hover:opacity-100"
+          className="shrink-0 rounded p-1 opacity-80 transition-opacity hover:opacity-100"
         >
           <img
             src="/mark.svg"
             alt="mdgest"
-            width={20}
-            height={20}
+            width={30}
+            height={30}
             className="rounded-[5px]"
           />
         </Link>
@@ -200,7 +257,9 @@ export default function Editor() {
             folders were open and does not read the listing again. The column
             behind the explorer carries the header's color, so what the
             curved corner cuts away reads as the header continuing down. */}
-        <div className={`w-[260px] shrink-0 bg-chrome ${sidebar ? "" : "hidden"}`}>
+        <div
+          className={`w-[260px] shrink-0 bg-chrome ${sidebar ? "" : "hidden"}`}
+        >
           <aside className="h-full overflow-hidden rounded-tr-xl border-t border-r border-edge bg-ground">
             <Explorer docId={docId} />
           </aside>
@@ -224,26 +283,10 @@ export default function Editor() {
                   </main>
                 }
                 right={
-                  <section className="flex min-h-0 flex-1 flex-col">
-                    {/* Three columns, as on the pages side, so the toggle
-                        sits centred whatever the left label's width. */}
-                    <div className="grid h-9 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-edge px-3 text-xs text-faint">
-                      {/* The shape the pane's edit control will take. It
-                          does nothing yet: there is no markdown to edit. */}
-                      <button
-                        type="button"
-                        className="flex cursor-pointer items-center gap-1.5 justify-self-start
-                          rounded-md border border-edge bg-raised/40 px-2 py-1 text-muted
-                          transition-colors hover:bg-raised hover:text-ink"
-                      >
-                        <SquarePen className="h-4 w-4" />
-                        edit
-                      </button>
-                      <ViewToggle view={view} onView={setView} />
-                    </div>
-                    <div className="min-h-0 flex-1">
-                      <Placeholder label="markdown" />
-                    </div>
+                  <section className="min-h-0 flex-1">
+                    {/* Keyed like the pages: a fresh read of the next
+                        document's markdown, not the last one's. */}
+                    <MarkdownPane key={docId} docId={docId} />
                   </section>
                 }
               />
@@ -253,8 +296,11 @@ export default function Editor() {
               <Empty />
             </main>
           )}
+          {docId && <Toolbar docId={docId} />}
         </div>
       </div>
+      <Tour />
     </div>
   );
 }
+

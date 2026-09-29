@@ -13,6 +13,8 @@
  * it is handled, which is the point.
  */
 
+import type { Analysis } from "./analysis";
+
 // ---- staging --------------------------------------------------------------
 
 /** Where a staged copy of a document came from. `browser` is the workspace
@@ -105,6 +107,24 @@ export interface Engine {
   /** One committed document's bytes, for the editor to render. Moved to the
    *  page rather than copied, so a large PDF is not held twice. */
   source: { params: { docId: string }; result: Uint8Array<ArrayBuffer> };
+  /** The engine's read of a committed document, as
+   *  `.mdgest/<id>.pdf/analysis.json` holds it, or null while the document
+   *  has not been read: the ordinary state of a fresh upload. */
+  analysis: { params: { docId: string }; result: Analysis | null };
+  /** Keep a document's read, and write its markdown from it: the analysis
+   *  to the cache, the figures beside the markdown, and `markdown/<id>.md`.
+   *  The figures' buffers are handed over, not copied, and are empty on the
+   *  page afterwards. */
+  convert: { params: { docId: string; analysis: Analysis; figures: Figure[] }; result: void };
+  /** One of a document's figures, as `convert` wrote it, or null when there
+   *  is no such file. Moved to the page, like `source`. */
+  asset: { params: { docId: string; name: string }; result: Uint8Array<ArrayBuffer> | null };
+}
+
+/** A figure's PNG, named as it sits in `markdown/<doc>.assets/`. */
+export interface Figure {
+  name: string;
+  bytes: ArrayBuffer;
 }
 
 export type Method = keyof Engine;

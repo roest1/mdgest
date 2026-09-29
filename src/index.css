@@ -30,6 +30,10 @@
   --color-ink: #ece7dd;
   --color-muted: #a2988a;
   --color-faint: #776e62;
+
+  /* the sticky note on a selection: paper and the pencil on it */
+  --color-note: #f3d35f;
+  --color-note-ink: #3a2f06;
 }
 
 /* ── base ───────────────────────────────────────────────────────────── */
@@ -206,6 +210,371 @@
         transparent
       );
   }
+
+  /* ── the markdown pane ────────────────────────────────────────────── */
+
+  .markdown {
+    @apply font-serif text-[15px] leading-[1.65] text-ink/90;
+  }
+  .markdown > :first-child {
+    @apply mt-0;
+  }
+  .markdown :is(h1, h2, h3, h4, h5, h6) {
+    @apply font-semibold tracking-tight text-ink;
+  }
+  .markdown h1 {
+    @apply mt-8 mb-3 text-[1.75rem] leading-tight;
+  }
+  .markdown h2 {
+    @apply mt-7 mb-2.5 text-[1.35rem] leading-snug;
+  }
+  .markdown h3 {
+    @apply mt-6 mb-2 text-[1.1rem];
+  }
+  .markdown :is(h4, h5, h6) {
+    @apply mt-5 mb-1.5 text-base;
+  }
+  .markdown p {
+    @apply my-3;
+  }
+  .markdown a {
+    @apply text-accent-lit underline decoration-accent-lit/40 underline-offset-2
+      hover:decoration-accent-lit;
+  }
+  .markdown strong {
+    @apply font-semibold text-ink;
+  }
+  .markdown :is(ul, ol) {
+    @apply my-3 pl-6;
+  }
+  .markdown ul {
+    @apply list-disc;
+  }
+  .markdown ol {
+    @apply list-decimal;
+  }
+  .markdown ol ol {
+    @apply list-[lower-alpha];
+  }
+  .markdown ol ol ol {
+    @apply list-[lower-roman];
+  }
+  .markdown li {
+    @apply my-1 pl-1;
+  }
+  .markdown li > p {
+    @apply my-1;
+  }
+  /* GFM's task lists: the box stands where the bullet would. */
+  .markdown .contains-task-list {
+    @apply list-none pl-1;
+  }
+  .markdown .task-list-item input {
+    @apply mr-2 align-[-1px] accent-accent;
+  }
+  .markdown blockquote {
+    @apply my-4 border-l-2 border-edge-strong pl-4 text-muted;
+  }
+  .markdown code {
+    @apply rounded bg-raised px-1 py-0.5 font-mono text-[0.85em] [font-variant-ligatures:none];
+  }
+  .markdown pre {
+    @apply my-4 overflow-x-auto rounded-md border border-edge bg-chrome p-3 font-mono
+      text-[12.5px] leading-relaxed;
+  }
+  .markdown pre code {
+    @apply bg-transparent p-0 text-[inherit];
+  }
+  /* A rule is the converter's page break, and reads as one. */
+  .markdown hr {
+    @apply my-8 border-0 border-t border-dashed border-edge-strong;
+  }
+  .markdown table {
+    @apply my-4 block max-w-full overflow-x-auto border-collapse text-[14px];
+  }
+  .markdown :is(th, td) {
+    @apply border border-edge px-2.5 py-1.5 text-left align-top;
+  }
+  .markdown th {
+    @apply bg-raised/60 font-semibold text-ink;
+  }
+  /* On white, as on the page: a figure with nothing behind it -- a logo,
+     a scanned line of text -- would vanish into the pane. */
+  .markdown img {
+    @apply my-4 h-auto max-w-full rounded border border-edge bg-white;
+  }
+
+  /* `.source` is the raw view: an <ol>, one <li> a line, numbered by a CSS
+     counter in a gutter drawn by the item's ::before. A counter and not text
+     so that selecting the view and copying it gives the markdown alone. The
+     gutter's width comes from `--digits`, set by the pane to the line
+     count's length, so every number sits on one right edge and the column
+     is no wider than the document needs. Each line wraps under its own
+     number; the gutter runs the full height of a wrapped one. */
+  .source {
+    counter-reset: line;
+    @apply m-0 list-none p-0 font-mono text-[12.5px] leading-[1.55] text-ink/85
+      [font-variant-ligatures:none];
+  }
+  .source > li {
+    counter-increment: line;
+    display: grid;
+    grid-template-columns: calc(var(--digits, 2) * 1ch + 1.5rem) minmax(0, 1fr);
+    @apply gap-x-3 pr-4 whitespace-pre-wrap wrap-break-word;
+  }
+  .source > li::before {
+    content: counter(line);
+    @apply border-r border-edge pr-2.5 text-right text-faint tabular-nums select-none;
+  }
+  .source > li:hover {
+    @apply bg-ink/[0.03];
+  }
+  .source > li:hover::before {
+    @apply text-muted;
+  }
+  .source > li[data-kind="heading"] {
+    @apply font-semibold text-ink;
+  }
+  .source > li[data-kind="rule"] {
+    @apply text-faint;
+  }
+  .source > li[data-kind="image"] {
+    @apply text-muted;
+  }
+
+  /* ── selection ──────────────────────────────────────────────────────
+     One accent at a few strengths, so a white page and the dark panes share
+     a look. The strengths are variables because paper is the other way
+     round: the glint is white, which is light against the panes and is the
+     paper itself on a page, so `.on-paper` makes it the accent and pales
+     the border a little for it to show against. It cannot read as light
+     there -- a dark band on a pale line is a shadow passing -- so it is
+     kept quiet rather than pushed. Reduced motion stills the glint and
+     keeps the border and fill.
+
+     The band moves against the intuition of `background-position`: at
+     `100% 0%` the image's top-right corner sits on the box's top-right, so
+     its center -- where the band is -- lies off the bottom-left, and moving
+     to `0% 100%` carries the band up and across. */
+  .selection {
+    --glint: white;
+    --fill: 12%; /* of the accent, under the text */
+    --edge: 60%; /* of the accent, on the border */
+    --sweep: 0.08; /* how much of the band crosses the fill */
+    position: relative;
+    border-radius: 3px;
+    background: color-mix(
+      in srgb,
+      var(--color-accent-lit) var(--fill),
+      transparent
+    );
+    box-shadow: 0 0 0 1px
+      color-mix(in srgb, var(--color-accent-lit) var(--edge), transparent);
+  }
+  .selection::before,
+  .selection::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    pointer-events: none;
+    background-image: linear-gradient(
+      to top right,
+      transparent 38%,
+      var(--glint) 50%,
+      transparent 62%
+    );
+    background-size: 250% 250%;
+    animation: glint 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+  .selection.on-paper {
+    --glint: var(--color-accent);
+    --edge: 50%;
+    --sweep: 0.12;
+  }
+  .selection::before {
+    opacity: var(--sweep);
+  }
+  .selection::after {
+    opacity: 0.9;
+    padding: 1px; /* the border's width: what the mask keeps */
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+  }
+  /* The note on a selection's corner, above the border: a small square of
+     paper, set a little askew as a stuck-on thing is, with the block's
+     number on it. Above the glint, which is the box's own ::after, and out
+     of the way of the pointer. */
+  .note {
+    position: absolute;
+    z-index: 1;
+    top: -10px;
+    left: -11px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 2px;
+    font: 700 12px/20px var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    color: var(--color-note-ink);
+    background: linear-gradient(
+      color-mix(in srgb, var(--color-note) 100%, white 14%),
+      var(--color-note)
+    );
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.4),
+      0 0 0 0.5px rgb(0 0 0 / 0.1);
+    transform: rotate(-6deg);
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* A block's box over the page: a gray hairline around everything that
+     was read, so what the reading found -- and what it missed -- is seen
+     at a glance, with the block's number on a gray note. Under the pointer
+     the ring takes the accent, so what would be picked is seen before it
+     is. Selected, it takes `.selection` as well, whose ring and fill win,
+     and the note goes yellow. */
+  .hit {
+    position: absolute;
+    border-radius: 3px;
+    cursor: pointer;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-faint) 55%, transparent);
+  }
+  .hit:hover:not(.selection) {
+    background: color-mix(in srgb, var(--color-accent-lit) 7%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  }
+  .hit:not(.selection) > .note {
+    color: #2b2723;
+    background: linear-gradient(#dcd7ce, #cbc5ba);
+    box-shadow:
+      0 1px 1px rgb(0 0 0 / 0.25),
+      0 0 0 0.5px rgb(0 0 0 / 0.08);
+  }
+  /* A box turned off in the tool bar: still there to be picked, and still
+     ringed under the pointer, but drawn with nothing until then. */
+  .hit.quiet:not(.selection):not(:hover) {
+    box-shadow: none;
+  }
+  /* On a page the note hangs off the box's left edge, in the margin, so it
+     covers no glyph: the box is the text's own, with no padding to sit in.
+     Where there is no margin to hang in, it sits just inside the corner. */
+  .hit > .note {
+    left: auto;
+    right: calc(100% - 2px);
+    top: -7px;
+  }
+  .hit > .note.inside {
+    right: auto;
+    left: 2px;
+    top: 2px;
+  }
+  /* A selected block's note sits above its neighbors' notes. */
+  .hit.selection {
+    z-index: 1;
+  }
+
+  /* ── walkthrough ────────────────────────────────────────────────────
+     A hand-drawn arrow from a handwritten callout to the thing itself,
+     over the live page, in the landing's ink. The overlay lets every
+     pointer event through: the steps are done by doing. The callout is
+     the one place the handwriting face is used, a few words at a time,
+     large enough to read as a note in a margin; everything else the
+     walkthrough says is set in the app's own faces, in the dock. */
+  .tour-callout {
+    font-family: "Caveat Variable", "Segoe Print", "Bradley Hand", cursive;
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1.1;
+    color: var(--color-brand-lit);
+    text-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+  }
+  .tour-callout.on-paper {
+    color: var(--color-brand);
+    text-shadow: 0 1px 0 rgb(255 255 255 / 0.6);
+  }
+  /* The arrow sets off after the callout has appeared, and its head after
+     the shaft: one gesture, as on the landing. */
+  .tour-shaft {
+    stroke-dasharray: 1 2;
+    animation: draw 0.9s cubic-bezier(0.6, 0, 0.3, 1) 0.15s both;
+  }
+  .tour-head {
+    stroke-dasharray: 1 2;
+    animation: draw 0.25s cubic-bezier(0.4, 0, 0.5, 1) 0.95s both;
+  }
+
+  /* In the rendered view the selection wraps the block, and stands a little
+     off the text without moving it: the padding is given back as margin,
+     and the block's own vertical margins move out to the wrapper. */
+  .markdown .selection {
+    padding: 2px 8px;
+    margin: 0.75rem -8px;
+  }
+  .markdown .selection > * {
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+  /* A list item is marked on itself -- a wrapper would take it out of its
+     list -- and keeps its place in it: no vertical margin, and the note
+     beside its marker. */
+  .markdown li.selection {
+    margin: 0 -8px;
+    padding: 1px 8px;
+  }
+  .markdown li.selection > .note {
+    left: -30px;
+  }
+  /* What a click picks, shown as such. */
+  .markdown .pick {
+    cursor: pointer;
+  }
+  .markdown .pick:hover {
+    background: color-mix(in srgb, var(--color-accent-lit) 6%, transparent);
+  }
+
+  /* The source view has no box to draw: a selected line is one of the rows
+     already there, so it takes the fill, lights its number, and the band
+     crosses it. On one clock with every other glint, so across a run of
+     selected lines the bands line up into one. */
+  .source > li[data-pick] {
+    cursor: pointer;
+  }
+  .source > li[data-pick]:hover {
+    background: color-mix(in srgb, var(--color-accent-lit) 6%, transparent);
+  }
+  .source > li[data-selected] {
+    position: relative;
+    background: color-mix(in srgb, var(--color-accent-lit) 12%, transparent);
+    @apply text-ink;
+  }
+  /* The note sits in the gutter, over the line's number. */
+  .source > li[data-selected] > .note {
+    top: 0;
+    left: 4px;
+  }
+  .source > li[data-selected]::before {
+    @apply text-accent-lit;
+  }
+  .source > li[data-selected]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: linear-gradient(
+      100deg,
+      transparent 40%,
+      white 50%,
+      transparent 60%
+    );
+    background-size: 250% 100%;
+    opacity: 0.16;
+    animation: glint-row 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
 }
 
 /* ── motion ─────────────────────────────────────────────────────────── */
@@ -236,6 +605,29 @@
   85%,
   100% {
     transform: translateX(min(0px, calc(100cqw - 100%)));
+  }
+}
+
+/* The glint's trip, then a beat before the next: just enough of a gap for
+   the trips to read as trips. Both run the same length, and glint.ts holds
+   them to one clock. */
+@keyframes glint {
+  0% {
+    background-position: 100% 0%;
+  }
+  92%,
+  100% {
+    background-position: 0% 100%;
+  }
+}
+
+@keyframes glint-row {
+  0% {
+    background-position: 100% 0;
+  }
+  92%,
+  100% {
+    background-position: 0% 0;
   }
 }
 

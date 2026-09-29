@@ -9,6 +9,9 @@ import {
   useState,
 } from "react";
 import { Spinner } from "src/components/shared/Spinner";
+import type { Block } from "src/lib/analysis";
+import { ensureRead } from "src/lib/convert";
+import type { Placed } from "src/lib/emit";
 import { engine } from "src/lib/engine";
 import {
   openPdf,
@@ -20,6 +23,9 @@ import {
   type PDFPageProxy,
   type Properties,
 } from "src/lib/pdf";
+import { modifiers, useEditor, type Boxes } from "src/lib/store";
+import { isTourDoc, tourSource } from "src/lib/tour-doc";
+import { attachSync, invalidateSync } from "src/lib/scrollsync";
 import { messageOf } from "src/lib/words";
 import { sourcePath } from "src/lib/workspace";
 import { PageCanvas } from "./PageCanvas";
@@ -72,7 +78,7 @@ function useDocument(docId: string): { loaded: Loaded | null; problem: string | 
     let live = true;
     let task: ReturnType<typeof openPdf> | null = null;
     (async () => {
-      const bytes = await engine.source(docId);
+      const bytes = isTourDoc(docId) ? await tourSource() : await engine.source(docId);
       if (!live) return;
       // Taken before `openPdf`, which hands the buffer to pdf.js and leaves
       // this view of it empty.
@@ -162,6 +168,11 @@ function inView(rows: Row[], top: number, height: number, end: boolean) {
   return { first, last, current: rows[current].pages[0].n };
 }
 
+/** What a page has on it and which of it is selected, for its row. */
+const NO_BLOCKS: Block[] = [];
+const NO_IDS: string[] = [];
+const NO_PLACED: Record<string, Placed> = {};
+
 /** What `sizes` is before a document has loaded: one value, so nothing
  *  downstream recomputes for a fresh empty array each render. */
 const NO_SIZES: { w: number; h: number }[] = [];
@@ -182,10 +193,30 @@ export function PdfPane({ docId }: { docId: string }) {
   const [picked, setPicked] = useState<number | null>(null);
   const [paneWidth, setPaneWidth] = useState(0);
   const [range, setRange] = useState({ first: 0, last: -1, current: 1 });
+  const root = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   // One per document -- the pane is keyed by it -- fed by every finished
   // render and read by the thumbnails.
   const [snapshots] = useState(() => new Snapshots(THUMB_WIDTH));
+
+  // The document is read once it is open: off its pages the first time,
+  // from the engine's cache after. Closing the pane mid-read gives it up.
+  useEffect(() => {
+    if (!loaded) return;
+    return ensureRead(docId, loaded.pages);
+  }, [docId, loaded]);
+  const reading = useEditor((s) => s.readings[docId]);
+  const analysis = reading?.status === "ready" ? reading.analysis : null;
+  const placed = reading?.status === "ready" ? reading.markdown.blocks : NO_PLACED;
+  const selection = useEditor((s) => s.selection);
+  const selectedIds = selection?.docId === docId ? selection.ids : NO_IDS;
+  const pick = useEditor((s) => s.pick);
+  const boxes = useEditor((s) => s.boxes);
+  const notes = useEditor((s) => s.notes);
+  const onPick = useCallback(
+    (id: string, e: React.MouseEvent) => pick(docId, id, modifiers(e), "page"),
+    [pick, docId],
+  );
 
   const sizes = loaded?.sizes ?? NO_SIZES;
   const fit =
@@ -193,6 +224,7 @@ export function PdfPane({ docId }: { docId: string }) {
       ? Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, (paneWidth - 2 * PAD) / (sizes[0].w * PX_PER_PT)))
       : null;
   const zoom = picked ?? fit;
+  const ready = loaded !== null && zoom !== null;
   const scale = (zoom ?? 1) * PX_PER_PT;
   const rows = useMemo(() => layout(sizes, scale, twoPage), [sizes, scale, twoPage]);
   // The row a page sits in follows from the pairing alone: `layout` takes
@@ -297,6 +329,69 @@ export function PdfPane({ docId }: { docId: string }) {
     [rows, rowOf, loaded, scale],
   );
 
+  // Each block by its id, once per analysis, for the picked-block scroll.
+  const blockById = useMemo(() => {
+    const out = new Map<string, Block>();
+    for (const page of analysis?.pages ?? []) {
+      for (const block of page.blocks) out.set(block.id, block);
+    }
+    return out;
+  }, [analysis]);
+
+  // A block picked in the markdown pane is brought into view here, if it
+  // is not already: to a third of the way down, where a jump to a heading
+  // puts things. One made here stays where it was clicked.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || !selection || selection.docId !== docId || selection.from === "page") return;
+    const block = blockById.get(selection.focus);
+    if (!block) return;
+    const row = rows[rowOf(block.page)];
+    if (!row) return;
+    const top = row.top + block.box.y * scale;
+    const bottom = top + block.box.h * scale;
+    const seen = top >= el.scrollTop && bottom <= el.scrollTop + el.clientHeight;
+    if (!seen) el.scrollTop = top - el.clientHeight / 3;
+    // Not `rows` or `scale`: a zoom should not scroll back to the selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection, docId, blockById]);
+
+  // Where each block that made it into the markdown starts, for the scroll
+  // sync: from the layout, like everything else here, not the DOM -- only
+  // the pages near the view carry their blocks' elements.
+  const tops = useCallback(() => {
+    const out = new Map<string, number>();
+    for (const page of analysis?.pages ?? []) {
+      for (const block of page.blocks) {
+        const row = rows[rowOf(block.page)];
+        if (row && placed[block.id]) out.set(block.id, row.top + block.box.y * scale);
+      }
+    }
+    return out;
+  }, [analysis, placed, rows, rowOf, scale]);
+  const topsRef = useRef(tops);
+  useLayoutEffect(() => {
+    topsRef.current = tops;
+    invalidateSync(docId);
+  }, [tops, docId]);
+
+  // Joined once the column is drawn, which is when the scroller holds it.
+  useEffect(() => {
+    if (!ready || !root.current || !scroller.current) return;
+    return attachSync(docId, "page", {
+      root: root.current,
+      scroller: scroller.current,
+      tops: () => topsRef.current(),
+    });
+  }, [ready, docId]);
+
+  // Stable per analysis, so `PageRow`'s memo can compare it like any other
+  // prop rather than needing a comparator that lists the rest.
+  const blocksOf = useCallback(
+    (n: number) => analysis?.pages[n - 1]?.blocks ?? NO_BLOCKS,
+    [analysis],
+  );
+
   const followOutline = useCallback(
     (node: OutlineNode) => {
       if (!loaded) return;
@@ -314,10 +409,8 @@ export function PdfPane({ docId }: { docId: string }) {
   const zoomIn = zoom !== null ? ZOOMS.find((z) => z > zoom + 1e-3) : undefined;
   const zoomOut = zoom !== null ? ZOOMS.findLast((z) => z < zoom - 1e-3) : undefined;
 
-  const ready = loaded !== null && zoom !== null;
-
   return (
-    <div className="flex h-full flex-col">
+    <div ref={root} className="flex h-full flex-col">
       <PageBar
         ready={ready}
         pages={loaded?.pages.length ?? 0}
@@ -375,6 +468,12 @@ export function PdfPane({ docId }: { docId: string }) {
                   snapshots={snapshots}
                   active={i >= range.first && i <= range.last}
                   marginLeft={Math.max(0, (paneWidth - 2 * PAD - row.width) / 2)}
+                  blocksOf={blocksOf}
+                  placed={placed}
+                  selected={selectedIds}
+                  boxes={boxes}
+                  notes={notes}
+                  onPick={onPick}
                 />
               ))}
             </div>
@@ -392,35 +491,143 @@ export function PdfPane({ docId }: { docId: string }) {
 /** One row of the column. Memoised: scrolling moves `range` every page or
  *  so, and only the rows whose `active` flipped should pay for it -- not
  *  every row of a thousand-page document. */
-const PageRow = memo(function PageRow({
-  row,
-  pages,
+const PageRow = memo(
+  function PageRow({
+    row,
+    pages,
+    scale,
+    snapshots,
+    active,
+    marginLeft,
+    blocksOf,
+    placed,
+    selected,
+    boxes,
+    notes,
+    onPick,
+  }: {
+    row: Row;
+    pages: PDFPageProxy[];
+    scale: number;
+    snapshots: Snapshots;
+    active: boolean;
+    marginLeft: number;
+    blocksOf: (page: number) => Block[];
+    placed: Record<string, Placed>;
+    selected: string[];
+    boxes: Boxes;
+    notes: boolean;
+    onPick: (id: string, e: React.MouseEvent) => void;
+  }) {
+    return (
+      <div className="flex items-start" style={{ gap: GAP, height: row.height, marginLeft }}>
+        {row.pages.map((p) => (
+          <div
+            key={p.n}
+            data-paper
+            className="relative bg-white shadow-lg shadow-black/50"
+            style={{ width: p.w, height: p.h }}
+          >
+            <PageCanvas page={pages[p.n - 1]} scale={scale} active={active} snapshots={snapshots} />
+            {/* The blocks go with the canvas: only pages near the view carry
+                the elements, so a long document is not a long document's
+                worth of them. */}
+            {active && (
+              <Blocks
+                blocks={blocksOf(p.n)}
+                placed={placed}
+                selected={selected}
+                boxes={boxes}
+                notes={notes}
+                scale={scale}
+                onPick={onPick}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  },
+);
+
+/** Around a block, a little outside the text: the box the page's reading
+ *  gives is the glyphs' own, and a border on it would touch them. */
+const INSET = { x: 3, y: 2 };
+
+/** How far a box's left edge must be from the page's, in CSS px, for its
+ *  note to hang in the margin. Nearer than this -- a full-bleed picture, a
+ *  line at the very edge -- and the note would fall off the page, where
+ *  the pane clips it, so it sits inside the box instead. */
+const NOTE_ROOM = 24;
+
+/** One page's blocks, each a box over where it is drawn, at the page's
+ *  scale, with its number -- restarting at 1 on every page -- on a note.
+ *  A block is picked by clicking it; the selected ones take the selection
+ *  style. The look is `.hit`, `.selection` and `.note` in index.css,
+ *  shared with the markdown pane's. Pictures first, so the text over one
+ *  stays on top. */
+function Blocks({
+  blocks,
+  placed,
+  selected,
+  boxes,
+  notes,
   scale,
-  snapshots,
-  active,
-  marginLeft,
+  onPick,
 }: {
-  row: Row;
-  pages: PDFPageProxy[];
+  blocks: Block[];
+  placed: Record<string, Placed>;
+  selected: string[];
+  boxes: Boxes;
+  notes: boolean;
   scale: number;
-  snapshots: Snapshots;
-  active: boolean;
-  marginLeft: number;
+  onPick: (id: string, e: React.MouseEvent) => void;
 }) {
-  return (
-    <div className="flex items-start" style={{ gap: GAP, height: row.height, marginLeft }}>
-      {row.pages.map((p) => (
-        <div
-          key={p.n}
-          className="relative bg-white shadow-lg shadow-black/50"
-          style={{ width: p.w, height: p.h }}
-        >
-          <PageCanvas page={pages[p.n - 1]} scale={scale} active={active} snapshots={snapshots} />
-        </div>
-      ))}
-    </div>
+  const ordered = useMemo(
+    () => [...blocks.filter((b) => b.kind === "image"), ...blocks.filter((b) => b.kind === "text")],
+    [blocks],
   );
-});
+  return (
+    <>
+      {ordered.map((block) => {
+        const on = selected.includes(block.id);
+        const at = placed[block.id];
+        const boxed = block.kind === "image" ? boxes.images : boxes.text;
+        const left = block.box.x * scale - INSET.x;
+        return (
+          <div
+            key={block.id}
+            role="button"
+            tabIndex={-1}
+            aria-pressed={on}
+            data-block={block.id}
+            title={at ? `Block ${at.n}` : undefined}
+            className={`hit ${boxed ? "" : "quiet"} ${on ? "selection on-paper" : ""}`}
+            style={{
+              left,
+              top: block.box.y * scale - INSET.y,
+              width: block.box.w * scale + 2 * INSET.x,
+              height: block.box.h * scale + 2 * INSET.y,
+            }}
+            onClick={(e) => onPick(block.id, e)}
+            // A shift-click extends the browser's own text selection from
+            // wherever it last was -- across the bars' labels -- unless
+            // the press is taken here.
+            onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+          >
+            {/* A selected block keeps its index whatever the dock says: the
+                index is how the block is found in the markdown. */}
+            {at && (notes || on) && (
+              <span className={`note ${left < NOTE_ROOM ? "inside" : ""}`} aria-hidden>
+                {at.n}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
 
 /** The page pane's toolbar: outline on the left, page and zoom in the
  *  middle, more on the right. */
@@ -461,7 +668,10 @@ function PageBar({
   };
 
   return (
-    <div className="grid h-9 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-edge px-2 text-xs text-muted">
+    <div
+      data-bar
+      className="grid h-9 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-edge px-2 text-xs text-muted"
+    >
       <button
         type="button"
         title={sidebar ? "Hide sidebar" : "Show sidebar"}

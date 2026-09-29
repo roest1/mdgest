@@ -189,6 +189,22 @@ export function assetsDir(docId: string): string[] {
   return docPath(MARKDOWN, docId, ".assets");
 }
 
+/** What the markdown writes in front of a figure's name to reach it: the
+ *  assets folder, relative to the markdown file beside it. */
+export function assetsPrefix(docId: string): string {
+  return `${assetsDir(docId).at(-1)}/`;
+}
+
+/** What `read.ts` names a figure: `p<page>-i<index>.png`. The one shape
+ *  `asset` will read, so a name from a URL cannot be a path. */
+export const FIGURE_NAME = /^p\d+-i\d+\.png$/;
+
+/** The name figure `index` of page `page` is written under -- the maker of
+ *  the shape `FIGURE_NAME` reads, kept beside it so they cannot drift. */
+export function figureName(page: number, index: number): string {
+  return `p${page}-i${index}.png`;
+}
+
 /** Named for the source it is derived from, suffix and all. Without one, the
  *  cache of `pumps` would be the folder holding the cache of `pumps/intake`,
  *  and removing the first would remove both. */

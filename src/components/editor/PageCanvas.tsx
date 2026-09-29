@@ -89,7 +89,7 @@ export function PageCanvas({
         snapshots?.put(page.pageNumber, canvas);
       },
       (cause: unknown) => {
-        // Cancelled is this effect's own cleanup. Anything else is a page
+        // Canceled is this effect's own cleanup. Anything else is a page
         // pdf.js could not draw, which stays blank rather than failing the
         // whole document; pdf.js has already said why in the console.
         if (!(cause instanceof RenderingCancelledException)) console.warn(cause);

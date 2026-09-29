@@ -6,16 +6,18 @@ saving means.**
 What is built is in the README, under *The more technical* and *Adding,
 continuing, and replacing*: the workspace layout, the one-workspace rule, the
 staged listing and its marks, exact hashing, and the checks before a commit.
+The reader is built too, and is its own document — [pipeline.md](pipeline.md).
 This file holds only what is not built yet, and the reasoning it will need.
 Each section moves into the README as it ships, and the file goes when the
 last one does.
 
-The Python reference for all of it is `engine/mdgest/project.py` and
+The Python reference for the project layer is `engine/mdgest/project.py` and
 `engine/tests/test_project.py` on `spike/tauri`, which are not committed yet.
 Neither is `pdfjs.py` or `test_reader_conformance.py`, the measurement that
 chose pdf.js over pdfium: over four documents it reproduces the goldens byte
 for byte and disagrees with pdfium on nine markdown lines, every one of them
-pdfium's mistake.
+pdfium's mistake. `structure.py` and the emitter are the ones already ported,
+as `src/lib/structure.ts` and `src/lib/emit.ts`.
 
 ---
 
@@ -31,8 +33,10 @@ every decision a person made.
 **The door.** OPFS is the workspace; the File System Access API is only a way
 in and out. `showDirectoryPicker()` writes a folder where it exists, which is
 Chromium only. Everywhere else the export is a zip download, as the import is
-already a `webkitdirectory` input or a zip. There is an unzip, but no zip
-writer yet.
+already a `webkitdirectory` input or a zip. `unzip.ts` is the way in and runs
+in the worker; the way out is the same dependency's `zipSync` and belongs in
+the same place, for the same reason — deflating a workspace is exactly the
+work that freezes a tab.
 
 **The format** has to survive being emailed, zipped by Finder, unzipped by
 Explorer, and handed back through a file input:
@@ -67,7 +71,12 @@ carries the learned `rules`. Measured on a real 14-page report:
 The manifest carries the 6.8 kB and leaves the rest. The export of that
 document is 2,214 bytes, because undo and redo do not travel: an undo history
 is the shape of one working session, not a decision about a document.
-`renders/` is never exported.
+
+`renders/` is never exported, and in this build is never written either: the
+thumbnail strip keeps its page renders in memory (`snapshots.ts`), bounded at a
+hundred, and redraws the rest. What *is* written and does travel is
+`markdown/<doc>.assets/`, the figures — they are part of what came out, and a
+markdown file whose images 404 is not a conversion anyone can use.
 
 **Two exports**, because there are two reasons to want one. The default writes
 the resumable project. A markdown-only export writes `markdown/` alone, which
@@ -87,7 +96,12 @@ there are two shapes:
   `.mdgest/<doc>.pdf/edits.json` and friends, and an export packs it again.
   Writes stay per document, and the layout in the README stays true.
 
-This is decided with the editor port.
+The second has since gained an argument it did not have when this was written:
+`convert` already writes per document, under exactly that path — `analysis.json`
+beside where `edits.json` would go — and `analysis` reads one document's cache
+without touching any other's. A manifest-as-store would make editing one block
+of one document rewrite a file that grows with the whole workspace. The
+decision still lands with the edit format, but it is leaning.
 
 ---
 
@@ -114,7 +128,7 @@ is no restoring the old edits: they described a PDF that is gone.
 
 Anything else counts as changed, and one change anywhere starts the whole
 document over. It is all or nothing per document, not per edit: joins,
-reordering and page breaks depend on neighbouring blocks, so one edit can
+reordering and page breaks depend on neighboring blocks, so one edit can
 match while what surrounds it has moved. The check leans towards starting
 over. A spelling fix that rewraps a line fails it, and that costs redone work,
 never wrong work.
@@ -133,13 +147,20 @@ new PDF as guesses like they would to any other.
   `mdgest.json`, so the check works after an export and import, where no old
   PDF or analysis exists.
 
-**Where it runs.** Once the reader is ported, the worker can analyze a revised
-PDF while it is staged and settle the question before commit, so the row says
-which it is: edits kept, or starting over. The prompt at commit then says
-exactly that, instead of today's "edits may no longer line up". An export
-beforehand is the only way back, and the prompt should say so. The editor
-runs the same check when it opens a document whose edits name another hash,
-which covers anything that got past the landing.
+**Where it runs.** The check needs an analysis of the staged bytes, and the
+reader is not in the worker — pdf.js is open on the page's thread, which is
+where a canvas exists and where `read.ts` runs. So the landing does it: a
+`revised` row is read on the page while it is staged, and the row then says
+which it is — edits kept, or starting over — instead of today's "edits may no
+longer line up" at commit. It is the one place the landing needs pdf.js, and
+it is worth the chunk: the alternative is telling someone after the fact. An
+export beforehand is the only way back, and the prompt should say so. The
+editor runs the same check when it opens a document whose edits name another
+hash, which covers anything that got past the landing.
+
+The fingerprint is what makes this cheap enough to do while someone waits, and
+what makes it possible at all after an export: the old PDF is gone, so there
+is nothing to compare against but what traveled in `mdgest.json`.
 
 Until then, a commit keeps a revised document's edits in the manifest and
 nothing reads them, so nothing wrong can show.
