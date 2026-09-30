@@ -55,7 +55,7 @@ fix it.
 
 |                              |                                                                                                                   |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `edits.json`                 | every correction below. The one precious file, and the one nothing writes yet                                     |
+| `edits.json`                 | every correction below, and nothing writes it yet                                                                 |
 | export                       | browser storage is evictable, and nothing writes a workspace back to disk. See [docs/storage.md](docs/storage.md) |
 | `rules.json`                 | what the engine learns from a folder's documents                                                                  |
 | tables                       | read as the lines they are printed as, not as a table                                                             |
@@ -81,10 +81,6 @@ toolbar will do with a selection:
 - (ctrl + z) undo / with version history
 
 > Fixing in the markdown editor applies and records changes in the same way.
-
-**Only `edits.json` is important.** It holds what you decided and nothing else
-does. The analysis regenerates from the pdf; the markdown regenerates from the
-analysis and the edits. This is also where rules come from.
 
 ## The more technical: Workspaces, rules, and how learning works
 
@@ -112,13 +108,9 @@ mirrors them. Say you upload `invoice1.pdf` into an `invoices` folder:
       markdown/invoices/invoice1.assets/       its figures, as PNGs
       .mdgest/invoices/invoice1.pdf/
         analysis.json                          the engine's read of the PDF (blocks, fonts, roles) — regenerable, deletable
-        edits.json                             your corrections: role/level overrides, hidden blocks, splits, inserts — the one precious file
-        versions.json                          named snapshots of edits.json you can roll back to
-      .mdgest/invoices/rules.json            what the engine has learned from documents in this folder
 
-`analysis.json` and the markdown are written today; `edits.json`, `versions.json`
-and `rules.json` are the layer above, and the rest of this section is the design
-they are being built to.
+What edits add to this tree, and to an export, is designed in
+[docs/storage.md](docs/storage.md).
 
 In the browser, the workspace lives at `workspaces/default/` in the site's own
 storage. Only one workspace is kept at a time, but it already has a folder of
@@ -237,7 +229,7 @@ table is in [docs/deployment.md](docs/deployment.md).
 |                                              |                                                                                               |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | [docs/pipeline.md](docs/pipeline.md)         | how a page becomes markdown: read → structure → emit, and every threshold either one leans on |
-| [docs/storage.md](docs/storage.md)           | what is left in the workspace story: export, where edits live, what a revised source does     |
+| [docs/storage.md](docs/storage.md)           | what is left in the workspace story: export, editing and history, revised PDFs, new readers   |
 | [docs/deployment.md](docs/deployment.md)     | commit to edge to browser, the worker boundary, the browser floor                             |
 | [docs/brand/README.md](docs/brand/README.md) | the mark, and why there are two drawings of it                                                |
 

@@ -359,6 +359,10 @@ async function readPictures(page: PDFPageProxy): Promise<{ pictures: Picture[]; 
  *  a piece of one. */
 interface Run {
   text: string;
+  /** Whether pdf.js's string had a space before or after `text`. The run's
+   *  width already covers it, so no gap on the page will show it. */
+  lead: boolean;
+  trail: boolean;
   box: Box;
   size: number;
   bold: boolean;
@@ -376,10 +380,65 @@ const MARKER_GAP_RATIO = 3;
 /** A gap this wide (× height) between two runs of a line is a space. */
 const SPACE_GAP_RATIO = 0.15;
 
+/** How far the ink reaches, in fractions of the font size: up to the capitals
+ *  or only to the x-height, and down past the baseline only for a descender.
+ *  Measured against pdfium's ink boxes on `spike/tauri`, which is what every
+ *  gap ratio in `structure.ts` was tuned on. */
+const CAP_HEIGHT = 0.7;
+const X_HEIGHT = 0.5;
+const DESCENDER = -0.22;
+/** Characters that put ink above the x-height, below the baseline, and only
+ *  between the two. Only their presence matters. */
+const TALL = new Set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789bdfhklt|/\\()[]{}!?\"'*#$&@£€%");
+const DESCENDING = new Set("gjpqy()[]{}/|\\,;_@JQ");
+const XHEIGHT_ONLY = new Set("acemnorsuvwxz");
+/** Faces whose glyphs are pictures, bullets among them, and fill about half
+ *  their em box: there are no letters in them to measure by. */
+const SYMBOLIC = /wingding|dingbat|symbol|webding/i;
+/** Faces that are only pictures, with no Unicode for them: pdf.js reports
+ *  the glyph's code in whatever form it finds it -- `§`, `¡`, a control
+ *  character, a private-use one -- and none of those is what is drawn. */
+const PICTURE_FACE = /wingding|webding/i;
+/** The Symbol face's bullet, where Word maps it into the private-use area.
+ *  Symbol's other private-use glyphs are mathematics, and stay as they are. */
+const SYMBOL_BULLET = "";
+
+/** A run of one picture glyph, as `•`. Set at the start of a line, such a
+ *  glyph is a bullet all but always; read as the code pdf.js reports, it is
+ *  neither a bullet to `structure.ts` nor a character anyone printed. */
+function glyphOf(text: string, face: string): string {
+  if ([...text].length !== 1 || BULLET_ONLY.test(text)) return text;
+  return PICTURE_FACE.test(face) || text === SYMBOL_BULLET ? "•" : text;
+}
+
+/** Where a run's ink is, above the baseline: `[bottom, top]` in points.
+ *
+ * Not the font's ascent and descent. Those bound every glyph the face has,
+ * so each line's box reaches the next line's and the leading between them --
+ * the gap `structure.ts` tells lines, paragraphs and bands apart by -- is
+ * gone. The characters in the run say most of what the ink would. */
+function inkOf(text: string, face: string, size: number, ascent: number, descent: number): [number, number] {
+  const has = (set: Set<string>) => [...text].some((c) => set.has(c));
+  const tall = has(TALL);
+  if (SYMBOLIC.test(face) || !(tall || has(XHEIGHT_ONLY))) {
+    // Nothing to reason about: half the em box, centered.
+    const middle = ((ascent + descent) / 2) * size;
+    const reach = ((ascent - descent) * size) / 4;
+    return [middle - reach, middle + reach];
+  }
+  return [has(DESCENDING) ? DESCENDER * size : 0, (tall ? CAP_HEIGHT : X_HEIGHT) * size];
+}
+
 function isMarker(text: string): boolean {
   const t = text.trim();
   return BULLET_ONLY.test(t) || MARKER_ONLY.test(t);
 }
+
+/** What a face's name says about its weight and slant: spelled out, or cut
+ *  short the way `HelveticaNeueLTW1G-BdIt` does. Black and heavy are
+ *  weights past bold. */
+const BOLD_NAME = /bold|black|heavy|-bd/i;
+const ITALIC_NAME = /italic|oblique|-it/i;
 
 /** The font's own name without the subset prefix a PDF writer adds:
  *  `ABCDEF+Helvetica-Bold` is `Helvetica-Bold`. */
@@ -407,8 +466,8 @@ async function readRuns(page: PDFPageProxy): Promise<Run[]> {
     const font = fontName(obj?.name);
     style = {
       font,
-      bold: !!(obj?.bold || obj?.black) || /bold|black|heavy|semibold|demibold/i.test(font),
-      italic: !!obj?.italic || /italic|oblique/i.test(font),
+      bold: !!(obj?.bold || obj?.black) || BOLD_NAME.test(font),
+      italic: !!obj?.italic || ITALIC_NAME.test(font),
     };
     fonts.set(loadedName, style);
     return style;
@@ -417,17 +476,20 @@ async function readRuns(page: PDFPageProxy): Promise<Run[]> {
   const runs: Run[] = [];
   for (const item of content.items) {
     if (!("str" in item) || !("transform" in item)) continue;
-    const text = item.str.replace(/\s+/g, " ").trim();
-    if (!text) continue;
+    const raw = item.str.replace(/\s+/g, " ");
+    if (!raw.trim()) continue;
     const [a, b, c, d, e, f] = item.transform as Matrix;
     const size = item.height;
     if (!(size > 0)) continue;
     const style = content.styles[item.fontName];
-    const ascent = style?.ascent > 0 ? style.ascent : 0.8;
-    const descent = style?.descent < 0 ? style.descent : -0.2;
-    // The run in its own frame: `width` along the text's x-axis, the font's
-    // ascent and descent along its y-axis, both axes as `transform` lays
-    // them, and its length is the font size.
+    const ascent = style?.ascent > 0 ? style.ascent : 0.9;
+    const descent = style?.descent < 0 ? style.descent : -0.21;
+    const face = styleOf(item.fontName);
+    const text = glyphOf(raw.trim(), face.font);
+    const [bottom, top] = inkOf(text, face.font, size, ascent, descent);
+    // The run in its own frame: `width` along the text's x-axis, its ink
+    // along its y-axis, both axes as `transform` lays them, and its length
+    // is the font size.
     const at = (t: number, y: number): [number, number] => {
       const [vx, vy] = viewport.convertToViewportPoint(
         e + (t * a) / size + (y * c) / size,
@@ -436,27 +498,33 @@ async function readRuns(page: PDFPageProxy): Promise<Run[]> {
       return [vx, vy];
     };
     const w = item.width;
-    const box = around([
-      at(0, descent * size),
-      at(w, descent * size),
-      at(0, ascent * size),
-      at(w, ascent * size),
-    ]);
-    runs.push({ text, box, size, ...styleOf(item.fontName) });
+    const box = around([at(0, bottom), at(w, bottom), at(0, top), at(w, top)]);
+    runs.push({ text, lead: raw.startsWith(" "), trail: raw.endsWith(" "), box, size, ...face });
   }
   return runs;
 }
 
-/** Runs on one baseline, top to bottom: bands of runs whose vertical
- *  middles fall within the band and which overlap it by half their height. */
+/** Whether a run shares a band's baseline: the middle of either falls in
+ *  the other's span, with at least half of that one's height in the overlap.
+ *  Either way round, because a superscript sorts first, being higher, and
+ *  the line it sits on has to be able to join it. */
+function oneBaseline(span: [number, number], box: Box): boolean {
+  const overlap = Math.min(span[1], box.y + box.h) - Math.max(span[0], box.y);
+  const inside = ([lo, hi]: [number, number], [top, bottom]: [number, number]) => {
+    const middle = (top + bottom) / 2;
+    return lo <= middle && middle <= hi && overlap >= BASELINE_OVERLAP * (bottom - top);
+  };
+  const run: [number, number] = [box.y, box.y + box.h];
+  return inside(span, run) || inside(run, span);
+}
+
+/** Runs on one baseline, top to bottom. */
 function baselines(runs: Run[]): Run[][] {
   const bands: Run[][] = [];
   let span: [number, number] = [0, 0];
   for (const run of [...runs].sort((p, q) => p.box.y - q.box.y || p.box.x - q.box.x)) {
     const { y, h } = run.box;
-    const middle = y + h / 2;
-    const overlap = Math.min(span[1], y + h) - Math.max(span[0], y);
-    if (bands.length && span[0] <= middle && middle <= span[1] && overlap >= BASELINE_OVERLAP * h) {
+    if (bands.length && oneBaseline(span, run.box)) {
       bands[bands.length - 1].push(run);
       span = [Math.min(span[0], y), Math.max(span[1], y + h)];
     } else {
@@ -489,16 +557,20 @@ function neighbors(band: Run[]): Run[][] {
 }
 
 /** One line from the runs that make it: the words joined, spaced where the
- *  page left a gap, and the style most of the characters have. */
+ *  page left a gap or pdf.js's strings had a space, and the style most of
+ *  the characters have. */
 function lineOf(group: Run[]): Line {
   let text = group[0].text;
   let box = group[0].box;
   let edge = box.x + box.w;
+  let previous = group[0];
   for (const run of group.slice(1)) {
     const gap = run.box.x - edge;
-    text += gap > SPACE_GAP_RATIO * Math.max(run.box.h, 1) ? ` ${run.text}` : run.text;
+    const spaced = previous.trail || run.lead || gap > SPACE_GAP_RATIO * Math.max(run.box.h, 1);
+    text += spaced ? ` ${run.text}` : run.text;
     box = union(box, run.box);
     edge = Math.max(edge, run.box.x + run.box.w);
+    previous = run;
   }
   const chars = (r: Run) => r.text.length;
   const total = group.reduce((n, r) => n + chars(r), 0);

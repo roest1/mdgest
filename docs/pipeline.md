@@ -50,18 +50,40 @@ page pane draw it by multiplying by the zoom and nothing else.
 pdf.js hands over runs: a string in one font on one line, or a piece of one. A
 run is not a line and not a word, so the line has to be rebuilt.
 
-1. **Baselines.** Runs whose vertical middles fall inside one another's span,
-   with at least half a run's height in the overlap, share a baseline.
-2. **Columns.** Within a band, runs are taken left to right and cut where the
+1. **Boxes.** A run's box is where its ink is, not the font's ascent and
+   descent. Those bound every glyph the face has, so each line's box would
+   reach the next one's and the leading between them — the gap every step
+   below and all of structure tells lines, paragraphs and bands apart by —
+   would be gone. The characters say most of what the ink would: up to cap
+   height (`0.7 ×` the size) when the run has a capital, digit or ascender,
+   only to x-height (`0.5 ×`) when it has none, and down to `0.22 ×` below the
+   baseline only for a descender. A face of pictures — Wingdings, Symbol,
+   Dingbats — or a run with no letters is given half its em box, centered.
+   These are the fractions `spike/tauri` measured against pdfium's ink boxes,
+   which the thresholds in structure were tuned on.
+2. **Baselines.** Runs whose vertical middles fall inside one another's span,
+   with at least half a run's height in the overlap, share a baseline. That is
+   checked both ways round: a superscript sorts first, being higher, and the
+   line under it has to be able to join it.
+3. **Columns.** Within a band, runs are taken left to right and cut where the
    horizontal gap is wider than `0.6 ×` the taller run's height — except behind
    a list marker, where the gap is allowed to be `3 ×` as wide, because the
    space after a bullet is a wide one and a bullet is not a column of its own.
-3. **Spaces.** Between two runs of one line, a gap over `0.15 ×` the height is a
-   space; anything smaller is kerning.
-4. **Style.** A line's size, weight and slant are its majority *by character*,
+   A bullet drawn in Wingdings or Webdings comes out of pdf.js as its code in
+   whatever form — `§`, `¡`, a control character, a private-use one — so a
+   run of one glyph in those faces is read as `•`, as is `U+F0B7`, where Word
+   maps the Symbol face's bullet. That is what lets it join its words and be a
+   list item; left as it came, it stood apart as its own line, or a heading
+   when set larger than the text.
+4. **Spaces.** Between two runs of one line, a gap over `0.15 ×` the height is a
+   space; anything smaller is kerning. A space pdf.js put in the string itself
+   is kept too: the run's width already covers it, so no gap shows it, and
+   `STAR® is` would otherwise come out `STAR®is`.
+5. **Style.** A line's size, weight and slant are its majority *by character*,
    not by run: one italic word does not make an italic line. The font is the
    PDF's own name with the subset prefix stripped, so `ABCDEF+Helvetica-Bold`
-   is `Helvetica-Bold`.
+   is `Helvetica-Bold`. Weight and slant come from that name, spelled out or
+   cut short (`-Bd`, `-It`, as in `HelveticaNeueLTW1G-BdIt`).
 
 ### Pictures
 

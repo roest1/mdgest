@@ -152,7 +152,13 @@ function SelectionChip({ docId }: { docId: string }) {
       ) : (
         <span className="text-faint">{placed.length} blocks</span>
       )}
-      <button type="button" title="Clear selection (Esc)" onClick={deselect} className={iconButton}>
+      <button
+        type="button"
+        title="Clear selection (Esc)"
+        onClick={deselect}
+        className={iconButton}
+        data-tour="clear"
+      >
         <X className="h-3.5 w-3.5" />
       </button>
     </span>

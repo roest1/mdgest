@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { InkFilter } from "src/components/landing/Marks";
 import { useEditor, type Boxes, type View } from "src/lib/store";
 import { TOUR_DOC } from "src/lib/tour-doc";
@@ -10,9 +10,12 @@ import { TOUR_DOC } from "src/lib/tour-doc";
  *  a person's work.
  *
  * A step that asks for something ends when it is done, and only then: the
- * range step waits for a shift-click, the box steps for the toggle. One
+ * range step waits for a shift-click, the box steps for the toggle, the
+ * clear step for the cross. One
  * that only shows something ends by itself after a moment. Nothing has to
- * be clicked to move on, and Escape ends the whole thing.
+ * be clicked to move on, and Escape ends the whole thing. Nothing else
+ * can be clicked either: only the thing a step asks for takes a click, so
+ * the tour goes the same way for everyone.
  *
  * The example never changes, so where each callout sits is written down
  * here, as an offset from the thing it points at, and so is whether it
@@ -55,6 +58,11 @@ interface Step {
   /** Whether the thing has an index note hanging off its corner, which
    *  the spotlight then takes in. */
   noted?: boolean;
+  /** Whether the spotlight takes in the words and the arrow as well as the
+   *  thing, and dims the rest harder: for the small controls on the dock
+   *  and the header, too small a light to find alone, and on panes too
+   *  dark for a light dimming to show. */
+  wide?: boolean;
   /** Put the example in the state the step talks about. */
   prepare?: (order: string[], act: Actions) => void;
   /** When true, the step is done. */
@@ -133,6 +141,7 @@ const STEPS: Step[] = [
     // The selection stays as the person made it: the boxes going off
     // shows what selection looks like without them.
     callout: "turn off the text boxes",
+    wide: true,
     anchor: () => '[data-tour="boxes-text"]',
     spot: inDock,
     paper: false,
@@ -140,6 +149,7 @@ const STEPS: Step[] = [
   },
   {
     callout: "and the image boxes",
+    wide: true,
     anchor: () => '[data-tour="boxes-images"]',
     spot: inDock,
     paper: false,
@@ -149,6 +159,7 @@ const STEPS: Step[] = [
   },
   {
     callout: "and the indices",
+    wide: true,
     anchor: () => '[data-tour="indices"]',
     spot: inDock,
     paper: false,
@@ -156,10 +167,27 @@ const STEPS: Step[] = [
     done: ({ notes }) => !notes,
   },
   {
+    // Last of the page steps, so the ones before it have a selection to
+    // show. The cross, not Escape: Escape would end the tour as well.
+    callout: "clear the selection",
+    anchor: () => '[data-tour="clear"]',
+    // On the dock, in the space right of the cross, with the arrow straight
+    // across: one coming down would land on the page's bottom edge.
+    spot: { side: "right", dx: 64, dy: -2, arrow: "side" },
+    paper: false,
+    wide: true,
+    // The cross is only there while something is selected.
+    prepare: (order, act) => {
+      if (useEditor.getState().selection?.docId !== TOUR_DOC) act.select([order[0]]);
+    },
+    done: ({ selected }) => selected === 0,
+  },
+  {
     callout: "come back any time",
     anchor: () => '[data-tour="help"]',
     spot: { side: "left", dx: 36, dy: -2, arrow: "under" },
     paper: false,
+    wide: true,
     after: 3000,
   },
 ];
@@ -291,7 +319,41 @@ function tail(p0: Point, p1: Point, p2: Point, p3: Point, t: number): [Point, Po
   return [mix(p012, p123), p123, p23];
 }
 
+function pad(r: Rect, x: number, y = x): Rect {
+  return { x: r.x - x, y: r.y - y, w: r.w + 2 * x, h: r.h + 2 * y };
+}
+
+/** The smallest rectangle holding all of `points`. */
+function span(points: Point[]): Rect {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
+/** The smallest rectangle holding all of `rects`. */
+function around(rects: Rect[]): Rect {
+  return span(rects.flatMap((r) => [r, { x: r.x + r.w, y: r.y + r.h }]));
+}
+
 // ---- the overlay ----------------------------------------------------------------
+
+/** Four walls around `hole`, taking every click that lands outside it; with
+ *  no hole, one wall over everything, for a step that only shows. */
+function Walls({ hole }: { hole: Rect | null }) {
+  const wall = "pointer-events-auto absolute";
+  if (!hole) return <div className={`${wall} inset-0`} />;
+  const bottom = hole.y + hole.h;
+  return (
+    <>
+      <div className={`${wall} inset-x-0 top-0`} style={{ height: Math.max(0, hole.y) }} />
+      <div className={`${wall} inset-x-0 bottom-0`} style={{ top: bottom }} />
+      <div className={wall} style={{ left: 0, top: hole.y, width: Math.max(0, hole.x), height: hole.h }} />
+      <div className={`${wall} right-0`} style={{ left: hole.x + hole.w, top: hole.y, height: hole.h }} />
+    </>
+  );
+}
 
 export function Tour() {
   const step = useEditor((s) => s.tour);
@@ -409,18 +471,44 @@ export function Tour() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  if (step === null || !current || !rect) return null;
+  // The words as drawn, for a wide spotlight to fit: `calloutBox` is only
+  // a guess, made before there is anything to measure, and a generous one.
+  // Layout sizes, not the box's, which is moving while it fades in.
+  const said = useRef<HTMLDivElement>(null);
+  const [saidSize, setSaidSize] = useState<{ w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = said.current;
+    const next = el ? { w: el.offsetWidth, h: el.offsetHeight } : null;
+    if (next?.w !== saidSize?.w || next?.h !== saidSize?.h) setSaidSize(next);
+    // The words change with the step and the hint, and are there once drawn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, hinted, drawn]);
+
+  if (step === null || !current) return null;
+  // Until the thing is found, nothing takes a click.
+  if (!rect) return <div className="fixed inset-0 z-30" aria-hidden />;
   const words = hinted === step && current.hint ? current.hint : current.callout;
   const { box, from, to, c1, c2, angle } = layout(rect, words, current.spot, size);
   // The spotlight: a little around the thing, and where the thing has an
   // index note hanging off its top-left corner, that too.
-  const cut = current.noted
+  let cut: Rect = current.noted
     ? { x: rect.x - 30, y: rect.y - 14, w: rect.w + 38, h: rect.h + 20 }
     : { x: rect.x - 6, y: rect.y - 6, w: rect.w + 12, h: rect.h + 12 };
+  if (current.wide) {
+    const w = saidSize?.w ?? box.w;
+    const h = saidSize?.h ?? box.h;
+    const text = { x: current.spot.side === "left" ? box.x + box.w - w : box.x, y: box.y, w, h };
+    // The words' line box has room enough above and below; more would
+    // reach off the dock when they sit on it. The curve stays inside the
+    // box of its four points.
+    cut = around([cut, pad(text, 8, 0), pad(span([from, c1, c2, to]), 6)]);
+  }
+  const dim = current.wide ? 0.55 : 0.28;
   const d = `M ${from.x} ${from.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${to.x} ${to.y}`;
 
   return (
     <div className="pointer-events-none fixed inset-0 z-30" aria-hidden>
+      <Walls hole={current.done ? rect : null} />
       <svg width={size.w} height={size.h} className="absolute inset-0">
         <defs>
           <InkFilter
@@ -436,7 +524,7 @@ export function Tour() {
             <rect x={cut.x} y={cut.y} width={cut.w} height={cut.h} rx="6" fill="black" />
           </mask>
         </defs>
-        <rect width="100%" height="100%" fill="rgb(0 0 0 / 0.28)" mask="url(#tour-mask)" />
+        <rect width="100%" height="100%" fill={`rgb(0 0 0 / ${dim})`} mask="url(#tour-mask)" />
         <g
           key={`${step}-${words}`}
           className="stroke-brand"
@@ -459,6 +547,7 @@ export function Tour() {
       </svg>
       <div
         key={words}
+        ref={said}
         className={`tour-callout animate-fade-in absolute max-w-[260px] ${current.paper ? "on-paper" : ""}`}
         style={{
           top: box.y,
