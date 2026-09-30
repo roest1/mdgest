@@ -145,7 +145,7 @@ function SelectionChip({ docId }: { docId: string }) {
     .join("  ");
 
   return (
-    <span className="flex items-center gap-2 font-mono text-ink">
+    <span className="flex items-center gap-2 font-mono text-ink" data-tour="selection">
       <span className="tabular-nums">{where}</span>
       {placed.length === 1 ? (
         <span className="text-faint">{placed[0].id}</span>

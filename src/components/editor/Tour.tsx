@@ -39,12 +39,14 @@ interface Actions {
 
 /** Where a step's callout sits, relative to the thing: on the `side` of it,
  *  `dx` out from that edge and `dy` down from its top; and how the arrow
- *  arrives -- at the near side, over the top and down, or under and up. */
+ *  arrives -- at the near side, over the top and down, under and up, or
+ *  dropped from words that sit above it. A drop ignores `side`: the words
+ *  start `dx` along from the thing's left edge. */
 interface Spot {
   side: "left" | "right";
   dx: number;
   dy: number;
-  arrow: "side" | "over" | "under";
+  arrow: "side" | "over" | "under" | "drop";
 }
 
 interface Step {
@@ -52,6 +54,8 @@ interface Step {
   callout: string;
   /** What the arrow points at, given the example's blocks in order. */
   anchor: (order: string[]) => string | null;
+  /** Something beside the thing that the spotlight takes in too. */
+  also?: string;
   spot: Spot;
   /** Whether the callout sits on the page (white) or on a pane (dark). */
   paper: boolean;
@@ -84,6 +88,10 @@ const beside: Spot = { side: "right", dx: 90, dy: -14, arrow: "side" };
 /** Above the dock, over the markdown pane's last lines, with the arrow
  *  coming down onto the toggle. */
 const inDock: Spot = { side: "left", dx: 60, dy: -58, arrow: "over" };
+/** Right above the toggle, and so over the right of the markdown pane,
+ *  which is empty more often than its left: an image there would sit
+ *  under the words of `inDock`. */
+const overDock: Spot = { side: "right", dx: -40, dy: -84, arrow: "drop" };
 
 const STEPS: Step[] = [
   {
@@ -109,7 +117,7 @@ const STEPS: Step[] = [
     prepare: (order, act) => {
       if (useEditor.getState().selection?.docId !== TOUR_DOC) act.select([order[0]]);
     },
-    after: 3000,
+    after: 2500,
   },
   {
     callout: "shift-click for a range",
@@ -143,7 +151,7 @@ const STEPS: Step[] = [
     callout: "turn off the text boxes",
     wide: true,
     anchor: () => '[data-tour="boxes-text"]',
-    spot: inDock,
+    spot: overDock,
     paper: false,
     done: ({ boxes }) => !boxes.text,
   },
@@ -151,7 +159,7 @@ const STEPS: Step[] = [
     callout: "and the image boxes",
     wide: true,
     anchor: () => '[data-tour="boxes-images"]',
-    spot: inDock,
+    spot: overDock,
     paper: false,
     // Back on, in case the last step's click landed here instead.
     prepare: (_order, act) => act.boxes({ images: true }),
@@ -171,6 +179,8 @@ const STEPS: Step[] = [
     // show. The cross, not Escape: Escape would end the tour as well.
     callout: "clear the selection",
     anchor: () => '[data-tour="clear"]',
+    // And what it clears, so the light shows what the cross is about.
+    also: '[data-tour="selection"]',
     // On the dock, in the space right of the cross, with the arrow straight
     // across: one coming down would land on the page's bottom edge.
     spot: { side: "right", dx: 64, dy: -2, arrow: "side" },
@@ -251,13 +261,26 @@ interface Point {
  *  step's spot. The box is kept on screen. The arrow bows so it reads as
  *  thrown rather than plotted: to the side it dips a little on the way;
  *  over, it rises, crosses and comes down onto the top; under, the mirror. */
-function layout(rect: Rect, text: string, spot: Spot, size: { w: number; h: number }) {
-  const { w, h } = calloutBox(text);
+function layout(
+  rect: Rect,
+  text: string,
+  spot: Spot,
+  size: { w: number; h: number },
+  drawn: { w: number; h: number } | null,
+) {
+  // A drop sits in tight room at the screen's edge, so it goes by the
+  // words as drawn once they are.
+  const { w, h } = (spot.arrow === "drop" && drawn) || calloutBox(text);
   const right = rect.x + rect.w;
   const bottom = rect.y + rect.h;
   const margin = 8;
   const box: Rect = {
-    x: spot.side === "right" ? right + spot.dx : rect.x - spot.dx - w,
+    x:
+      spot.arrow === "drop"
+        ? rect.x + spot.dx
+        : spot.side === "right"
+          ? right + spot.dx
+          : rect.x - spot.dx - w,
     y: rect.y + spot.dy,
     w,
     h,
@@ -291,6 +314,12 @@ function layout(rect: Rect, text: string, spot: Spot, size: { w: number; h: numb
     );
     box.x = from.x - w - 8;
     box.y = from.y - h / 2 - 4;
+  } else if (spot.arrow === "drop") {
+    // From under the first words, falling with a little lean onto the top.
+    from = { x: box.x + Math.min(w * 0.25, 40), y: box.y + h + 2 };
+    to = { x: rect.x + Math.min(rect.w / 2, 40), y: rect.y - 8 };
+    c1 = { x: from.x - 14, y: from.y + 20 };
+    c2 = { x: to.x - 8, y: to.y - 24 };
   } else {
     // One easy curve from under the last word, sagging a little and
     // arriving from the lower left, at the thing's underside.
@@ -445,6 +474,7 @@ export function Tour() {
     [current, prepared, step, order],
   );
   const rect = useAnchor(selector);
+  const also = useAnchor(current && prepared === step ? (current.also ?? null) : null);
 
   // A step that asks for something ends when it is done...
   useEffect(() => {
@@ -488,12 +518,13 @@ export function Tour() {
   // Until the thing is found, nothing takes a click.
   if (!rect) return <div className="fixed inset-0 z-30" aria-hidden />;
   const words = hinted === step && current.hint ? current.hint : current.callout;
-  const { box, from, to, c1, c2, angle } = layout(rect, words, current.spot, size);
+  const { box, from, to, c1, c2, angle } = layout(rect, words, current.spot, size, saidSize);
   // The spotlight: a little around the thing, and where the thing has an
   // index note hanging off its top-left corner, that too.
   let cut: Rect = current.noted
     ? { x: rect.x - 30, y: rect.y - 14, w: rect.w + 38, h: rect.h + 20 }
     : { x: rect.x - 6, y: rect.y - 6, w: rect.w + 12, h: rect.h + 12 };
+  if (also) cut = around([cut, pad(also, 6)]);
   if (current.wide) {
     const w = saidSize?.w ?? box.w;
     const h = saidSize?.h ?? box.h;
