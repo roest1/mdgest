@@ -55,8 +55,7 @@ fix it.
 
 |                              |                                                                                                                   |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `edits.json`                 | every correction below, and nothing writes it yet                                                                 |
-| export                       | browser storage is evictable, and nothing writes a workspace back to disk. See [docs/storage.md](docs/storage.md) |
+| `edits.json`                 | written for headings, lists, bold/italic, quote, page breaks, hide, join and undo; not divide, reorder, inserts   |
 | `rules.json`                 | what the engine learns from a folder's documents                                                                  |
 | tables                       | read as the lines they are printed as, not as a table                                                             |
 | math                         | read as the glyphs it is set in, not as `$…$`                                                                     |
@@ -96,7 +95,6 @@ saving means**. An export is a folder you keep:
 - `markdown/` as it came out.
 
 Hand it back later and you carry on where you left off. Nothing in it is hidden.
-Export is the next thing to build.
 A workspace is a tree in your browser's own storage, and an export of it is a
 folder on your disk. Folders are yours to organize however you like — mdgest
 mirrors them. Say you upload `invoice1.pdf` into an `invoices` folder:
@@ -107,10 +105,43 @@ mirrors them. Say you upload `invoice1.pdf` into an `invoices` folder:
       markdown/invoices/invoice1.md            the output, same tree
       markdown/invoices/invoice1.assets/       its figures, as PNGs
       .mdgest/invoices/invoice1.pdf/
-        analysis.json                          the engine's read of the PDF (blocks, fonts, roles) — regenerable, deletable
+        analysis.json                          the engine's read of the PDF (blocks, fonts, roles) — regenerable until it has edits
+        edits.json                             your corrections, whether it is done, and its undo history
 
-What edits add to this tree, and to an export, is designed in
-[docs/storage.md](docs/storage.md).
+Every edit is written to `edits.json` as it is made; there is no save button.
+
+### Exporting
+
+**Export**, in the editor's header, writes the workspace out as a zip on any
+browser, or straight into a folder you pick on Chromium ones:
+
+    my-project/
+      mdgest.json          every document's hash and decisions, in one file
+      sources/             the PDFs, exactly as they went in
+      markdown/            each document marked done, with its figures
+
+A markdown-only export writes `markdown/` alone. Markdown is written for done
+documents only, so nothing half-finished goes out looking finished. Into a
+folder, the folder must be empty or one an earlier export wrote; what that
+export wrote is replaced, and nothing else there is touched.
+
+`mdgest.json` is the browser's per-document `edits.json` files gathered into
+one, without their undo history. Each document's entry carries its source's
+SHA-256, the `reader` version its blocks came from, whether it is done, its
+edits, and a `check`: the SHA-256 of the rest of the entry. In a zip the file is
+marked read-only, which most unzip tools honor. That is a hint, not a lock.
+What protects it is the check:
+
+- **an entry changed since it was exported** is marked `edited` when the
+  project is dropped back in, and continuing asks first. Its edits come in as
+  they are now
+- **an entry whose edits do not make sense** (a heading level of 9, a role
+  that does not exist) costs that one document its decisions, never the whole
+  import. It is marked `starts over`, with the reason, and is read from scratch
+- **an entry from another reader**, whose block ids would point at different
+  blocks, starts over the same way
+
+Continuing unpacks each entry back into that document's `edits.json`.
 
 In the browser, the workspace lives at `workspaces/default/` in the site's own
 storage. Only one workspace is kept at a time, but it already has a folder of
@@ -153,12 +184,17 @@ really happens is the same file picked again from the same folder, and exact
 equality catches it without false positives. Two PDFs that are only _similar_
 have different block layouts, so their edits wouldn't transfer anyway.
 
-**Revised is the one to be careful with.** A block's id is its position
-(`p{page}b{index}`), not its content. Replace a PDF with a new version and
-every edit still resolves, but to whatever block now sits in that position.
-That is why the drop tells revised files apart from unchanged ones, and why
-committing one asks a second time. What a revised source is to do to its edits
-is decided and written down in [docs/storage.md](docs/storage.md).
+**Revised is the one to be careful with: a revised PDF starts over.** A
+block's id is its position (`p{page}b{index}`), not its content, so edits made
+to the old file would resolve against the new one to whatever block now sits
+in each position — a heading on a paragraph, a hide on real text. Markdown
+that looks done and is wrong is worse than redoing the work. So committing a
+revised PDF replaces the old one and drops everything made from it: its
+analysis, its markdown and figures, its edits and its done mark. The new file
+is read from scratch the next time it is opened. Only one version of a
+document is ever kept, and there is no restoring the old edits; an export made
+beforehand is the only copy. That is why the drop tells revised files apart
+from unchanged ones, and why committing one asks a second time.
 
 **Before writing**, the list checks there is room: twice the size of what
 arrives, because markdown and analysis come out of it later. It also checks
@@ -229,7 +265,7 @@ table is in [docs/deployment.md](docs/deployment.md).
 |                                              |                                                                                               |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | [docs/pipeline.md](docs/pipeline.md)         | how a page becomes markdown: read → structure → emit, and every threshold either one leans on |
-| [docs/storage.md](docs/storage.md)           | what is left in the workspace story: export, editing and history, revised PDFs, new readers   |
+| [docs/storage.md](docs/storage.md)           | what is left in the workspace story: export, editing and history, new readers                 |
 | [docs/deployment.md](docs/deployment.md)     | commit to edge to browser, the worker boundary, the browser floor                             |
 | [docs/brand/README.md](docs/brand/README.md) | the mark, and why there are two drawings of it                                                |
 

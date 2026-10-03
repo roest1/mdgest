@@ -13,6 +13,13 @@
 
 export const ANALYSIS_FORMAT = 1;
 
+/** Which reader made an analysis. Bumped by hand whenever a change to
+ *  `read.ts` or `structure.ts` could move, merge or split a block: edits are
+ *  keyed to block positions, so edits made on one reader's blocks mean
+ *  nothing on another's. An export carries each document's, and an import
+ *  from another reader starts that document over. */
+export const READER = 1;
+
 export interface Box {
   x: number;
   y: number;
@@ -112,9 +119,18 @@ export interface Page {
 
 export interface Analysis {
   format: typeof ANALYSIS_FORMAT;
+  /** The `READER` that made it. Analyses from before the field are 1's. */
+  reader: number;
   pages: Page[];
   /** The document's body font size: the size most characters are set in. */
   bodySize: number;
+}
+
+/** Every block of an analysis by its id, across its pages. */
+export function blocksById(analysis: Analysis): Map<string, Block> {
+  const out = new Map<string, Block>();
+  for (const page of analysis.pages) for (const block of page.blocks) out.set(block.id, block);
+  return out;
 }
 
 /** An analysis from its JSON, or an error saying what is wrong with it. The
@@ -129,7 +145,7 @@ export function parseAnalysis(text: string): Analysis {
     throw problem("is not valid JSON");
   }
   if (typeof value !== "object" || value === null) throw problem("is not a JSON object");
-  const { format, pages, bodySize } = value as Record<string, unknown>;
+  const { format, reader, pages, bodySize } = value as Record<string, unknown>;
   if (format !== ANALYSIS_FORMAT) throw problem("is not in a format this version reads");
   if (!Array.isArray(pages)) throw problem("has no pages");
   for (const page of pages as unknown[]) {
@@ -146,6 +162,7 @@ export function parseAnalysis(text: string): Analysis {
   }
   return {
     format: ANALYSIS_FORMAT,
+    reader: typeof reader === "number" ? reader : 1,
     pages: pages as Page[],
     bodySize: typeof bodySize === "number" ? bodySize : 0,
   };

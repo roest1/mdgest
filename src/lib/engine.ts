@@ -1,4 +1,5 @@
 import type { Analysis } from "./analysis";
+import type { Edits } from "./edits";
 import {
   type Call,
   type Figure,
@@ -115,5 +116,12 @@ export const engine = {
       { docId, analysis, figures },
       figures.map((f) => f.bytes),
     ),
+  edits: (docId: string) => call("edits", { docId }),
+  doneDocs: () => call("doneDocs", undefined),
+  exportZip: (markdownOnly: boolean) => call("exportZip", { markdownOnly }),
+  exportToFolder: (dir: FileSystemDirectoryHandle, markdownOnly: boolean) =>
+    call("exportToFolder", { dir, markdownOnly }),
+  saveEdits: (docId: string, edits: Edits, markdown: string) =>
+    call("saveEdits", { docId, edits, markdown }),
   asset: (docId: string, name: string) => call("asset", { docId, name }),
 };

@@ -1,11 +1,4 @@
-import {
-  FileJson,
-  FileText,
-  Folder,
-  FolderOpen,
-  FileCode,
-  X,
-} from "lucide-react";
+import { Check, FileCode, FileJson, FileText, Folder, FolderOpen, X } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -245,6 +238,12 @@ const FileRow = memo(function FileRow({
             aria-hidden
           />
           <Marquee text={node.name} className="min-w-0 flex-1" />
+          {node.done && (
+            <Check
+              className="h-3.5 w-3.5 shrink-0 text-emerald-400"
+              aria-label="done"
+            />
+          )}
           {node.mark && (
             <span
               className={`shrink-0 rounded-[3px] px-[5px] py-[3px] font-sans text-[9px]

@@ -6,6 +6,7 @@
 
 import { create } from "zustand";
 import type { Analysis } from "./analysis";
+import type { Edits } from "./edits";
 import type { Markdown } from "./emit";
 
 /** How the markdown pane shows its document: typeset, or as source. */
@@ -20,11 +21,18 @@ export interface Boxes {
 }
 
 /** Where a document's reading stands. `reading` counts pages as they are
- *  read; `ready` carries the analysis and the markdown emitted from it, the
- *  same text the engine wrote to the workspace. */
+ *  read; `ready` carries the analysis, a person's edits to it, and the
+ *  markdown emitted from the two -- the same text the engine wrote to the
+ *  workspace. `unsaved` says why the last edits did not reach it. */
 export type Reading =
   | { status: "reading"; page: number; pages: number }
-  | { status: "ready"; analysis: Analysis; markdown: Markdown }
+  | {
+      status: "ready";
+      analysis: Analysis;
+      edits: Edits;
+      markdown: Markdown;
+      unsaved?: string;
+    }
   | { status: "failed"; problem: string };
 
 /** Which pane a selection was made in. The other one follows it into view;
@@ -76,6 +84,11 @@ interface Editor {
   /** Set, or with undefined forget, a document's reading. */
   setReading: (docId: string, reading: Reading | undefined) => void;
 
+  /** Which documents are done, for the explorer. A document's own reading
+   *  carries the same in its edits; this is the workspace's list. */
+  done: Record<string, boolean>;
+  setDone: (docId: string, done: boolean) => void;
+
   selection: Selection | null;
   /** Click on block `id` of `docId` in the pane `from`. */
   pick: (docId: string, id: string, modifiers: Modifiers, from: Side) => void;
@@ -101,11 +114,16 @@ export const useEditor = create<Editor>((set, get) => ({
       return { readings };
     }),
 
+  done: {},
+  setDone: (docId, done) => set((s) => ({ done: { ...s.done, [docId]: done } })),
+
   selection: null,
-  pick: (docId, id, { range, toggle }, from) => {
+  pick: (docId, picked, { range, toggle }, from) => {
     const { selection, readings } = get();
     const reading = readings[docId];
     const order = reading?.status === "ready" ? reading.markdown.order : [];
+    // A block joined onto another is picked as the block it is now part of.
+    const id = (reading?.status === "ready" && reading.markdown.blocks[picked]?.joined) || picked;
     const same = selection?.docId === docId ? selection : null;
 
     if (range && same) {

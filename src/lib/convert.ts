@@ -7,6 +7,7 @@
 
 import type { Analysis } from "./analysis";
 import { seedAsset } from "./assets";
+import { blankEdits, type Edits } from "./edits";
 import { emit } from "./emit";
 import { engine } from "./engine";
 import type { PDFPageProxy } from "./pdf";
@@ -60,6 +61,9 @@ async function run(docId: string, pages: PDFPageProxy[], job: Job): Promise<void
     let analysis: Analysis | null = isTourDoc(docId) ? null : await engine.analysis(docId);
     if (job.canceled) return;
 
+    // The worker reads the cached edits either way: `convert` answers them
+    // with the write, so a fresh read asks no second round trip for them.
+    let edits: Edits | null = null;
     if (!analysis) {
       const read: ReadPage[] = [];
       const figures: Figure[] = [];
@@ -74,10 +78,19 @@ async function run(docId: string, pages: PDFPageProxy[], job: Job): Promise<void
       // The page keeps a copy of each figure to show, since the buffers
       // themselves go to the engine.
       for (const { name, bytes } of figures) seedAsset(docId, name, bytes);
-      if (!isTourDoc(docId)) await engine.convert(docId, analysis, figures);
+      if (!isTourDoc(docId)) edits = await engine.convert(docId, analysis, figures);
+      if (job.canceled) return;
+    } else {
+      edits = isTourDoc(docId) ? null : await engine.edits(docId);
       if (job.canceled) return;
     }
-    publish({ status: "ready", analysis, markdown: emit(analysis, assetsPrefix(docId)) });
+    const made = edits ?? blankEdits();
+    publish({
+      status: "ready",
+      analysis,
+      edits: made,
+      markdown: emit(analysis, assetsPrefix(docId), made),
+    });
   } catch (cause) {
     publish({ status: "failed", problem: `This document could not be read (${messageOf(cause)}).` });
   }

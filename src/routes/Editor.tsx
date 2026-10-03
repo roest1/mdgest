@@ -1,6 +1,8 @@
 import { CircleHelp, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
+import { FloatingToolbar } from "src/components/editor/FloatingToolbar";
+import { ExportMenu } from "src/components/editor/ExportMenu";
 import { MarkdownPane } from "src/components/editor/MarkdownPane";
 import { PdfPane } from "src/components/editor/PdfPane";
 import { Split } from "src/components/editor/Split";
@@ -10,6 +12,7 @@ import { Tour } from "src/components/editor/Tour";
 import { FileTree } from "src/components/shared/FileTree";
 import { Spinner } from "src/components/shared/Spinner";
 import { releaseAssets } from "src/lib/assets";
+import { redoEdit, undoEdit } from "src/lib/editing";
 import { engine } from "src/lib/engine";
 // For its listener alone: it is what keeps every glint on one clock.
 import "src/lib/glint";
@@ -50,11 +53,24 @@ function Explorer({ docId }: { docId: string }) {
   const [problem, setProblem] = useState<string | null>(null);
   const navigate = useNavigate();
 
+  const done = useEditor((s) => s.done);
   useEffect(() => {
     let live = true;
     engine.docs().then(
       (d) => live && setDocs(d),
       (cause: unknown) => live && setProblem(messageOf(cause)),
+    );
+    // The checks come after the listing, and a listing without them is
+    // still a listing: a failure here leaves the rows unchecked.
+    engine.doneDocs().then(
+      (ids) => {
+        if (!live || ids.length === 0) return;
+        // One update for the lot, not a re-render per checked document.
+        useEditor.setState((s) => ({
+          done: { ...s.done, ...Object.fromEntries(ids.map((id) => [id, true])) },
+        }));
+      },
+      () => {},
     );
     return () => {
       live = false;
@@ -68,8 +84,13 @@ function Explorer({ docId }: { docId: string }) {
   // Memoised so the tree is rebuilt when the listing changes, not each time
   // a document is opened.
   const entries = useMemo<Entry[]>(
-    () => [...(docs ?? []), ...(touring ? [TOUR_DOC] : [])].map((path) => ({ path, kind: "pdf" })),
-    [docs, touring],
+    () =>
+      [...(docs ?? []), ...(touring ? [TOUR_DOC] : [])].map((path) => ({
+        path,
+        kind: "pdf",
+        done: done[path],
+      })),
+    [docs, touring, done],
   );
 
   if (problem) return <p className="p-3 text-xs text-red-300">{problem}</p>;
@@ -116,11 +137,32 @@ function useEscapeDeselects() {
   }, [deselect]);
 }
 
+/** Ctrl+Z undoes the open document's last edit, and Ctrl+Shift+Z or Ctrl+Y
+ *  does it again -- from anywhere but a field, which keeps its own. */
+function useUndoKeys(docId: string) {
+  useEffect(() => {
+    if (!docId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const key = e.key.toLowerCase();
+      if (key === "z" && !e.shiftKey) undoEdit(docId);
+      else if ((key === "z" && e.shiftKey) || key === "y") redoEdit(docId);
+      else return;
+      e.preventDefault();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [docId]);
+}
+
 export default function Editor() {
   const docId = useParams()["*"] || "";
   const [sidebar, setSidebar] = useState(true);
   const navigate = useNavigate();
   useEscapeDeselects();
+  useUndoKeys(docId);
 
   // Every document visited stays open as a tab until its tab is closed, in
   // the order first opened. Adjusted during render, like the tree's reveal,
@@ -223,6 +265,8 @@ export default function Editor() {
           {docId || "no document selected"}
         </span>
 
+        <ExportMenu />
+
         {/* The walkthrough, replayable: it shows itself once, the first time
             a document is open to be clicked on, and lives here after. */}
         <button
@@ -230,7 +274,7 @@ export default function Editor() {
           title="Show me around"
           data-tour="help"
           onClick={startTour}
-          className="ml-auto cursor-pointer rounded p-1 text-muted transition-colors hover:text-ink"
+          className="cursor-pointer rounded p-1 text-muted transition-colors hover:text-ink"
         >
           <CircleHelp className="h-4 w-4" />
         </button>
@@ -273,7 +317,7 @@ export default function Editor() {
             onClose={closeTab}
           />
           {docId ? (
-            <div className="flex min-h-0 flex-1">
+            <div className="relative flex min-h-0 flex-1">
               <Split
                 left={
                   <main className="h-full">
@@ -290,6 +334,7 @@ export default function Editor() {
                   </section>
                 }
               />
+              <FloatingToolbar docId={docId} />
             </div>
           ) : (
             <main className="min-w-0 flex-1">

@@ -1,4 +1,4 @@
-import { SquarePen } from "lucide-react";
+import { Check, CheckCheck, SquarePen } from "lucide-react";
 import {
   type CSSProperties,
   createElement,
@@ -16,6 +16,7 @@ import { Spinner } from "src/components/shared/Spinner";
 import type { Analysis } from "src/lib/analysis";
 import { useAssetUrl } from "src/lib/assets";
 import type { Markdown, Placed } from "src/lib/emit";
+import { setDone } from "src/lib/editing";
 import { attachSync, invalidateSync } from "src/lib/scrollsync";
 import { modifiers, useEditor, type Selection, type View } from "src/lib/store";
 import { assetsPrefix } from "src/lib/workspace";
@@ -88,6 +89,9 @@ export function MarkdownPane({ docId }: { docId: string }) {
           edit
         </button>
         <ViewToggle view={view} onView={setView} />
+        {/* Far right, the last thing done to a document. Done, it stays
+            green and says so, and offers the way back under the pointer. */}
+        <DoneButton docId={docId} />
       </div>
 
       <div
@@ -161,6 +165,44 @@ function useScrollSync(
       detach();
     };
   }, [docId, ready, view, root, scroller, content]);
+}
+
+function DoneButton({ docId }: { docId: string }) {
+  const reading = useEditor((s) => s.readings[docId]);
+  const ready = reading?.status === "ready";
+  const done = ready && !!reading.edits.done;
+  if (done) {
+    return (
+      <button
+        type="button"
+        title="Done: locked against edits. Reopen to edit it again"
+        onClick={() => setDone(docId, false)}
+        className="group flex cursor-pointer items-center gap-1.5 justify-self-end rounded-md
+          border border-emerald-500/60 bg-emerald-500/10 px-2 py-1 text-emerald-200 transition-colors
+          hover:border-edge hover:bg-raised hover:text-ink"
+      >
+        <CheckCheck className="h-4 w-4" />
+        <span className="group-hover:hidden">done</span>
+        <span className="hidden group-hover:inline">reopen</span>
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      disabled={!ready}
+      title="Mark this document done: it locks, and its markdown goes in the export"
+      onClick={() => setDone(docId, true)}
+      data-tour="done"
+      className="flex cursor-pointer items-center gap-1.5 justify-self-end rounded-md
+        border border-edge bg-raised/40 px-2 py-1 text-muted transition-colors
+        enabled:hover:border-emerald-500/60 enabled:hover:text-emerald-200
+        disabled:cursor-default disabled:opacity-40"
+    >
+      <Check className="h-4 w-4" />
+      mark done
+    </button>
+  );
 }
 
 function ViewToggle({ view, onView }: { view: View; onView: (view: View) => void }) {

@@ -5,7 +5,7 @@ import { FileTree } from "src/components/shared/FileTree";
 import type { Candidate, StageRow, StageView, Status } from "src/lib/protocol";
 import type { Entry, Mark } from "src/lib/tree";
 import { human, messageOf, plural } from "src/lib/words";
-import { basename, renamedId } from "src/lib/workspace";
+import { basename, MANIFEST as MANIFEST_NAME, renamedId } from "src/lib/workspace";
 
 /** The trailing word for each status, on a continue. Only what deviates from
  *  what the button will do is marked: `unchanged` says nothing here, and on a
@@ -60,8 +60,15 @@ function labels(candidates: Candidate[]): string[] {
     : plain;
 }
 
+/** What a row says about the decisions its manifest entry carries, where
+ *  its status says nothing louder: dropped, or changed since the export. */
+const STARTS_OVER: Mark = { text: "starts over", tone: "orange" };
+const EDITED: Mark = { text: "edited", tone: "amber" };
+
 function toEntry(row: StageRow, continuing: boolean): Entry {
-  const mark = !continuing && row.status === "new" ? null : MARKS[row.status];
+  const plain = !continuing && row.status === "new" ? null : MARKS[row.status];
+  const quiet = row.status === "unchanged" || row.status === "new";
+  const mark = quiet ? (row.reset ? STARTS_OVER : row.altered ? EDITED : plain) : plain;
   const [only] = row.candidates;
   return {
     path: row.docId,
@@ -207,7 +214,20 @@ export function Staging({
   const continuing = workspace !== null;
   const conflicts = rows.filter((r) => r.status === "conflict");
   const revised = rows.filter((r) => r.status === "revised");
-  const asking = replacing === rows && revised.length > 0;
+  // Commit moves an entry's decisions -- into the document's edits.json, or
+  // dropped -- only as it writes an arriving source over them. A missing row
+  // and the browser's own copy keep their entries exactly as they are, so
+  // there is nothing to ask about those yet.
+  const arriving = (r: StageRow) =>
+    r.candidates.length === 1 && r.candidates[0].from !== "browser";
+  // Entries an export wrote and someone changed since, and entries whose
+  // decisions will not come in: both asked about with the revised rows.
+  const altered = rows.filter((r) => r.altered && r.status !== "revised" && arriving(r));
+  const resets = rows.filter((r) => r.reset && arriving(r));
+  // Whether the commit has anything to ask about first. A row can be both
+  // altered and reset, so this is a question, never a count.
+  const questions = revised.length > 0 || altered.length > 0 || resets.length > 0;
+  const asking = replacing === rows && questions;
   const taken = useMemo(() => new Set(rows.map((r) => r.docId)), [rows]);
   const counts = COUNTED.map(
     (s) => [s, rows.filter((r) => r.status === s).length] as const,
@@ -245,9 +265,10 @@ export function Staging({
   // A revised row writes over a source the workspace already lists, and what
   // was made from it goes with it. That is the one thing a commit does that
   // cannot be taken back by dropping again, so it is asked about once, for
-  // every such row together.
+  // every such row together -- and with it, any decisions an import would
+  // drop or that were changed by hand since they were exported.
   const press = () => {
-    if (revised.length > 0) return setReplacing(rows);
+    if (questions) return setReplacing(rows);
     void commit();
   };
 
@@ -412,23 +433,45 @@ export function Staging({
 
           {asking ? (
             <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-950/10 px-3 py-2 text-xs">
-              <p className="text-amber-200/90">
-                This will replace{" "}
-                <span className="font-mono text-ink/90">
-                  {revised.map((r) => `${r.docId}.pdf`).join(", ")}
-                </span>
-                . Markdown made from the old{" "}
-                {revised.length === 1 ? "file" : "files"} is made again from the
-                new, and edits to {revised.length === 1 ? "it" : "them"} may no
-                longer line up. Continue?
-              </p>
+              {revised.length > 0 && (
+                <p className="text-amber-200/90">
+                  This will replace{" "}
+                  <span className="font-mono text-ink/90">
+                    {revised.map((r) => `${r.docId}.pdf`).join(", ")}
+                  </span>
+                  . {revised.length === 1 ? "It starts" : "They start"} over: read
+                  again from the new {revised.length === 1 ? "file" : "files"}, with
+                  every edit and done mark on the old one dropped. Export first to
+                  keep them.
+                </p>
+              )}
+              {altered.length > 0 && (
+                <p className="text-amber-200/90">
+                  The {MANIFEST_NAME} entries for{" "}
+                  <span className="font-mono text-ink/90">
+                    {altered.map((r) => r.docId).join(", ")}
+                  </span>{" "}
+                  were changed after they were exported. Their edits come in as
+                  they are now.
+                </p>
+              )}
+              {resets.length > 0 && (
+                <ul className="space-y-0.5 text-amber-200/90">
+                  {resets.map((r) => (
+                    <li key={r.docId}>
+                      <span className="font-mono text-ink/90">{r.docId}</span>: {r.reset}.
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-amber-200/90">Continue?</p>
               <div className="flex gap-3 font-mono text-[11px]">
                 <button
                   type="button"
                   onClick={() => void commit()}
                   className="cursor-pointer text-ink hover:underline"
                 >
-                  Replace and continue
+                  {revised.length > 0 ? "Replace and continue" : "Continue"}
                 </button>
                 <button
                   type="button"

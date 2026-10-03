@@ -4,20 +4,26 @@
  * Pure, and shared: the worker calls it to write `markdown/<doc>.md`, and
  * the page calls it to know which source lines a block became, so the
  * numbered boxes on the page and the numbered lines beside them are one
- * list by construction. Nothing here reads edits yet -- when it does, it
- * will resolve them into the block list first and emit the result the same
- * way. */
+ * list by construction. A person's edits are laid over each block first
+ * (`shape`), and the result is written the same way. */
 
-import { LIST_ROLES, type Analysis, type Block, type Page } from "./analysis";
+import { blocksById, LIST_ROLES, type Analysis, type Block, type Page } from "./analysis";
+import { shape, type Edits, type Shaped } from "./edits";
 
 /** A block as it was written: which page, its number on that page (the
- *  note on its box), and the source lines it became, 1-based inclusive. */
+ *  note on its box), and the source lines it became, 1-based inclusive.
+ *  A hidden block keeps its number, so hiding one renumbers nothing, and
+ *  became no lines: its `from` and `to` are 0. A block joined onto another
+ *  is placed where that one is, with its number and lines, and `joined`
+ *  names it. */
 export interface Placed {
   id: string;
   page: number;
   n: number;
   from: number;
   to: number;
+  hidden: boolean;
+  joined?: string;
 }
 
 /** One line of the markdown source, and the block it came from -- null for
@@ -91,7 +97,7 @@ function escapeText(text: string): string {
     .replace(/^(\d{1,9})([.)])/, "$1\\$2");
 }
 
-function inline(block: Block): string {
+function inline(block: Shaped): string {
   let text = block.text.trim();
   if (!text) return text;
   text = escapeText(text);
@@ -101,12 +107,45 @@ function inline(block: Block): string {
   return text;
 }
 
-/** The markdown for a whole document. `assets` is the path the figures are
- *  written under, relative to the markdown file: `<doc>.assets/`. */
-export function emit(analysis: Analysis, assets: string): Markdown {
+/** The markdown for a whole document, with `edits` made to it. `assets` is
+ *  the path the figures are written under, relative to the markdown file:
+ *  `<doc>.assets/`. */
+export function emit(analysis: Analysis, assets: string, edits?: Edits): Markdown {
   const lines: SourceLine[] = [];
   const blocks: Record<string, Placed> = {};
   const order: string[] = [];
+
+  /** The lines a quoted block wrote, 1-based: where `> ` opens them, and
+   *  what decides which blank lines between them carry a `>` too. */
+  const quoted = new Set<number>();
+
+  // The joins, resolved: each child to the head of its group, and each
+  // head to its children in document order. Text onto text only; a
+  // chain a spike file may hold is followed to its end, and a loop is no
+  // join at all.
+  const byId = blocksById(analysis);
+  const headOf = (id: string): string => {
+    const seen = new Set<string>();
+    let at = id;
+    for (;;) {
+      const parent = edits?.joins[at];
+      if (!parent) return at;
+      if (seen.has(parent) || parent === id) return id;
+      if (byId.get(parent)?.kind !== "text" || byId.get(at)?.kind !== "text") return at;
+      seen.add(at);
+      at = parent;
+    }
+  };
+  const children = new Map<string, Block[]>();
+  const joined = new Map<string, string>();
+  for (const page of analysis.pages) {
+    for (const b of page.blocks) {
+      const head = headOf(b.id);
+      if (head === b.id) continue;
+      joined.set(b.id, head);
+      children.set(head, [...(children.get(head) ?? []), b]);
+    }
+  }
 
   const last = () => lines[lines.length - 1];
   /** Returns the 1-based line the text landed on. */
@@ -117,13 +156,52 @@ export function emit(analysis: Analysis, assets: string): Markdown {
   const blank = (page: number) => {
     if (lines.length && last().text !== "") put("", null, page);
   };
+  /** A `---`, set off by blank lines so it reads as a rule and not as the
+   *  underline of the line above. One rule where two would meet -- a break
+   *  after one block and before the next, or beside the rule between
+   *  pages. */
+  const rule = (page: number) => {
+    blank(page);
+    const before = lines[lines.length - 2];
+    if (lines.length === 0 || before?.text === "---") return;
+    put("---", null, page);
+    put("", null, page);
+  };
 
   const emitPage = (page: Page) => {
-    const counters = new Counters();
+    let counters = new Counters();
     let n = 0;
     let inList = false;
-    for (const block of page.blocks) {
+    /** Whether the last block written was quoted. */
+    let inQuote = false;
+    /** A rule ends any list it falls in, and the next one counts from 1. */
+    const breakHere = () => {
+      rule(page.n);
+      counters = new Counters();
+      inList = false;
+    };
+    for (const raw of page.blocks) {
+      if (joined.has(raw.id)) continue;
+      const kids = children.get(raw.id);
+      const block = shape(
+        kids ? { ...raw, text: [raw.text, ...kids.map((k) => k.text)].join(" ") } : raw,
+        edits?.blocks[raw.id],
+      );
+      if (block.hidden) {
+        n += 1;
+        blocks[block.id] = { id: block.id, page: page.n, n, from: 0, to: 0, hidden: true };
+        order.push(block.id);
+        continue;
+      }
+      if (block.breakBefore) breakHere();
+      // A list that goes into a quote or comes out of one is two lists:
+      // the `>` cannot open or close partway through one.
+      if (inList && LIST_ROLES.includes(block.role) && block.quote !== inQuote) {
+        counters = new Counters();
+        inList = false;
+      }
       const item = counters.itemFor(block);
+      const q = block.quote ? "> " : "";
       // Each block is one line of the source; `at` is that line.
       let at: number;
       if (block.kind === "image") {
@@ -131,7 +209,7 @@ export function emit(analysis: Analysis, assets: string): Markdown {
         if (!pic) continue;
         blank(page.n);
         at = put(
-          `![page ${page.n} figure ${block.picture + 1}](${assets}${pic.path})`,
+          `${q}![page ${page.n} figure ${block.picture + 1}](${assets}${pic.path})`,
           block.id,
           page.n,
         );
@@ -143,7 +221,7 @@ export function emit(analysis: Analysis, assets: string): Markdown {
         if (block.role === "heading") {
           blank(page.n);
           at = put(
-            `${"#".repeat(Math.max(1, Math.min(6, block.level || 2)))} ${text}`,
+            `${q}${"#".repeat(Math.max(1, Math.min(6, block.level || 2)))} ${text}`,
             block.id,
             page.n,
           );
@@ -151,29 +229,46 @@ export function emit(analysis: Analysis, assets: string): Markdown {
           inList = false;
         } else if (item) {
           if (!inList) blank(page.n);
-          at = put(`${item.indent}${item.marker} ${text}`, block.id, page.n);
+          at = put(`${q}${item.indent}${item.marker} ${text}`, block.id, page.n);
           inList = true;
         } else {
           blank(page.n);
-          at = put(text, block.id, page.n);
+          at = put(`${q}${text}`, block.id, page.n);
           put("", null, page.n);
           inList = false;
         }
       }
+      if (block.quote) quoted.add(at);
+      inQuote = block.quote;
       n += 1;
-      blocks[block.id] = { id: block.id, page: page.n, n, from: at, to: at };
+      blocks[block.id] = { id: block.id, page: page.n, n, from: at, to: at, hidden: false };
       order.push(block.id);
+      if (block.breakAfter) breakHere();
     }
   };
 
   analysis.pages.forEach((page, i) => {
-    if (i > 0) {
-      blank(page.n - 1);
-      put("---", null, page.n);
-      put("", null, page.n);
-    }
+    if (i > 0) rule(page.n);
     emitPage(page);
   });
+
+  // A child is wherever its head went -- or nowhere, with a head that
+  // wrote nothing.
+  for (const [id, head] of joined) {
+    const at = blocks[head];
+    if (at) blocks[id] = { ...at, id, page: byId.get(id)!.page, joined: head };
+  }
+
+  // Quoted blocks next to each other are one quote: the blank lines
+  // between them are written `>`, since a blank line would end it. A rule
+  // or an unquoted block between them ends it all the same.
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].text !== "" || !quoted.has(i)) continue;
+    let j = i;
+    while (j < lines.length && lines[j].text === "") j++;
+    if (quoted.has(j + 1)) for (let k = i; k < j; k++) lines[k].text = ">";
+    i = j - 1;
+  }
 
   while (lines.length && last().text === "") lines.pop();
   return { text: `${lines.map((l) => l.text).join("\n")}\n`, lines, blocks, order };

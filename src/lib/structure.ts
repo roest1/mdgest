@@ -13,6 +13,7 @@
 
 import {
   ANALYSIS_FORMAT,
+  READER,
   LIST_ROLES,
   overlapX,
   overlapY,
@@ -440,5 +441,5 @@ export function structure(pages: ReadPage[]): Analysis {
     return { ...page, blocks: ordered };
   });
 
-  return { format: ANALYSIS_FORMAT, pages: out, bodySize: body };
+  return { format: ANALYSIS_FORMAT, reader: READER, pages: out, bodySize: body };
 }

@@ -28,13 +28,23 @@ export interface Entry {
   path: string;
   kind: FileKind;
   mark?: Mark;
+  /** A document marked done, which the row says with a check. */
+  done?: boolean;
   /** Whether the listing's `onRemove`, if it has one, applies to this row. */
   removable?: boolean;
 }
 
 export type TreeNode =
   | { type: "folder"; name: string; path: string; children: TreeNode[]; files: number }
-  | { type: "file"; name: string; path: string; kind: FileKind; mark?: Mark; removable?: boolean };
+  | {
+      type: "file";
+      name: string;
+      path: string;
+      kind: FileKind;
+      mark?: Mark;
+      done?: boolean;
+      removable?: boolean;
+    };
 
 /** One collator for every comparison: the options form of `localeCompare`
  *  builds one per call. */
@@ -60,7 +70,7 @@ export function buildTree(entries: Entry[]): TreeNode[] {
   const folders = new Map<string, Folder>([["", root]]);
   const seen = new Set<string>();
 
-  for (const { path, kind, mark, removable } of entries) {
+  for (const { path, kind, mark, done, removable } of entries) {
     if (seen.has(path)) continue;
     seen.add(path);
 
@@ -81,7 +91,7 @@ export function buildTree(entries: Entry[]): TreeNode[] {
       next.files += 1;
       dir = next;
     }
-    dir.children.push({ type: "file", name, path, kind, mark, removable });
+    dir.children.push({ type: "file", name, path, kind, mark, done, removable });
   }
   root.files = seen.size;
   return sortNodes(root.children);

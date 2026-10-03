@@ -473,6 +473,17 @@
     left: 2px;
     top: 2px;
   }
+  /* A block hidden from the markdown: still on the page, to be picked and
+     put back, and struck through in the brand red so it reads as taken
+     out whatever the boxes are set to. */
+  .hit.hidden-block {
+    background: repeating-linear-gradient(
+      -45deg,
+      color-mix(in srgb, var(--color-brand) 16%, transparent) 0 2px,
+      transparent 2px 7px
+    );
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-brand) 45%, transparent);
+  }
   /* A selected block's note sits above its neighbors' notes. */
   .hit.selection {
     z-index: 1;

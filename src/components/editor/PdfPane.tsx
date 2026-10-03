@@ -9,7 +9,8 @@ import {
   useState,
 } from "react";
 import { Spinner } from "src/components/shared/Spinner";
-import type { Block } from "src/lib/analysis";
+import { useMenuDismiss } from "src/components/shared/useMenuDismiss";
+import { blocksById, type Block } from "src/lib/analysis";
 import { ensureRead } from "src/lib/convert";
 import type { Placed } from "src/lib/emit";
 import { engine } from "src/lib/engine";
@@ -330,13 +331,10 @@ export function PdfPane({ docId }: { docId: string }) {
   );
 
   // Each block by its id, once per analysis, for the picked-block scroll.
-  const blockById = useMemo(() => {
-    const out = new Map<string, Block>();
-    for (const page of analysis?.pages ?? []) {
-      for (const block of page.blocks) out.set(block.id, block);
-    }
-    return out;
-  }, [analysis]);
+  const blockById = useMemo(
+    () => (analysis ? blocksById(analysis) : new Map<string, Block>()),
+    [analysis],
+  );
 
   // A block picked in the markdown pane is brought into view here, if it
   // is not already: to a third of the way down, where a jump to a heading
@@ -590,8 +588,9 @@ function Blocks({
   return (
     <>
       {ordered.map((block) => {
-        const on = selected.includes(block.id);
         const at = placed[block.id];
+        // A joined block is drawn selected with the block it joined.
+        const on = selected.includes(at?.joined ?? block.id);
         const boxed = block.kind === "image" ? boxes.images : boxes.text;
         const left = block.box.x * scale - INSET.x;
         return (
@@ -602,7 +601,7 @@ function Blocks({
             aria-pressed={on}
             data-block={block.id}
             title={at ? `Block ${at.n}` : undefined}
-            className={`hit ${boxed ? "" : "quiet"} ${on ? "selection on-paper" : ""}`}
+            className={`hit ${boxed ? "" : "quiet"} ${at?.hidden ? "hidden-block" : ""} ${on ? "selection on-paper" : ""}`}
             style={{
               left,
               top: block.box.y * scale - INSET.y,
@@ -764,19 +763,7 @@ function MoreMenu({
   };
 
   // Any press outside the menu, or Escape, closes it.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("pointerdown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  useMenuDismiss(open, root, setOpen);
 
   return (
     <div ref={root} className="relative justify-self-end">

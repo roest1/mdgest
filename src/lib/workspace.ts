@@ -339,6 +339,8 @@ function noPrototype(): Record<string, DocEntry> {
   return Object.create(null) as Record<string, DocEntry>;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+/** A parsed JSON value that can carry named fields: the guard every
+ *  file-format check here and in edits.ts opens with. */
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

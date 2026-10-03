@@ -44,6 +44,11 @@ const handlers: Handlers = {
   source: ({ docId }) => stage.source(docId),
   analysis: ({ docId }) => stage.analysis(docId),
   convert: ({ docId, analysis, figures }) => stage.convert(docId, analysis, figures),
+  edits: ({ docId }) => stage.edits(docId),
+  doneDocs: () => stage.doneDocs(),
+  exportZip: ({ markdownOnly }) => stage.exportZip(markdownOnly),
+  exportToFolder: ({ dir, markdownOnly }) => stage.exportToFolder(dir, markdownOnly),
+  saveEdits: ({ docId, edits, markdown }) => stage.saveEdits(docId, edits, markdown),
   asset: ({ docId, name }) => stage.asset(docId, name),
 };
 
@@ -54,6 +59,7 @@ const handlers: Handlers = {
 const transfers: { [M in Method]?: (result: Result<M>) => Transferable[] } = {
   source: (bytes) => [bytes.buffer],
   asset: (bytes) => (bytes ? [bytes.buffer] : []),
+  exportZip: (bytes) => [bytes.buffer],
 };
 
 function failure(cause: unknown): Failure {

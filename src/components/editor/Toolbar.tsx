@@ -8,23 +8,32 @@ import { useEditor } from "src/lib/store";
  *  selection -- the boxes and the indices. Docked, so every button stays
  *  where the hand learned it.
  *
- * The middle is empty until there are edits to make: the block tools land
- * with `edits.json`. */
+ * The block tools are not here: they float over the panes while there is a
+ * selection (`FloatingToolbar`). */
 export function Toolbar({ docId }: { docId: string }) {
   const boxes = useEditor((s) => s.boxes);
   const setBoxes = useEditor((s) => s.setBoxes);
   const notes = useEditor((s) => s.notes);
   const setNotes = useEditor((s) => s.setNotes);
   const touring = useEditor((s) => s.tour !== null);
+  const unsaved = useEditor((s) => {
+    const reading = s.readings[docId];
+    return reading?.status === "ready" ? reading.unsaved : undefined;
+  });
 
   return (
     <div className="flex h-10 shrink-0 items-center gap-3 border-t border-edge bg-chrome px-3 text-xs text-muted">
       <SelectionChip docId={docId} />
 
-      {/* Where the block tools go. While the walkthrough runs, the one thing
-          it needs said in plain type: the way out. */}
-      <div className="flex flex-1 items-center justify-center">
-        {touring && (
+      {/* An edit that did not reach the workspace is said here, where it
+          stays until a save goes through. While the walkthrough runs, the
+          one thing it needs said in plain type: the way out. */}
+      <div className="flex min-w-0 flex-1 items-center justify-center">
+        {unsaved ? (
+          <span className="truncate text-red-300" title={unsaved}>
+            {unsaved}
+          </span>
+        ) : touring && (
           <span className="flex items-center gap-1.5 text-faint">
             <kbd className="rounded border border-edge bg-raised/60 px-1.5 py-0.5 font-mono text-[10px] text-muted">
               Esc

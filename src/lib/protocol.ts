@@ -14,6 +14,7 @@
  */
 
 import type { Analysis } from "./analysis";
+import type { Edits } from "./edits";
 
 // ---- staging --------------------------------------------------------------
 
@@ -55,6 +56,12 @@ export interface StageRow {
   status: Status;
   /** Empty when missing, one normally, more than one when in conflict. */
   candidates: Candidate[];
+  /** Its manifest entry was changed after it was exported: its check no
+   *  longer matches. Asked about before commit. */
+  altered?: boolean;
+  /** Why the decisions its entry carries will be dropped on commit, and
+   *  the document start over. */
+  reset?: string;
 }
 
 export interface StagedWorkspace {
@@ -114,8 +121,32 @@ export interface Engine {
   /** Keep a document's read, and write its markdown from it: the analysis
    *  to the cache, the figures beside the markdown, and `markdown/<id>.md`.
    *  The figures' buffers are handed over, not copied, and are empty on the
-   *  page afterwards. */
-  convert: { params: { docId: string; analysis: Analysis; figures: Figure[] }; result: void };
+   *  page afterwards. Answers the edits the cache already held -- null when
+   *  nobody has made any -- so opening a document is one round trip. */
+  convert: {
+    params: { docId: string; analysis: Analysis; figures: Figure[] };
+    result: Edits | null;
+  };
+  /** A document's edits, as `.mdgest/<id>.pdf/edits.json` holds them, or
+   *  null when nobody has made any. */
+  edits: { params: { docId: string }; result: Edits | null };
+  /** The workspace as a zip: `mdgest.json` with every document's decisions,
+   *  the sources, and markdown for the documents marked done -- or, with
+   *  `markdownOnly`, that markdown alone. Moved to the page. */
+  exportZip: { params: { markdownOnly: boolean }; result: Uint8Array<ArrayBuffer> };
+  /** The same, written into a folder the person picked. Answers how many
+   *  files were written. */
+  exportToFolder: {
+    params: { dir: FileSystemDirectoryHandle; markdownOnly: boolean };
+    result: number;
+  };
+  /** The documents whose edits say they are done. */
+  doneDocs: { params: void; result: string[] };
+  /** Keep a document's edits, and write `markdown/<id>.md` again with them.
+   *  `markdown` is the text the page just emitted for the screen -- emit is
+   *  pure and shared, so it is the text the engine would make, without the
+   *  engine re-reading the analysis to make it. */
+  saveEdits: { params: { docId: string; edits: Edits; markdown: string }; result: void };
   /** One of a document's figures, as `convert` wrote it, or null when there
    *  is no such file. Moved to the page, like `source`. */
   asset: { params: { docId: string; name: string }; result: Uint8Array<ArrayBuffer> | null };

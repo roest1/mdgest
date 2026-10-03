@@ -25,7 +25,10 @@
 import { MAX_DROP, MAX_ENTRIES, MAX_FILE, MAX_MANIFEST, RESERVE } from "./limits";
 import * as opfs from "./opfs";
 import type { Candidate, Figure, Origin, StageRow, StageView, Status } from "./protocol";
-import { parseAnalysis, type Analysis } from "./analysis";
+import { zipSync, type ZipOptions } from "fflate";
+import { parseAnalysis, READER, type Analysis } from "./analysis";
+import { parseEdits, type Edits } from "./edits";
+import { assess, bare, entryFor, sealed, type Assessed } from "./exchange";
 import { emit } from "./emit";
 import { unzip } from "./unzip";
 import { isJunk, isPdf, isZip, relativeTo, under, workspaceRoots } from "./upload";
@@ -33,6 +36,7 @@ import { human, messageOf, plural } from "./words";
 import {
   FIGURE_NAME,
   MANIFEST,
+  MARKDOWN,
   SOURCES,
   assetsDir,
   assetsPrefix,
@@ -49,6 +53,7 @@ import {
   sourcePath,
   stem,
   WORKSPACE_ID,
+  type DocEntry,
   type Manifest,
 } from "./workspace";
 
@@ -61,6 +66,19 @@ interface Workspace {
   name: string | null;
   origin: "upload" | "browser";
   manifest: Manifest;
+  /** What each entry carrying decisions comes in with, by id: checked once
+   *  when the manifest is staged, and what the rows and the commit read. */
+  assessed: Map<string, Assessed>;
+}
+
+/** Every entry of `manifest` that carries something to check: decisions,
+ *  or a check of its own. */
+async function assessAll(manifest: Manifest): Promise<Map<string, Assessed>> {
+  const entries = Object.entries(manifest.documents).filter(
+    ([, entry]) => entry.edits !== undefined || entry.check !== undefined,
+  );
+  const assessed = await Promise.all(entries.map(([, entry]) => assess(entry)));
+  return new Map(entries.map(([docId], i) => [docId, assessed[i]]));
 }
 
 let workspace: Workspace | null = null;
@@ -194,10 +212,15 @@ function view(): StageView {
     if (own.length === 1 && status !== "duplicate" && !owner.has(own[0].sha256)) {
       owner.set(own[0].sha256, docId);
     }
+    const assessed = workspace?.assessed.get(docId);
     return {
       docId,
       status,
       candidates: own.map((c) => ({ sha256: c.sha256, name: c.name, bytes: c.bytes, from: c.from })),
+      ...(assessed?.altered ? { altered: true } : {}),
+      // A revised source starts over whatever its entry says, and its own
+      // mark already tells a person so.
+      ...(assessed?.reset && status !== "revised" ? { reset: assessed.reset } : {}),
     };
   });
   rows.sort((a, b) => byCodePoint(a.docId, b.docId));
@@ -360,7 +383,7 @@ async function stageGroup(
       return null;
     });
     if (!manifest) continue;
-    arriving = { name, origin: "upload", manifest };
+    arriving = { name, origin: "upload", manifest, assessed: await assessAll(manifest) };
     const sources = root ? `${root}/${SOURCES}` : SOURCES;
     for (const item of inside) {
       if (!under(item.path, sources) || !isPdf(item.path)) continue;
@@ -622,8 +645,9 @@ async function seed(): Promise<void> {
     now.docs.map((docId) => () => probe(docId)),
     HASH_WIDTH,
   );
+  const assessed = await assessAll(manifest);
   seen = now;
-  workspace = { name: null, origin: "browser", manifest };
+  workspace = { name: null, origin: "browser", manifest, assessed };
   for (const entry of found) {
     if (!entry) continue;
     const [docId, staged] = entry;
@@ -699,9 +723,20 @@ export function commit(): Promise<{ docs: string[] }> {
     const base = workspace?.manifest ?? emptyManifest();
     const pending = copyManifest(base);
     const final = copyManifest(base);
+    // Decisions an entry carries go into the document's own edits.json as
+    // its source is written, and out of the manifest: from then on that
+    // file is where they live. Dropped instead when the source is revised
+    // or the decisions did not check out -- the document starts over.
+    const unpack = new Map<string, Edits>();
     for (const { row, staged } of chosen) {
       const entry = base.documents[row.docId];
-      final.documents[row.docId] = { ...entry, sha256: staged.sha256 };
+      const assessed = workspace?.assessed.get(row.docId);
+      let next: DocEntry = { ...entry, sha256: staged.sha256 };
+      if (staged.blob && entry && (entry.edits !== undefined || entry.check !== undefined)) {
+        if (row.status !== "revised" && assessed?.edits) unpack.set(row.docId, assessed.edits);
+        next = { ...bare(entry), sha256: staged.sha256 };
+      }
+      final.documents[row.docId] = next;
       // `undefined` is left out by JSON, so on disk this entry has no hash.
       pending.documents[row.docId] = { ...entry, sha256: staged.blob ? undefined : staged.sha256 };
     }
@@ -730,6 +765,8 @@ export function commit(): Promise<{ docs: string[] }> {
         // derivations of the old.
         if (row.status === "revised") await opfs.removeDerived(row.docId);
         await opfs.writeSource(row.docId, await readAgain(staged, staged.blob));
+        const edits = unpack.get(row.docId);
+        if (edits) await writeEdits(row.docId, edits);
       }
       await opfs.writeManifest(final);
     });
@@ -760,6 +797,20 @@ export function source(docId: string): Promise<Uint8Array<ArrayBuffer>> {
 }
 
 const ANALYSIS = "analysis.json";
+const EDITS = "edits.json";
+
+/** A document's edits as its cache holds them, or null when there are none
+ *  yet. Called under the lock. */
+async function readEdits(docId: string): Promise<Edits | null> {
+  const text = await opfs.readText([...cacheDir(docId), EDITS]);
+  return text === null ? null : parseEdits(text);
+}
+
+/** Write a document's edits where `readEdits` looks: the one spelling of
+ *  the file's path and formatting. */
+function writeEdits(docId: string, edits: Edits): Promise<void> {
+  return opfs.writeText([...cacheDir(docId), EDITS], `${JSON.stringify(edits, null, 1)}\n`);
+}
 
 /** One committed document's analysis, or null when it has not been read.
  *  Null rather than an error: a document that is in the workspace and not
@@ -776,8 +827,10 @@ export function analysis(docId: string): Promise<Analysis | null> {
  *  whatever was in the assets folder: a re-read names them from scratch,
  *  and a stale one would otherwise sit beside the new set. The markdown is
  *  written last, so a document with markdown is one whose analysis and
- *  figures are all there. */
-export function convert(docId: string, analysis: Analysis, figures: Figure[]): Promise<void> {
+ *  figures are all there. Answers the edits the markdown was written with:
+ *  the ones already in the cache, which the page would otherwise come
+ *  straight back for. */
+export function convert(docId: string, analysis: Analysis, figures: Figure[]): Promise<Edits | null> {
   return locked(async () => {
     if ((await opfs.size(sourcePath(docId))) === null) {
       throw new Error(`${docId} is not in this workspace.`);
@@ -793,7 +846,10 @@ export function convert(docId: string, analysis: Analysis, figures: Figure[]): P
     // units, which is near enough for figuring room; a zero free means the
     // browser would not say, and `writeFile` still reports a real full
     // disk in words if it comes to that.
-    const markdown = emit(analysis, assetsPrefix(docId)).text;
+    // A document read again with its cache intact keeps its edits, and its
+    // markdown goes on carrying them.
+    const edits = await readEdits(docId);
+    const markdown = emit(analysis, assetsPrefix(docId), edits ?? undefined).text;
     const json = `${JSON.stringify(analysis, null, 1)}\n`;
     let writing = markdown.length + json.length;
     for (const { bytes } of figures) writing += bytes.byteLength;
@@ -812,6 +868,38 @@ export function convert(docId: string, analysis: Analysis, figures: Figure[]): P
     }
     await opfs.writeText([...cacheDir(docId), ANALYSIS], json);
     await opfs.writeText(markdownPath(docId), markdown);
+    return edits;
+  });
+}
+
+/** One committed document's edits, or null when nobody has made any. */
+export function edits(docId: string): Promise<Edits | null> {
+  return locked(() => readEdits(docId));
+}
+
+/** The documents marked done, for the explorer's checks. An edits file
+ *  that does not read is not done: the editor will say what is wrong with
+ *  it when the document is opened. */
+export function doneDocs(): Promise<string[]> {
+  return locked(async () => {
+    const ids = await opfs.docs();
+    const edits = await Promise.all(ids.map((docId) => readEdits(docId).catch(() => null)));
+    return ids.filter((_, i) => edits[i]?.done);
+  });
+}
+
+/** Keep a document's edits, and write its markdown again with them. The
+ *  markdown comes from the page, which has just emitted it for the screen --
+ *  emit is pure and shared, so it is the text this side would make. Each
+ *  call writes the whole file: edits are kilobytes, and a call made after
+ *  another lands after it, since the lock grants in the order asked. */
+export function saveEdits(docId: string, edits: Edits, markdown: string): Promise<void> {
+  return locked(async () => {
+    if ((await opfs.size([...cacheDir(docId), ANALYSIS])) === null) {
+      throw new Error(`${docId} has not been read, so there is nothing to edit.`);
+    }
+    await writeEdits(docId, edits);
+    await opfs.writeText(markdownPath(docId), markdown);
   });
 }
 
@@ -819,4 +907,205 @@ export function convert(docId: string, analysis: Analysis, figures: Figure[]): P
 export function asset(docId: string, name: string): Promise<Uint8Array<ArrayBuffer> | null> {
   if (!FIGURE_NAME.test(name)) return Promise.reject(new Error(`${name} is not a figure's name.`));
   return locked(() => opfs.readFile([...assetsDir(docId), name]));
+}
+
+// ---- export ---------------------------------------------------------------
+
+/** One file of an export: where it goes, and its bytes. */
+interface Out {
+  path: string;
+  bytes: Uint8Array;
+  readOnly?: boolean;
+}
+
+/** What an export writes, gathered from OPFS under the lock: the manifest,
+ *  every source, and markdown with its figures for each document marked
+ *  done -- or, for `markdownOnly`, the markdown alone. */
+async function gather(markdownOnly: boolean): Promise<Out[]> {
+  const text = await opfs.manifestText();
+  const stored = text === null ? emptyManifest() : parseManifest(text);
+  const sources = await opfs.docs();
+  const encoder = new TextEncoder();
+  const manifest = emptyManifest();
+
+  // A document's files, its manifest entry when its source is going out, and
+  // whether it is marked done with no analysis to write markdown from: an
+  // imported document nobody has opened in this browser yet.
+  const gatherDoc = async (
+    docId: string,
+  ): Promise<{ files: Out[]; entry?: DocEntry; unread?: boolean }> => {
+    const files: Out[] = [];
+    // A cache file that does not read takes out its own decisions or
+    // markdown, never the export: the export is the one save a person can
+    // be sure of, and every intact document must still be in it. The
+    // broken file stays in OPFS, and the editor says what is wrong with it
+    // when the document is opened.
+    const edits = await readEdits(docId).catch(() => null);
+    let reader = READER;
+    let unread = false;
+    if (edits) {
+      const analysis = await opfs
+        .readText([...cacheDir(docId), ANALYSIS])
+        .then((t) => (t === null ? null : parseAnalysis(t)))
+        .catch(() => null);
+      if (analysis) reader = analysis.reader;
+      if (edits.done && analysis) {
+        const md = `${MARKDOWN}/${docId}.md`;
+        files.push({ path: md, bytes: encoder.encode(emit(analysis, assetsPrefix(docId), edits).text) });
+        const assets = assetsDir(docId);
+        for (const name of await opfs.walk(assets)) {
+          const bytes = await opfs.readFile([...assets, name]);
+          if (bytes) files.push({ path: `${MARKDOWN}/${docId}.assets/${name}`, bytes });
+        }
+      }
+      if (edits.done && !analysis) unread = true;
+    }
+    if (markdownOnly) return { files, unread };
+    const bytes = await opfs.readFile(sourcePath(docId));
+    if (!bytes) return { files, unread };
+    const sha256 = stored.documents[docId]?.sha256 ?? (await opfs.sha256(bytes));
+    files.push({ path: `${SOURCES}/${docId}.pdf`, bytes });
+    return { files, unread, entry: await sealed(entryFor(sha256, edits, reader)) };
+  };
+
+  // A few documents at a time, assembled back in the listing's order: the
+  // reads are the export's whole wait, and the branch that reads a source
+  // holds all of it, so `pooled` for the same reason `seed` uses it.
+  const gathered = await pooled(
+    sources.map((docId) => () => gatherDoc(docId)),
+    HASH_WIDTH,
+  );
+  const out: Out[] = [];
+  const unread: string[] = [];
+  sources.forEach((docId, i) => {
+    const { files, entry } = gathered[i];
+    out.push(...files);
+    if (gathered[i].unread) unread.push(docId);
+    if (entry) manifest.documents[docId] = entry;
+  });
+
+  if (markdownOnly) {
+    // A done document with no read -- imported and never opened here -- has
+    // no markdown to write, and a zip quietly short of it would be taken for
+    // all of it. Said instead, so the person opens them and exports again.
+    if (unread.length > 0) {
+      const shown = unread.slice(0, 3).join(", ");
+      const more = unread.length > 3 ? ` and ${unread.length - 3} more` : "";
+      throw new Error(
+        `${shown}${more} ${unread.length === 1 ? "is" : "are"} marked done but ` +
+          `${unread.length === 1 ? "has" : "have"} not been opened in this browser, so ` +
+          `${unread.length === 1 ? "its" : "their"} markdown is not written yet. Open ` +
+          `${unread.length === 1 ? "it" : "each one"} once, then export again.`,
+      );
+    }
+    if (out.length === 0) {
+      throw new Error("No document is marked done yet, so there is no markdown to export.");
+    }
+    return out;
+  }
+  // A listed document with no source is waiting for its PDF, with whatever
+  // decisions it came with. They travel on as they are.
+  for (const [docId, entry] of Object.entries(stored.documents)) {
+    if (!(docId in manifest.documents)) manifest.documents[docId] = await sealed(entry);
+  }
+  out.unshift({
+    path: MANIFEST,
+    bytes: encoder.encode(`${JSON.stringify(manifest, null, 1)}\n`),
+    readOnly: true,
+  });
+  return out;
+}
+
+/** Unix mode bits for a read-only regular file, in the high half of a zip
+ *  entry's external attributes, and the DOS read-only bit in the low byte.
+ *  Unzipping on macOS and Linux makes the file read-only, and on Windows
+ *  most tools mark it so. A hint against a slip, not a lock. */
+const READ_ONLY = ((0o100444 << 16) | 0x01) >>> 0;
+
+/** The workspace as a zip, or its markdown alone. Built here, off the page's
+ *  thread: deflating a corpus is exactly the work that freezes a tab. PDFs
+ *  and PNGs are stored as they are, since they are compressed already. */
+export function exportZip(markdownOnly: boolean): Promise<Uint8Array<ArrayBuffer>> {
+  return locked(async () => {
+    const files = await gather(markdownOnly);
+    const entries: Record<string, [Uint8Array, ZipOptions]> = {};
+    for (const { path, bytes, readOnly } of files) {
+      const stored = /\.(pdf|png)$/i.test(path);
+      entries[path] = [
+        bytes,
+        { level: stored ? 0 : 6, ...(readOnly ? { os: 3, attrs: READ_ONLY } : {}) },
+      ];
+    }
+    return zipSync(entries) as Uint8Array<ArrayBuffer>;
+  });
+}
+
+/** Take out of `at` everything under it that `keep` does not name, and
+ *  answer whether anything is left. `prefix` is `at`'s own path, the way
+ *  `keep`'s paths are written. A directory emptied out goes with its
+ *  files. */
+async function prune(
+  at: FileSystemDirectoryHandle,
+  prefix: string,
+  keep: Set<string>,
+): Promise<boolean> {
+  let kept = false;
+  const names: [string, FileSystemHandle["kind"]][] = [];
+  for await (const [name, handle] of at.entries()) names.push([name, handle.kind]);
+  for (const [name, kind] of names) {
+    const path = `${prefix}/${name}`;
+    if (kind === "directory") {
+      const sub = await at.getDirectoryHandle(name);
+      if (await prune(sub, path, keep)) kept = true;
+      else await at.removeEntry(name, { recursive: true });
+    } else if (keep.has(path)) kept = true;
+    else await at.removeEntry(name);
+  }
+  return kept;
+}
+
+/** The workspace written into a folder on disk, where the browser lets a
+ *  page pick one. The folder has to be empty, or one an earlier export of
+ *  the same kind wrote: what that export wrote is replaced whole, so a
+ *  document reopened since does not leave its old markdown behind, and
+ *  nothing else in a folder is ever touched.
+ *
+ * Written over the earlier export rather than after deleting it, and only
+ * then is whatever it wrote that this one did not pruned away. The folder
+ * is likely the one durable copy -- the browser's own storage is evictable
+ * -- so a write that fails partway must leave old files beside new ones,
+ * never a cleared folder. */
+export function exportToFolder(dir: FileSystemDirectoryHandle, markdownOnly: boolean): Promise<number> {
+  return locked(async () => {
+    const ours = markdownOnly ? [MARKDOWN] : [MANIFEST, SOURCES, MARKDOWN];
+    const names: string[] = [];
+    for await (const name of dir.keys()) names.push(name);
+    const earlier = markdownOnly
+      ? names.length > 0 && names.every((n) => n === MARKDOWN)
+      : names.includes(MANIFEST);
+    if (names.length > 0 && !earlier) {
+      throw new Error(
+        markdownOnly
+          ? "That folder has other files in it. Pick an empty folder, or one a markdown export wrote."
+          : "That folder has other files in it. Pick an empty folder, or one an earlier export wrote.",
+      );
+    }
+    const files = await gather(markdownOnly);
+    for (const { path, bytes } of files) {
+      const parts = path.split("/");
+      let at = dir;
+      for (const part of parts.slice(0, -1)) at = await at.getDirectoryHandle(part, { create: true });
+      const file = await at.getFileHandle(parts.at(-1)!, { create: true });
+      const writable = await file.createWritable();
+      await writable.write(bytes as Uint8Array<ArrayBuffer>);
+      await writable.close();
+    }
+    const wrote = new Set(files.map((f) => f.path));
+    for (const name of ours) {
+      if (wrote.has(name)) continue; // the manifest: a file, just written
+      const sub = await dir.getDirectoryHandle(name).catch(() => null);
+      if (sub && !(await prune(sub, name, wrote))) await dir.removeEntry(name, { recursive: true });
+    }
+    return files.length;
+  });
 }
