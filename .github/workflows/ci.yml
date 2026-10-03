@@ -1,0 +1,51 @@
+# ci workflow
+# - lint
+# - typecheck
+# - unit test (yet to come)
+# - build
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A second push to the same branch makes the first run's answer irrelevant.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # `bun install --frozen-lockfile` rather than a plain install, so a lockfile
+      # that drifted from package.json fails here instead of resolving to something
+      # nobody has run locally.
+      - run: bun install --frozen-lockfile
+
+      - name: lint
+        run: bun run lint
+
+      # Separate from the build step on purpose: `bun run build` runs `tsc -b`
+      # first, so a type error would read as a build failure and send someone
+      # looking at vite. This says which of the two broke.
+      - name: typecheck
+        run: bun run typecheck
+
+      # Include (vitest) testing step here (when unit tests exist)
+      # - name: test
+      #  run: bun run test # or bun test
+
+      - name: build
+        run: bun run build
