@@ -1,7 +1,7 @@
 # ci workflow
 # - lint
 # - typecheck
-# - unit test (yet to come)
+# - test
 # - build
 
 name: ci
@@ -43,9 +43,13 @@ jobs:
       - name: typecheck
         run: bun run typecheck
 
-      # Include (vitest) testing step here (when unit tests exist)
-      # - name: test
-      #  run: bun run test # or bun test
+      # The tests run in a real browser (docs/testing.md): Playwright's own
+      # Chromium, the version the lockfile's playwright expects, with the system
+      # libraries it needs.
+      - name: test
+        run: |
+          bunx playwright install --with-deps chromium
+          bun run test
 
       - name: build
         run: bun run build

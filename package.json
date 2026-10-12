@@ -8,7 +8,10 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "fixtures": "bun tests/fixtures/write.ts"
   },
   "dependencies": {
     "@fontsource-variable/caveat": "^5.3.0",
@@ -31,9 +34,13 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",
+    "@vitest/browser-playwright": "5.0.3",
     "oxlint": "^1.79.0",
+    "pdf-lib": "1.17.1",
+    "playwright": "1.63.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2"
+    "vite": "^8.2.2",
+    "vitest": "5.0.3"
   }
 }
