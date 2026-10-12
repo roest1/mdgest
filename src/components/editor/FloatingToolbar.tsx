@@ -8,14 +8,13 @@ import {
   Italic,
   Merge,
   Scissors,
-  Undo2,
 } from "lucide-react";
 import { useMemo } from "react";
 import type { Block, Role } from "src/lib/analysis";
 import { blocksById, LIST_ROLES } from "src/lib/analysis";
 import { shape, type Change, type Shaped } from "src/lib/edits";
 import { tourShowsTools } from "src/components/editor/tour-steps";
-import { editBlocks, joinBlocks, undoEdit, unjoinBlocks } from "src/lib/editing";
+import { editBlocks, joinBlocks, unjoinBlocks } from "src/lib/editing";
 import { useEditor } from "src/lib/store";
 
 /** The block tools: they float over the foot of both panes while there is a
@@ -228,14 +227,6 @@ export function FloatingToolbar({ docId }: { docId: string }) {
         >
           <EyeOff className="h-3.5 w-3.5" />
           hide
-        </Tool>
-        <Tool
-          title="Undo (Ctrl+Z)"
-          disabled={edits.undo.length === 0}
-          onClick={() => undoEdit(docId)}
-          tour="tool-undo"
-        >
-          <Undo2 className="h-3.5 w-3.5" />
         </Tool>
       </div>
     </div>

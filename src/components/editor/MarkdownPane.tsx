@@ -1,4 +1,11 @@
-import { Check, CheckCheck, SquarePen } from "lucide-react";
+import {
+  Check,
+  CheckCheck,
+  Redo2,
+  RotateCcw,
+  SquarePen,
+  Undo2,
+} from "lucide-react";
 import {
   type CSSProperties,
   createElement,
@@ -10,13 +17,16 @@ import {
   useMemo,
   useRef,
 } from "react";
-import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
+import ReactMarkdown, {
+  type Components,
+  type ExtraProps,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Spinner } from "src/components/shared/Spinner";
 import type { Analysis } from "src/lib/analysis";
 import { useAssetUrl } from "src/lib/assets";
 import type { Markdown, Placed } from "src/lib/emit";
-import { setDone } from "src/lib/editing";
+import { redoEdit, setDone, undoEdit } from "src/lib/editing";
 import { attachSync, invalidateSync } from "src/lib/scrollsync";
 import { modifiers, useEditor, type Selection, type View } from "src/lib/store";
 import { assetsPrefix } from "src/lib/workspace";
@@ -35,14 +45,21 @@ interface Marks {
 
 const NO_MARKS: Marks = { byLine: new Map(), scrollTo: null };
 
-function marksOf(markdown: Markdown, selection: Selection | null, docId: string): Marks {
+function marksOf(
+  markdown: Markdown,
+  selection: Selection | null,
+  docId: string,
+): Marks {
   if (!selection || selection.docId !== docId) return NO_MARKS;
   const byLine = new Map<number, Placed>();
   for (const id of selection.ids) {
     const at = markdown.blocks[id];
     if (at) byLine.set(at.from, at);
   }
-  return { byLine, scrollTo: selection.from === "page" ? selection.focus : null };
+  return {
+    byLine,
+    scrollTo: selection.from === "page" ? selection.focus : null,
+  };
 }
 
 type Pick = (id: string, e: MouseEvent) => void;
@@ -55,6 +72,9 @@ export function MarkdownPane({ docId }: { docId: string }) {
   const pick = useEditor((s) => s.pick);
 
   const markdown = reading?.status === "ready" ? reading.markdown : null;
+  const edits = reading?.status === "ready" ? reading.edits : null;
+  const canUndo = edits !== null && !edits.done && edits.undo.length > 0;
+  const canRedo = edits !== null && !edits.done && edits.redo.length > 0;
   const marks = useMemo(
     () => (markdown ? marksOf(markdown, selection, docId) : NO_MARKS),
     [markdown, selection, docId],
@@ -76,22 +96,49 @@ export function MarkdownPane({ docId }: { docId: string }) {
         data-bar
         className="grid h-9 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-edge px-3 text-xs text-faint"
       >
-        {/* The shape the pane's edit control will take. It does nothing
-            yet: there is no way to edit markdown back into decisions. */}
-        <button
-          type="button"
-          disabled={markdown === null}
-          className="flex cursor-pointer items-center gap-1.5 justify-self-start rounded-md
-            border border-edge bg-raised/40 px-2 py-1 text-muted transition-colors
-            enabled:hover:bg-raised enabled:hover:text-ink disabled:cursor-default disabled:opacity-40"
-        >
-          <SquarePen className="h-4 w-4" />
-          edit
-        </button>
+        {/* The history controls: undo, redo, and revert to original --
+            every edit dropped and the PDF read again, by this build's
+            reader. Undo and redo work; revert does nothing yet. A document
+            marked done takes no edits, so both wait until it is reopened. */}
+        <div className="flex items-center gap-0.5 justify-self-start">
+          <HistoryButton
+            icon={Undo2}
+            title="Undo (Ctrl+Z)"
+            disabled={!canUndo}
+            onClick={() => undoEdit(docId)}
+            tour="undo"
+          />
+          <HistoryButton
+            icon={Redo2}
+            title="Redo (Ctrl+Shift+Z)"
+            disabled={!canRedo}
+            onClick={() => redoEdit(docId)}
+          />
+          <HistoryButton
+            icon={RotateCcw}
+            title="Revert to original: drop every edit and read the PDF again"
+            disabled={markdown === null}
+          />
+        </div>
         <ViewToggle view={view} onView={setView} />
         {/* Far right, the last thing done to a document. Done, it stays
-            green and says so, and offers the way back under the pointer. */}
-        <DoneButton docId={docId} />
+            green and says so, and offers the way back under the pointer.
+            Edit sits before it -- the shape the pane's edit control will
+            take. It does nothing yet: there is no way to edit markdown
+            back into decisions. */}
+        <div className="flex items-center gap-1.5 justify-self-end">
+          <button
+            type="button"
+            disabled={markdown === null}
+            className="flex cursor-pointer items-center gap-1.5 rounded-md
+              border border-edge bg-raised/40 px-2 py-1 text-muted transition-colors
+              enabled:hover:bg-raised enabled:hover:text-ink disabled:cursor-default disabled:opacity-40"
+          >
+            <SquarePen className="h-4 w-4" />
+            edit
+          </button>
+          <DoneButton docId={docId} />
+        </div>
       </div>
 
       <div
@@ -109,7 +156,9 @@ export function MarkdownPane({ docId }: { docId: string }) {
             )}
           </div>
         ) : reading.status === "failed" ? (
-          <p className="p-6 text-center text-sm text-red-300">{reading.problem}</p>
+          <p className="p-6 text-center text-sm text-red-300">
+            {reading.problem}
+          </p>
         ) : view === "rendered" ? (
           <div ref={content}>
             <Rendered
@@ -155,7 +204,8 @@ function useScrollSync(
         const base = el.getBoundingClientRect().top - el.scrollTop;
         for (const node of el.querySelectorAll<HTMLElement>("[data-block]")) {
           const id = node.dataset.block!;
-          if (!out.has(id)) out.set(id, node.getBoundingClientRect().top - base);
+          if (!out.has(id))
+            out.set(id, node.getBoundingClientRect().top - base);
         }
         return out;
       },
@@ -177,7 +227,7 @@ function DoneButton({ docId }: { docId: string }) {
         type="button"
         title="Done: locked against edits. Reopen to edit it again"
         onClick={() => setDone(docId, false)}
-        className="group flex cursor-pointer items-center gap-1.5 justify-self-end rounded-md
+        className="group flex cursor-pointer items-center gap-1.5 rounded-md
           border border-emerald-500/60 bg-emerald-500/10 px-2 py-1 text-emerald-200 transition-colors
           hover:border-edge hover:bg-raised hover:text-ink"
       >
@@ -194,7 +244,7 @@ function DoneButton({ docId }: { docId: string }) {
       title="Mark this document done: it locks, and its markdown goes in the export"
       onClick={() => setDone(docId, true)}
       data-tour="done"
-      className="flex cursor-pointer items-center gap-1.5 justify-self-end rounded-md
+      className="flex cursor-pointer items-center gap-1.5 rounded-md
         border border-edge bg-raised/40 px-2 py-1 text-muted transition-colors
         enabled:hover:border-emerald-500/60 enabled:hover:text-emerald-200
         disabled:cursor-default disabled:opacity-40"
@@ -205,7 +255,42 @@ function DoneButton({ docId }: { docId: string }) {
   );
 }
 
-function ViewToggle({ view, onView }: { view: View; onView: (view: View) => void }) {
+function HistoryButton({
+  icon: Icon,
+  title,
+  disabled,
+  onClick,
+  tour,
+}: {
+  icon: typeof Undo2;
+  title: string;
+  disabled: boolean;
+  onClick?: () => void;
+  tour?: string;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      disabled={disabled}
+      onClick={onClick}
+      data-tour={tour}
+      className="cursor-pointer rounded p-1 text-muted transition-colors enabled:hover:text-ink
+        disabled:cursor-default disabled:opacity-40"
+    >
+      <Icon className="h-4 w-4" />
+    </button>
+  );
+}
+
+function ViewToggle({
+  view,
+  onView,
+}: {
+  view: View;
+  onView: (view: View) => void;
+}) {
   // The walkthrough talks over the rendered view -- its arrows point into
   // it -- so while it runs the toggle waits, rather than being fought.
   const touring = useEditor((s) => s.tour !== null);
@@ -224,7 +309,9 @@ function ViewToggle({ view, onView }: { view: View; onView: (view: View) => void
           disabled={touring}
           onClick={() => onView(v)}
           className={`cursor-pointer rounded px-2.5 py-0.5 text-xs transition-colors disabled:cursor-default ${
-            view === v ? "bg-raised text-ink" : "text-muted enabled:hover:text-ink disabled:opacity-40"
+            view === v
+              ? "bg-raised text-ink"
+              : "text-muted enabled:hover:text-ink disabled:opacity-40"
           }`}
         >
           {v}
@@ -240,12 +327,33 @@ function ViewToggle({ view, onView }: { view: View; onView: (view: View) => void
  *  marked. Each block is written on one source line, and every element
  *  here starts on the line of the block it came from -- a list item's own
  *  line, whatever is nested under it. */
-const BLOCKS = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "table", "li"] as const;
+const BLOCKS = [
+  "p",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "pre",
+  "table",
+  "li",
+] as const;
 
 /** Elements that can hold a wrapper around them without breaking what
  *  they are in. A list item cannot: a div between a list and its items
  *  takes the item out of the list, so it is marked on itself instead. */
-const WRAPPED = new Set<string>(["p", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "table"]);
+const WRAPPED = new Set<string>([
+  "p",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "pre",
+  "table",
+]);
 
 /** Brings the element into view when it is the one to scroll to, and is
  *  not already -- with the panes' scroll synced it usually is, and moving
@@ -280,14 +388,21 @@ function components(
   figure: Components["img"],
 ): Components {
   const blockAt = (line: number | undefined) =>
-    line === undefined ? null : markdown.lines[line - 1]?.block ?? null;
+    line === undefined ? null : (markdown.lines[line - 1]?.block ?? null);
 
   const make = (tag: (typeof BLOCKS)[number]) =>
-    function Marked({ node, className, ...props }: HTMLAttributes<HTMLElement> & ExtraProps) {
+    function Marked({
+      node,
+      className,
+      ...props
+    }: HTMLAttributes<HTMLElement> & ExtraProps) {
       const line = node?.position?.start.line;
       const id = blockAt(line);
       const on = useEditor(
-        (s) => id !== null && s.selection?.docId === docId && s.selection.ids.includes(id),
+        (s) =>
+          id !== null &&
+          s.selection?.docId === docId &&
+          s.selection.ids.includes(id),
       );
       // Scrolled to when it was picked on the page: this pane should show
       // it. Picked here, it stays where it was clicked.
@@ -309,8 +424,14 @@ function components(
           }
         : undefined;
       // A shift-click would also extend the browser's own text selection.
-      const onMouseDown = id ? (e: MouseEvent) => e.shiftKey && e.preventDefault() : undefined;
-      const classes = [className, id ? "pick" : "", on && !WRAPPED.has(tag) ? "selection" : ""]
+      const onMouseDown = id
+        ? (e: MouseEvent) => e.shiftKey && e.preventDefault()
+        : undefined;
+      const classes = [
+        className,
+        id ? "pick" : "",
+        on && !WRAPPED.has(tag) ? "selection" : "",
+      ]
         .filter(Boolean)
         .join(" ");
       const note = at ? (
@@ -369,18 +490,24 @@ function components(
 function figureFor(docId: string, analysis: Analysis): Components["img"] {
   const prefix = assetsPrefix(docId);
   const sizes = new Map<string, [number, number]>();
-  for (const page of analysis.pages) for (const pic of page.pictures) sizes.set(pic.path, pic.px);
+  for (const page of analysis.pages)
+    for (const pic of page.pictures) sizes.set(pic.path, pic.px);
   return function Figure({
     node: _node,
     src,
     alt,
     ...props
   }: React.ImgHTMLAttributes<HTMLImageElement> & ExtraProps) {
-    const name = typeof src === "string" && src.startsWith(prefix) ? src.slice(prefix.length) : "";
+    const name =
+      typeof src === "string" && src.startsWith(prefix)
+        ? src.slice(prefix.length)
+        : "";
     const url = useAssetUrl(docId, name);
     const px = sizes.get(name);
     if (!url) return <span className="text-faint">[{alt}]</span>;
-    return <img {...props} src={url} alt={alt} width={px?.[0]} height={px?.[1]} />;
+    return (
+      <img {...props} src={url} alt={alt} width={px?.[0]} height={px?.[1]} />
+    );
   };
 }
 
@@ -472,12 +599,24 @@ const Row = memo(function Row({
  *  numbers are CSS counters rather than text, so a copy of the view is the
  *  markdown alone. A blank line holds a space: with `pre-wrap` that is what
  *  gives an empty row its height. The look is `.source` in index.css. */
-function Raw({ markdown, marks, onPick }: { markdown: Markdown; marks: Marks; onPick: Pick }) {
-  const scrollLine = marks.scrollTo ? markdown.blocks[marks.scrollTo]?.from : undefined;
+function Raw({
+  markdown,
+  marks,
+  onPick,
+}: {
+  markdown: Markdown;
+  marks: Marks;
+  onPick: Pick;
+}) {
+  const scrollLine = marks.scrollTo
+    ? markdown.blocks[marks.scrollTo]?.from
+    : undefined;
   return (
     <ol
       className="source pt-2 pb-24"
-      style={{ "--digits": String(markdown.lines.length).length } as CSSProperties}
+      style={
+        { "--digits": String(markdown.lines.length).length } as CSSProperties
+      }
     >
       {markdown.lines.map((line, i) => (
         <Row

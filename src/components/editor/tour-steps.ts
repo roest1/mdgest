@@ -234,11 +234,10 @@ export const STEPS: Step[] = [
   },
   {
     callout: "undo takes it back",
-    anchor: () => '[data-tour="tool-undo"]',
-    spot: overDock,
+    anchor: () => '[data-tour="undo"]',
+    spot: { side: "right", dx: 30, dy: 26, arrow: "under" },
     paper: false,
     wide: true,
-    tools: true,
     done: ({ edits }) => (edits?.undo.length ?? 0) === 0,
   },
   {

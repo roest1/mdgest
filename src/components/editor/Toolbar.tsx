@@ -2,6 +2,7 @@ import { Image, Tag, Type, X } from "lucide-react";
 import { useMemo } from "react";
 import type { Placed } from "src/lib/emit";
 import { useEditor } from "src/lib/store";
+import { isTourDoc } from "src/lib/tour-doc";
 
 /** The bar under both panes: what is selected on the left, the tools for
  *  it in the middle, and on the right what the page shows regardless of a
@@ -16,6 +17,7 @@ export function Toolbar({ docId }: { docId: string }) {
   const notes = useEditor((s) => s.notes);
   const setNotes = useEditor((s) => s.setNotes);
   const touring = useEditor((s) => s.tour !== null);
+  const ready = useEditor((s) => s.readings[docId]?.status === "ready");
   const unsaved = useEditor((s) => {
     const reading = s.readings[docId];
     return reading?.status === "ready" ? reading.unsaved : undefined;
@@ -27,19 +29,31 @@ export function Toolbar({ docId }: { docId: string }) {
 
       {/* An edit that did not reach the workspace is said here, where it
           stays until a save goes through. While the walkthrough runs, the
-          one thing it needs said in plain type: the way out. */}
+          one thing it needs said in plain type: the way out. Otherwise the
+          quiet word that explains why there is no save button -- not for
+          the tour's example, which is kept nowhere. */}
       <div className="flex min-w-0 flex-1 items-center justify-center">
         {unsaved ? (
           <span className="truncate text-red-300" title={unsaved}>
             {unsaved}
           </span>
-        ) : touring && (
+        ) : touring ? (
           <span className="flex items-center gap-1.5 text-faint">
             <kbd className="rounded border border-edge bg-raised/60 px-1.5 py-0.5 font-mono text-[10px] text-muted">
               Esc
             </kbd>
             exits the tour
           </span>
+        ) : (
+          ready &&
+          !isTourDoc(docId) && (
+            <span
+              className="text-faint"
+              title="Every edit is written to this browser as it is made. Export is the copy you keep."
+            >
+              Autosaved
+            </span>
+          )
         )}
       </div>
 
