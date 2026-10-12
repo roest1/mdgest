@@ -18,7 +18,13 @@ export const ANALYSIS_FORMAT = 1;
  *  keyed to block positions, so edits made on one reader's blocks mean
  *  nothing on another's. An export carries each document's, and an import
  *  from another reader starts that document over. */
-export const READER = 1;
+export const READER = 2;
+
+/** The pdf.js `READER` was last checked against. pdf.js is part of the
+ *  reader: an upgrade can change the text runs `read.ts` is given. A test
+ *  fails when the installed pdf.js is not this one, so an upgrade is looked
+ *  at -- `READER` bumped if blocks moved -- before this is moved up to it. */
+export const READ_WITH = "6.3.289";
 
 export interface Box {
   x: number;
@@ -60,6 +66,9 @@ export interface Line {
   italic: boolean;
   /** The PDF's own name for the font, subset prefix removed: `Helvetica-Bold`. */
   font: string;
+  /** Where a link annotation covering this line points. External links
+   *  only: a destination within the document has no markdown to be. */
+  href?: string;
 }
 
 /** One image drawn on a page, with the bounds it was drawn to. Only images
@@ -104,6 +113,9 @@ export interface Block {
   font: string;
   /** Index into the page's `pictures` for an image block; -1 otherwise. */
   picture: number;
+  /** Where the block links, when every line of it carries one link. The
+   *  markdown writes the block as `[text](href)`. */
+  href?: string;
 }
 
 export interface Page {

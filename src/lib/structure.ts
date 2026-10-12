@@ -7,9 +7,8 @@
  * across.
  *
  * Everything here is a *default*. Edits override any of it per block, and
- * the override is what is precious; this is regenerable. A port of the
- * Python engine's `structure.py` on `spike/tauri`, in the page pane's
- * frame: y down, boxes as origin and size. */
+ * the override is what is precious; this is regenerable. Everything is in
+ * the page pane's frame: y down, boxes as origin and size. */
 
 import {
   ANALYSIS_FORMAT,
@@ -331,6 +330,12 @@ export function structure(pages: ReadPage[]): Analysis {
         font: first.font,
         picture: -1,
       };
+      // The block links where its lines do, when they all point one way. A
+      // paragraph with a link on part of it keeps only the words: a line is
+      // the finest grain this reader ties a link to.
+      if (lines[0].href && lines.every((l) => l.href === lines[0].href)) {
+        block.href = lines[0].href;
+      }
       if (!role && lines.every((l) => isHeading(l, body, boldMatters))) {
         block.role = "heading";
         const key = Math.round(first.size * 10) / 10;

@@ -97,10 +97,22 @@ function escapeText(text: string): string {
     .replace(/^(\d{1,9})([.)])/, "$1\\$2");
 }
 
+/** A URL as a markdown destination: the characters that would end or
+ *  confuse the `(...)` -- spaces, parens, angle brackets, a backslash --
+ *  percent-encoded, which every browser reads back. By code, because
+ *  `encodeURIComponent` leaves parentheses as they are. */
+function linkTarget(url: string): string {
+  return url.replace(
+    /[\s<>()\\]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`,
+  );
+}
+
 function inline(block: Shaped): string {
   let text = block.text.trim();
   if (!text) return text;
   text = escapeText(text);
+  if (block.href) text = `[${text}](${linkTarget(block.href)})`;
   if (block.role === "heading") return text;
   if (block.bold) text = `**${text}**`;
   if (block.italic) text = `*${text}*`;
@@ -121,8 +133,8 @@ export function emit(analysis: Analysis, assets: string, edits?: Edits): Markdow
 
   // The joins, resolved: each child to the head of its group, and each
   // head to its children in document order. Text onto text only; a
-  // chain a spike file may hold is followed to its end, and a loop is no
-  // join at all.
+  // chain a hand-edited manifest may hold is followed to its end, and a
+  // loop is no join at all.
   const byId = blocksById(analysis);
   const headOf = (id: string): string => {
     const seen = new Set<string>();
@@ -183,8 +195,16 @@ export function emit(analysis: Analysis, assets: string, edits?: Edits): Markdow
     for (const raw of page.blocks) {
       if (joined.has(raw.id)) continue;
       const kids = children.get(raw.id);
+      // A joined block keeps its link only when every member points the
+      // same way: one `[...]` around words from elsewhere would claim them.
       const block = shape(
-        kids ? { ...raw, text: [raw.text, ...kids.map((k) => k.text)].join(" ") } : raw,
+        kids
+          ? {
+              ...raw,
+              text: [raw.text, ...kids.map((k) => k.text)].join(" "),
+              href: kids.every((k) => k.href === raw.href) ? raw.href : undefined,
+            }
+          : raw,
         edits?.blocks[raw.id],
       );
       if (block.hidden) {

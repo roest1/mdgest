@@ -10,7 +10,7 @@
  * rotation applied -- see analysis.ts. */
 
 import { AnnotationMode, ImageKind, OPS, Util, type PDFPageProxy } from "pdfjs-dist";
-import { union, type Box, type Line, type Picture } from "./analysis";
+import { overlapX, overlapY, union, type Box, type Line, type Picture } from "./analysis";
 import type { Figure } from "./protocol";
 import { BULLET_ONLY, MARKER_ONLY, type ReadPage } from "./structure";
 import { figureName } from "./workspace";
@@ -108,9 +108,10 @@ function rounded(box: Box): Box {
 
 /** Below this, in points, an image is a rule or a glyph, not a figure. */
 const MIN_PICTURE_PT = 4;
-/** Below this many pixels an image is decoration -- a stretched bitmap
- *  rule -- unless it is drawn large on the page, where a few pixels blown
- *  up are still a picture. A single pixel never is. */
+/** With fewer pixels than this on either side, an image is decoration -- a
+ *  stretched strip of gradient, a bullet drawn as a bitmap -- unless it is
+ *  drawn large on the page, where a few pixels blown up are still a
+ *  picture. A single pixel never is. */
 const MIN_PICTURE_PX = 64;
 /** How large, in points each way, a few-pixel image has to be drawn to
  *  count as a picture anyway. */
@@ -328,9 +329,9 @@ async function readPictures(page: PDFPageProxy): Promise<{ pictures: Picture[]; 
       img = isImageObj(got) ? got : null;
     }
     if (img) {
-      const pixels = img.width * img.height;
-      if (pixels <= 1) continue;
-      if (pixels < MIN_PICTURE_PX && (box.w < BIG_ENOUGH_PT || box.h < BIG_ENOUGH_PT)) continue;
+      if (img.width * img.height <= 1) continue;
+      const few = img.width < MIN_PICTURE_PX || img.height < MIN_PICTURE_PX;
+      if (few && (box.w < BIG_ENOUGH_PT || box.h < BIG_ENOUGH_PT)) continue;
     }
 
     let canvas: HTMLCanvasElement;
@@ -382,8 +383,8 @@ const SPACE_GAP_RATIO = 0.15;
 
 /** How far the ink reaches, in fractions of the font size: up to the capitals
  *  or only to the x-height, and down past the baseline only for a descender.
- *  Measured against pdfium's ink boxes on `spike/tauri`, which is what every
- *  gap ratio in `structure.ts` was tuned on. */
+ *  Measured against pdfium's ink boxes. Every gap ratio in `structure.ts` is
+ *  tuned to boxes of this height, so changing these moves those. */
 const CAP_HEIGHT = 0.7;
 const X_HEIGHT = 0.5;
 const DESCENDER = -0.22;
@@ -596,6 +597,57 @@ async function readLines(page: PDFPageProxy): Promise<Line[]> {
   return lines.sort((p, q) => p.box.y - q.box.y || p.box.x - q.box.x);
 }
 
+// ---- links ----------------------------------------------------------------------
+
+/** The slice of a link annotation this reads. `url` is pdf.js's resolved
+ *  external target; a link within the document has none. */
+interface LinkAnnotation {
+  subtype?: string;
+  url?: string;
+  rect?: number[];
+}
+
+/** This much of a line's area under a link's box makes it that link's text.
+ *  Half, because a link rectangle is drawn around the words and a line's
+ *  ink box reaches past them -- a descender, a wider last run. */
+const LINK_COVER = 0.5;
+
+/** The page's external links: each box in the page frame, with its URL. */
+async function readLinks(page: PDFPageProxy): Promise<{ box: Box; url: string }[]> {
+  const viewport = page.getViewport({ scale: 1 });
+  const annotations = (await page.getAnnotations()) as LinkAnnotation[];
+  const out: { box: Box; url: string }[] = [];
+  for (const a of annotations) {
+    if (a.subtype !== "Link" || typeof a.url !== "string" || a.rect?.length !== 4) continue;
+    const [x1, y1, x2, y2] = a.rect;
+    out.push({
+      box: around([
+        viewport.convertToViewportPoint(x1, y1) as [number, number],
+        viewport.convertToViewportPoint(x2, y2) as [number, number],
+      ]),
+      url: a.url,
+    });
+  }
+  return out;
+}
+
+/** Mark each line a link covers with where it points. The first link that
+ *  covers a line wins -- two links on one line is a line this reader does
+ *  not split. */
+function markLinks(lines: Line[], links: { box: Box; url: string }[]): void {
+  if (links.length === 0) return;
+  for (const line of lines) {
+    const area = line.box.w * line.box.h;
+    if (area <= 0) continue;
+    for (const { box, url } of links) {
+      if (overlapX(box, line.box) * overlapY(box, line.box) >= LINK_COVER * area) {
+        line.href = url;
+        break;
+      }
+    }
+  }
+}
+
 // ---- a page ---------------------------------------------------------------------
 
 /** Everything on `page`. The pictures first: reading the operator list is
@@ -604,6 +656,7 @@ export async function readPage(page: PDFPageProxy): Promise<Read> {
   const { width, height } = page.getViewport({ scale: 1 });
   const { pictures, figures } = await readPictures(page);
   const lines = await readLines(page);
+  markLinks(lines, await readLinks(page));
   // The decoded images are the bulk of what pdf.js holds per page, and a
   // page being drawn keeps its own; this only frees what nothing is using.
   page.cleanup();

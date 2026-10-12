@@ -2,12 +2,10 @@
  *  document's that nothing can make again.
  *
  * Pure, and shared like emit.ts: the page changes the edits and draws them,
- * the worker keeps them and writes the markdown they make. The shape is the
- * spike's (`engine/mdgest/edits.py`), so a manifest it exported reads here
- * unchanged: per block, only the fields a person set, each one an override
- * of what the reader decided; the joins; and the undo and redo stacks. Any
- * other key a spike file carries -- order, cuts, inserts -- is kept as it
- * came and not read yet. */
+ * the worker keeps them and writes the markdown they make. Per block, only
+ * the fields a person set, each one an override of what the reader decided;
+ * the joins; and the undo and redo stacks. Any other key is kept as it came,
+ * so a field a newer build writes survives an older build's rewrite. */
 
 import type { Block, Role } from "./analysis";
 import { isRecord } from "./workspace";
@@ -17,10 +15,9 @@ export const EDITS_VERSION = 1;
 /** How deep undo goes. Older steps fall off the bottom. */
 export const UNDO_DEPTH = 100;
 
-/** A `---` written next to a block. The spike also knew `"file"`, a break
- *  that starts a new markdown file there; it is read as a page break here,
- *  and kept as it was until someone turns the break off. */
-export type Break = "page" | "file";
+/** A `---` written next to a block. A string rather than `true`, so another
+ *  kind of break can be added without a new field. */
+export type Break = "page";
 
 /** What a person set on one block. A field that is absent is the reader's
  *  call; one that is present overrides it. */
@@ -31,7 +28,7 @@ export interface BlockEdit {
   bold?: boolean;
   italic?: boolean;
   /** Written as a blockquote, whatever its role: a quoted heading or list
-   *  item stays one. Not a field the spike had. */
+   *  item stays one. */
   quote?: boolean;
   /** Out of the markdown. The page keeps the block, to be picked and
    *  restored. */
@@ -103,9 +100,8 @@ export function checkEdits(value: unknown, what: string): Edits {
     for (const flag of ["bold", "italic", "quote", "hidden"] as const) {
       if (edit[flag] !== undefined && typeof edit[flag] !== "boolean") throw bad(flag);
     }
-    // `true` is what a break was before it carried values.
     for (const [name, brk] of [["break_before", break_before], ["break_after", break_after]] as const) {
-      if (brk !== undefined && brk !== "page" && brk !== "file" && brk !== true) throw bad(name);
+      if (brk !== undefined && brk !== "page") throw bad(name);
     }
   }
   if (!isRecord(joins)) throw problem("has joins that are not an object");
