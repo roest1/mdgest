@@ -4,7 +4,7 @@
 # the console for "Refused to …" — that is the only place it is enforced.
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Cross-Origin-Opener-Policy: same-origin
@@ -25,19 +25,21 @@
 #                         woff2 is a file. Restoring the default 4 KB limit
 #                         base64s one JetBrains Mono subset into the CSS and
 #                         this directive then needs `data:` back.
+#   img-src 'self' blob:  A document's figures are shown from object URLs
+#                         (assets.ts), which are blob:. Without it every
+#                         figure in the editor is refused.
 #   worker-src 'self'     engine.worker.ts is built to /assets/*.js and started
-#                         with `new Worker(new URL(…, import.meta.url))`, so it
-#                         is a same-origin file, not a blob:.
+#                         with `new Worker(new URL(…, import.meta.url))`, and
+#                         pdf.js's worker is a same-origin .mjs file started by
+#                         pdf.ts: neither is a blob:.
 #   frame-ancestors       Replaces X-Frame-Options, which is not repeated here.
 #
-# Expect to touch this when the document surface lands:
+# What stays shut:
 #
-#   PDF rendering to a canvas, or any object-URL preview, needs
-#   `img-src 'self' blob:` — and the PDF still must never reach an <embed>,
-#   <object> or <iframe>; object-src and frame-src are 'none' to make that
-#   failure loud rather than silent. pdf.js belongs in the worker with
-#   `isEvalSupported: false`; if a wasm build of it ever needs
-#   'wasm-unsafe-eval', that is a deliberate widening, not a fix for a console
-#   error. Text pulled out of a PDF is attacker-controlled: render it as text
-#   nodes. CSP is the second line there, not the first — it cannot save a
-#   dangerouslySetInnerHTML.
+#   A PDF must never reach an <embed>, <object> or <iframe>; object-src and
+#   frame-src are 'none' to make that failure loud rather than silent. pdf.js
+#   runs its plain-JS decoders (`useWasm: false` in pdf.ts) so it needs no
+#   'wasm-unsafe-eval'; granting it would be a deliberate widening, not a fix
+#   for a console error. Text pulled out of a PDF is attacker-controlled:
+#   render it as text nodes. CSP is the second line there, not the first — it
+#   cannot save a dangerouslySetInnerHTML.
