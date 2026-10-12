@@ -11,26 +11,14 @@ This file holds only what is not built yet, and the reasoning it will need.
 Each section moves into the README as it ships, and the file goes when the
 last one does.
 
-The Python reference for the project layer is `engine/mdgest/project.py` and
-`engine/tests/test_project.py` on `spike/tauri`, which are not committed yet.
-Neither is `pdfjs.py` or `test_reader_conformance.py`, the measurement that
-chose pdf.js over pdfium: over four documents it reproduces the goldens byte
-for byte and disagrees with pdfium on nine markdown lines, every one of them
-pdfium's mistake. `structure.py` and the emitter are the ones already ported,
-as `src/lib/structure.ts` and `src/lib/emit.ts`.
-
 ---
 
 ## Decided, not built: history
 
-Editing, undo, and done are built: every edit autosaves to `edits.json`, undo
-is a hundred deep and kept across a reload, and done locks a document until it
-is reopened (README, *Exporting*). Two pieces of the design are not:
-
-**A quiet *Autosaved*.** There is no save button, and the editor should say
-why in one word. A button would say that unsaved work is at risk, and here it
-never is — until the browser's storage is, which a button cannot help with and
-an export can.
+Editing, undo, and done are built: every edit autosaves to `edits.json`, the
+editor says *Autosaved* where a save button would be, undo is a hundred deep and
+kept across a reload, and done locks a document until it is reopened (README,
+*Exporting*). One piece of the design is not:
 
 **History** is versions a person never has to make. A version is a snapshot of
 a document's edits, taken automatically:
@@ -42,9 +30,8 @@ a document's edits, taken automatically:
 
 Restoring a version is one undoable step, so a wrong restore is one Ctrl+Z
 away. Versions travel in the export, so History survives what undo does not: a
-hundred edits, and a move to another machine. The shape is the spike's
-`versions.py`, parent pointers and all, with the manual trigger removed; the
-tree is kept in the data and shown as a list by time.
+hundred edits, and a move to another machine. Each version points at the one
+it was taken from, so the data is a tree; it is shown as a list by time.
 
 **Reopen** takes no version of its own — the done version stands until the
 document is marked done again and replaces it. Versions would live in
@@ -54,26 +41,70 @@ and when*).
 
 ---
 
-## Decided, not built: what a change to the reader does to edits
+## Decided, not built: revert to original
+
+**Revert to original** throws away a document's edits and reads its PDF again,
+as if it had just been added. It is the third of the markdown pane's history
+buttons, after undo and redo — in place, and doing nothing yet. It works on a
+document that is not done (done locks it, so it is reopened first), and it
+asks first: it is not one Ctrl+Z away, because undo lives in the `edits.json`
+it removes.
+
+It is not *back to the reading first made*: the read it starts over from is
+this build's, which is the point of it.
+
+It removes what a revised source loses — `edits.json`, `analysis.json`, the
+figures and the markdown — and opens the document again, so the read that
+follows is this build's reader's. That makes it the one way to refresh a
+document's reading as well as its edits. With an unchanged reader the two are
+the same thing; after a change to the reader they are not, which is the next
+section.
+
+When History ships, revert takes a version first, so a revert under the same
+reader is recoverable after all. A version keeps the `reader` of the blocks it
+was taken on, and one from another reader is listed but not restored: its
+block ids would point at different blocks.
+
+---
+
+## Decided: what a change to the reader does to edits
 
 The same failure as a revised PDF, from the other side: the bytes stay the
 same, and `read.ts` or `structure.ts` changes how they become blocks. Block ids
 are positions, so an analysis made by the new reader can put a different block
 at `p3b7`, and edits keyed to the old one land on it.
 
-**What is built.** `READER` in `analysis.ts` is a number bumped by hand
-whenever a change to the reader could move, merge or split a block, and every
-analysis records the one that made it. In the browser, a document's analysis is
-read once and kept, so its edits always apply to the blocks they were made on.
-An export writes each document's `reader` into its entry, and an import from a
-different reader starts that document over, as a revised source does. The
-analysis itself is not exported: with the same reader, reading the PDF again
-makes the same blocks, and its figures with them.
+`READER` in `analysis.ts` is a number bumped by hand whenever a change to the
+reader could move, merge or split a block, and every analysis records the one
+that made it. In the browser, a document's analysis is read once and kept, so
+its edits always apply to the blocks they were made on. An export writes that
+analysis's `reader` into the entry of each document that has edits — not this
+build's, since a kept analysis can be older — and an import from a different
+reader starts that document over, as a revised source does. The analysis
+itself is not exported: with the same reader, reading the PDF again makes the
+same blocks, and its figures with them.
 
-**What is not.** When the kept analysis is older than this build's reader,
-nothing is wrong — the edits still apply to it — but the document is not getting
-the better reading. The editor should offer *a better reader is available: read
-again and start over*, which asks first.
+**pdf.js is part of the reader.** It is not pinned, and an upgrade can change
+the text runs `read.ts` is given as surely as a change to `read.ts` can.
+`READ_WITH`, beside `READER` in `analysis.ts`, is the pdf.js version the reader
+was last checked against, and a test in `tests/reader.test.ts` fails when the
+installed one differs. So an upgrade cannot land unlooked-at: read real PDFs
+with the old version and the new, bump `READER` if any block moved, merged or
+split, and only then move `READ_WITH` up. The reader cases in
+[testing.md](testing.md) are part of that look but not all of it — they are
+drawn PDFs in standard fonts, and an upgrade that only changes how embedded
+fonts or odd encodings read passes them.
+
+**Decided against: offering a better reader.** A document whose kept analysis
+is older than this build's reader is not wrong — its edits still apply — only
+not getting the newer reading. The editor does not say so. The reader will
+still change — tables, math, and diagram edges each move blocks — but all of
+that lands before anyone else has work in mdgest, and once its thresholds are
+chosen it is meant to stop. A prompt that fires only during development is
+code to keep for nothing; a person who wants the newer reading has *Revert to
+original*. If the reader does change after people have work in it, the cost is
+that their kept documents keep the old reading without being told — the case
+to revisit this for.
 
 Re-mapping edits onto a new reader's blocks by content was considered and not
 taken: when the reader regroups blocks, the block an edit was about no longer

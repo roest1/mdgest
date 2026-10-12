@@ -48,6 +48,13 @@ fix it.
 - review: every block boxed and numbered on the page, the same numbers beside
   the markdown lines they became, click to select, `shift`-click for a range,
   `ctrl`/`cmd`-click for distinct blocks, `esc` to deselect
+- editing: select blocks and set what they are from the floating toolbar —
+  heading level or paragraph, list kind and depth, bold, italic, quote, a page
+  break before or after, hide, join. Each edit is written to `edits.json` as it
+  is made, and the editor says *Autosaved* where a save button would be. Undo
+  with `ctrl`+`z`, redo with `ctrl`+`shift`+`z` or `ctrl`+`y`
+- mark done, which locks a document until it is reopened, and export, as a zip
+  or into a folder (*Exporting*, below)
 - a guided tour on a bundled two-page example, so none of this has to be learned
   on your own document
 
@@ -55,31 +62,36 @@ fix it.
 
 |                              |                                                                                                                   |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `edits.json`                 | written for headings, lists, bold/italic, quote, page breaks, hide, join and undo; not divide, reorder, inserts   |
+| the rest of the editor       | divide, drag to reorder, insert space, page numbers, version history, editing from the markdown pane              |
 | `rules.json`                 | what the engine learns from a folder's documents                                                                  |
 | tables                       | read as the lines they are printed as, not as a table                                                             |
 | math                         | read as the glyphs it is set in, not as `$…$`                                                                     |
-| hyperlinks                   | link annotations are disabled at read time; a url comes through as its text                                       |
 | repeated headers and footers | no detection, so running heads and page numbers come through on every page                                        |
 | rotate                       | a page's own rotation is applied, but a block cannot be turned by hand                                            |
 
-### Review and edit — the design, not yet the app
+### Review and edit
 
-Every image and line of text is already boxed into indexed blocks. What the
-toolbar will do with a selection:
+Every image and line of text is boxed into indexed blocks. What the toolbar
+does with a selection — what is marked _not built yet_ is the design still to
+come:
 
-- click-and-drag reordering of text and images
-- control groups of text: **join** two blocks into one, or **divide** one into two
-- modify markdown headings: (**H1**, `#`), (**H2**, `##`), (**H3**, `###`), (**H4**, `####`)
+- click-and-drag reordering of text and images — _not built yet_
+- control groups of text: **join** two blocks into one, or **divide** one into
+  two (divide is _not built yet_)
+- modify markdown headings: (**H1**, `#`), (**H2**, `##`), (**H3**, `###`), (**H4**, `####`), or back to a paragraph
 - edit font styles: **bold** and _italics_
-- lists: (unordered: `-`), (ordered: `1.`, `a.`, `i.` — numerical, alpha, or roman)
-- insert space (paragraph, indentation)
+- lists: (unordered: `-`), (ordered: numerical, alpha, or roman), a level in or
+  out. Every ordered list is written `1.` in the markdown, which has no lettered
+  or numeral lists; the rendered view letters and numerals the levels back
+- **quote**: a block written as a blockquote, whatever it is
+- insert space (paragraph, indentation) — _not built yet_
 - `---` page breaks (before/after line). Today one is written between every page
-- page numbers (on by default)
-- hide — decisions record on _wording_, not position
-- (ctrl + z) undo / with version history
+- page numbers (on by default) — _not built yet_
+- hide — the block stays on the page and leaves the markdown
+- (ctrl + z) undo, (ctrl + shift + z or ctrl + y) redo; version history — _not built yet_
 
-> Fixing in the markdown editor applies and records changes in the same way.
+> Fixing in the markdown editor will apply and record changes the same way —
+> _not built yet_; the markdown pane is read-only today.
 
 ## The more technical: Workspaces, rules, and how learning works
 
@@ -154,12 +166,12 @@ written. The list says what the button under it will do to each file, and
 nothing reaches the workspace until you press it.
 
 **A project to continue is recognized by one file.** A folder or zip with
-`mdgest.json` at its root is an earlier export, and it continues where it left
+`mdgest.json` at its root, or one folder down, is an earlier export, and it continues where it left
 off. Anything else is PDFs to add. Loose PDFs join whichever workspace is
 there, whether you just dropped it or it's left over from a previous visit.
 
 **One workspace per browser.** A second project is refused until the first is
-discarded. Continuing an old export replaces what the browser holds as a whole.
+discarded, so an old export is continued into an empty browser, as a whole.
 Documents are never mixed between the two. Discarding the browser's workspace
 asks first, because it holds the only copy of anything you haven't exported.
 
@@ -169,8 +181,8 @@ row in the list gets one of these marks:
 
 | mark        | meaning                                                                                  |
 | ----------- | ---------------------------------------------------------------------------------------- |
-| _(none)_    | new, and added as-is                                                                     |
-| `unchanged` | already here, byte for byte. Nothing is written                                          |
+| _(none)_    | already here, byte for byte, and nothing is written — or, creating a workspace, new      |
+| `new`       | not here yet, and added as-is, when continuing a workspace                               |
 | `revised`   | here already, with different bytes under the same name. You're asked again before commit |
 | `missing`   | listed in the manifest with no PDF. The decisions are kept and wait for the file         |
 | `duplicate` | the same bytes as another row, under another name. Both are kept unless you take one out |
@@ -185,7 +197,8 @@ equality catches it without false positives. Two PDFs that are only _similar_
 have different block layouts, so their edits wouldn't transfer anyway.
 
 **Revised is the one to be careful with: a revised PDF starts over.** A
-block's id is its position (`p{page}b{index}`), not its content, so edits made
+block's id is its position (`p{page}b{index}`, or `p{page}i{index}` for a
+picture), not its content, so edits made
 to the old file would resolve against the new one to whatever block now sits
 in each position — a heading on a paragraph, a hide on real text. Markdown
 that looks done and is wrong is worse than redoing the work. So committing a
@@ -228,13 +241,15 @@ bun install
 bun run dev          # http://127.0.0.1:2048, or set WEB_PORT
 ```
 
-`bun run lint` (oxlint), `bun run typecheck` (`tsc -b`) and `bun run build`
-(`tsc -b` then vite) are what CI runs, in that order.
+`bun run lint` (oxlint), `bun run typecheck` (`tsc -b`), `bun run test`
+(vitest in headless Chromium, [docs/testing.md](docs/testing.md)) and
+`bun run build` (`tsc -b` then vite) are what CI runs, in that order.
 
 ## Tech stack
 
 **the app** — one bundle, hosted as static files on Cloudflare Pages. No server,
-no account, no network call after the page loads.
+no account, and no request to any other origin: what it fetches after the page
+loads — the editor, pdf.js's worker and data, the tour — is its own.
 
 |          |                                                                                                                                                   |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -243,18 +258,18 @@ no account, no network call after the page loads.
 | state    | `zustand` — one store for what both editor panes read                                                                                             |
 | pdf      | `pdfjs-dist` 6, with cmaps, standard fonts and the wasm fallback emitted as assets by a plugin in `vite.config.ts`                                |
 | markdown | `react-markdown` + `remark-gfm` for the rendered view                                                                                             |
-| archives | `fflate` — unzip on the way in. The zip writer arrives with export                                                                                |
-| fonts    | Literata (serif), Geist Sans (ui), JetBrains Mono (code), Caveat (the landing's hand) — self-hosted via `@fontsource`, never a request off-origin |
+| archives | `fflate` — unzip on the way in, zip on the way out                                                                                                |
+| fonts    | Literata (serif), Geist Sans (ui), JetBrains Mono (code), Caveat (the tour's hand) — self-hosted via `@fontsource`, never a request off-origin |
 
 **pdf.js reads the PDF.** Every line with its box, size and weight, and every
 picture with the bounds it was drawn to. It was chosen over pdfium by
-measurement, not preference — see [docs/storage.md](docs/storage.md). Its own
+measurement, not preference — see [docs/pipeline.md](docs/pipeline.md). Its own
 parsing worker does the decoding; `src/lib/read.ts` does the geometry.
 
 **OPFS is the workspace.** The origin-private file system is the only storage
-every browser has, and the only one with a synchronous handle — which is what
-lets the engine stay synchronous instead of turning every call into a promise.
-It runs in a worker, because that handle is not exposed on the main thread.
+every browser has, and its synchronous access handle reads or writes a whole
+file in one call. The workspace runs in a worker, because that handle is not
+exposed on the main thread.
 That worker is a module worker, which is what actually sets the floor on
 Firefox: 114, not the 111 that OPFS alone would ask for. Web Locks, which keep
 two tabs from writing one workspace at once, set Safari's: 15.4. The whole
@@ -265,7 +280,8 @@ table is in [docs/deployment.md](docs/deployment.md).
 |                                              |                                                                                               |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | [docs/pipeline.md](docs/pipeline.md)         | how a page becomes markdown: read → structure → emit, and every threshold either one leans on |
-| [docs/storage.md](docs/storage.md)           | what is left in the workspace story: export, editing and history, new readers                 |
+| [docs/storage.md](docs/storage.md)           | what is left in the workspace story: history, reverting, unexported changes, new readers      |
+| [docs/testing.md](docs/testing.md)           | running the tests, what they cover, and adding a reader case                                  |
 | [docs/deployment.md](docs/deployment.md)     | commit to edge to browser, the worker boundary, the browser floor                             |
 | [docs/brand/README.md](docs/brand/README.md) | the mark, and why there are two drawings of it                                                |
 
