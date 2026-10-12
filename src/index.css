@@ -588,6 +588,22 @@
   }
 }
 
+/* ── tooltips ───────────────────────────────────────────────────────── */
+/* The mark's gradient as a hairline along the top: the one touch that says
+   whose tip it is. Inset, so it follows the rounded corners. */
+.tooltip {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-brand) 0%, transparent),
+    var(--color-brand-lit) 30%,
+    var(--color-brand) 70%,
+    color-mix(in srgb, var(--color-brand) 0%, transparent)
+  );
+  background-size: 100% 1px;
+  background-repeat: no-repeat;
+  background-position: top;
+}
+
 /* ── motion ─────────────────────────────────────────────────────────── */
 @keyframes fade-in {
   from {

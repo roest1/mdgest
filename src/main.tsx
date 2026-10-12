@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { ErrorBoundary } from "src/components/shared/ErrorBoundary";
 import { Spinner } from "src/components/shared/Spinner";
+import { Tooltips } from "src/components/shared/Tooltip";
 import Landing from "src/routes/Landing";
 import "./index.css";
 
@@ -30,6 +31,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
+        <Tooltips />
       </ErrorBoundary>
     </BrowserRouter>
   </StrictMode>,
