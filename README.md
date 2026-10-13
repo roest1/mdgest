@@ -63,7 +63,7 @@ fix it.
 
 |                              |                                                                                                                   |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| the rest of the editor       | divide, drag to reorder, insert space, page numbers, version history, editing from the markdown pane              |
+| the rest of the editor       | divide, drag to reorder, insert space, page numbers, editing from the markdown pane                               |
 | `rules.json`                 | what the engine learns from a folder's documents                                                                  |
 | tables                       | read as the lines they are printed as, not as a table                                                             |
 | math                         | read as the glyphs it is set in, not as `$…$`                                                                     |
@@ -89,7 +89,10 @@ come:
 - `---` page breaks (before/after line). Today one is written between every page
 - page numbers (on by default) — _not built yet_
 - hide — the block stays on the page and leaves the markdown
-- (ctrl + z) undo, (ctrl + shift + z or ctrl + y) redo; version history — _not built yet_
+- (ctrl + z) undo, (ctrl + shift + z or ctrl + y) redo, a hundred deep and kept
+  across a reload. There is no version history: undo covers a sitting, and
+  after reopening a done document, undoing what changed since puts it back as
+  it was marked done
 - revert to original — below
 
 **Revert to original**, the third of the markdown pane's history buttons, drops
@@ -355,7 +358,7 @@ table is in [docs/deployment.md](docs/deployment.md).
 |                                              |                                                                                               |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | [docs/pipeline.md](docs/pipeline.md)         | how a page becomes markdown: read → structure → emit, and every threshold either one leans on |
-| [docs/storage.md](docs/storage.md)           | what is left in the workspace story: history and unexported changes                |
+| [docs/storage.md](docs/storage.md)           | what is left in the workspace story: unexported changes                                       |
 | [docs/testing.md](docs/testing.md)           | running the tests, what they cover, and adding a reader case                                  |
 | [docs/deployment.md](docs/deployment.md)     | commit to edge to browser, the worker boundary, the browser floor                             |
 | [docs/brand/README.md](docs/brand/README.md) | the mark, and why there are two drawings of it                                                |

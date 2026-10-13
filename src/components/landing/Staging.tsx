@@ -304,7 +304,6 @@ export function Staging({
                 {workspace.origin === "browser"
                   ? "Workspace in this browser"
                   : `${workspace.name}/`}
-                {/* TODO: add how many files are already converted to markdown out of this total */}
                 <span className="text-faint">
                   {" "}
                   · {plural(workspace.listed, "document")}

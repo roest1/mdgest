@@ -14,40 +14,6 @@ last one does.
 
 ---
 
-## Decided, not built: history
-
-Editing, undo, and done are built: every edit autosaves to `edits.json`, the
-editor says *Autosaved* where a save button would be, undo is a hundred deep and
-kept across a reload, and done locks a document until it is reopened (README,
-*Exporting*). One piece of the design is not:
-
-**History** is versions a person never has to make. A version is a snapshot of
-a document's edits, taken automatically:
-
-- **when a document is opened**, if its edits changed since its last version —
-  one restore point per sitting;
-- **when it is marked done.** A document has one done version: marking it done
-  again replaces it rather than adding another.
-
-Restoring a version is one undoable step, so a wrong restore is one Ctrl+Z
-away. Versions travel in the export, so History survives what undo does not: a
-hundred edits, and a move to another machine. Each version points at the one
-it was taken from, so the data is a tree; it is shown as a list by time.
-
-**Reopen** takes no version of its own — the done version stands until the
-document is marked done again and replaces it. Versions would live in
-`versions.json` beside `edits.json`, and travel in each document's manifest
-entry. Done is also what will learn folder rules (README, *What gets learned,
-and when*).
-
-**Revert to original** (README, *Review and edit*) takes a version first, once
-History ships, so a revert under the same reader is recoverable after all. A
-version keeps the `reader` of the blocks it was taken on, and one from another
-reader is listed but not restored: its block ids would point at different
-blocks.
-
----
-
 ## Not built: knowing what is unexported
 
 Closing a tab loses nothing: every edit is already in browser storage. What
