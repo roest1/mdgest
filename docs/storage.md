@@ -5,7 +5,8 @@ saving means.**
 
 What is built is in the README, under *The more technical* and *Adding,
 continuing, and replacing*: the workspace layout, the one-workspace rule, the
-staged listing and its marks, exact hashing, and the checks before a commit.
+staged listing and its marks, exact hashing, the checks before a commit, and
+what a change to the reader does to edits.
 The reader is built too, and is its own document — [pipeline.md](pipeline.md).
 This file holds only what is not built yet, and the reasoning it will need.
 Each section moves into the README as it ships, and the file goes when the
@@ -44,57 +45,6 @@ History ships, so a revert under the same reader is recoverable after all. A
 version keeps the `reader` of the blocks it was taken on, and one from another
 reader is listed but not restored: its block ids would point at different
 blocks.
-
----
-
-## Decided: what a change to the reader does to edits
-
-The same failure as a revised PDF, from the other side: the bytes stay the
-same, and `read.ts` or `structure.ts` changes how they become blocks. Block ids
-are positions, so an analysis made by the new reader can put a different block
-at `p3b7`, and edits keyed to the old one land on it.
-
-`READER` in `analysis.ts` is a number bumped by hand whenever a change to the
-reader could move, merge or split a block, and every analysis records the one
-that made it. In the browser, a document's analysis is read once and kept, so
-its edits always apply to the blocks they were made on. An export writes that
-analysis's `reader` into the entry of each document that has edits — not this
-build's, since a kept analysis can be older — and an import from a different
-reader starts that document over, as a revised source does. The analysis
-itself is not exported: with the same reader, reading the PDF again makes the
-same blocks, and its figures with them.
-
-**pdf.js is part of the reader.** It is not pinned, and an upgrade can change
-the text runs `read.ts` is given as surely as a change to `read.ts` can.
-`READ_WITH`, beside `READER` in `analysis.ts`, is the pdf.js version the reader
-was made with, and a test in `tests/reader.test.ts` fails when the installed
-one differs. The fix is to bump `READER` and move `READ_WITH` up together,
-without checking whether any block moved: nothing here can say so for
-embedded fonts or odd encodings, which the drawn cases in
-[testing.md](testing.md) do not use. A needless bump costs only an older
-export's edits on import, and nobody else has exports yet. Once they do, pin
-pdf.js and upgrade it on purpose rather than take every release as a bump.
-
-**Decided against: a corpus of real PDFs with a block snapshot**, to tell an
-upgrade that moved blocks from one that did not. It would cover the few
-producers it holds and no others, and it only saves bumps that cost nothing
-today.
-
-**Decided against: offering a better reader.** A document whose kept analysis
-is older than this build's reader is not wrong — its edits still apply — only
-not getting the newer reading. The editor does not say so. The reader will
-still change — tables, math, and diagram edges each move blocks — but all of
-that lands before anyone else has work in mdgest, and once its thresholds are
-chosen it is meant to stop. A prompt that fires only during development is
-code to keep for nothing; a person who wants the newer reading has *Revert to
-original* (README, *Review and edit*), which is the one way to refresh a
-document's reading as well as its edits. If the reader does change after people have work in it, the cost is
-that their kept documents keep the old reading without being told — the case
-to revisit this for.
-
-Re-mapping edits onto a new reader's blocks by content was considered and not
-taken: when the reader regroups blocks, the block an edit was about no longer
-exists in any form to map to.
 
 ---
 

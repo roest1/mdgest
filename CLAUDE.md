@@ -7,4 +7,4 @@
 made with* failing — bump `READER` in `src/lib/analysis.ts` and set
 `READ_WITH` to the new version, together. Never move `READ_WITH` alone: no
 check here says whether blocks moved, so every pdf.js change is taken to
-have moved them (docs/storage.md, *pdf.js is part of the reader*).
+have moved them (README, *When the reader changes*).

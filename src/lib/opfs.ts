@@ -10,7 +10,7 @@
  * Storage here is evictable and `edits.json` does not regenerate, so the page
  * asks for persistence when a workspace is committed -- `persist()` is not
  * exposed in a worker -- and an export is the only real durability. Why OPFS
- * is the README's tech stack; what the export format is, docs/storage.md.
+ * is the README's tech stack; what the export format is, its *Exporting*.
  */
 
 import {

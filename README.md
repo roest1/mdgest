@@ -102,7 +102,7 @@ again on the spot. A document marked done is locked, so it is reopened first.
 The reader that turns a PDF into blocks is versioned, and every reading
 records the version that made it. A reading is kept once made, so a document
 read by an earlier version keeps that version's reading after mdgest's reader
-improves (docs/storage.md, *What a change to the reader does to edits*).
+improves (*When the reader changes*, below).
 Reverting is how it gets the current one: it is not *back to the reading first
 made*, but a new reading by the current reader version. The button names both
 versions before it acts:
@@ -240,6 +240,57 @@ has, nothing is written, and you're asked to reload. Committing also asks the
 browser to keep the site's storage, but that request can be refused, so
 exporting is still what saving means.
 
+### When the reader changes
+
+The same failure as a revised PDF, from the other side: the bytes stay the
+same, and `read.ts` or `structure.ts` changes how they become blocks. Block ids
+are positions, so an analysis made by the new reader can put a different block
+at `p3b7`, and edits keyed to the old one would land on it.
+
+`READER` in `analysis.ts` is a number bumped by hand whenever a change to the
+reader could move, merge or split a block, and every analysis records the one
+that made it. In the browser, a document's analysis is read once and kept, so
+its edits always apply to the blocks they were made on. An export writes that
+analysis's `reader` into the entry of each document that has edits — not this
+build's, since a kept analysis can be older — and an import from a different
+reader starts that document over, as a revised source does. The analysis
+itself is not exported: with the same reader, reading the PDF again makes the
+same blocks, and its figures with them.
+
+**pdf.js is part of the reader.** It is not pinned, and an upgrade can change
+the text runs `read.ts` is given as surely as a change to `read.ts` can.
+`READ_WITH`, beside `READER`, is the pdf.js version the reader was made with,
+and a test in `tests/reader.test.ts` fails when the installed one differs. The
+fix is to bump `READER` and move `READ_WITH` up together, without checking
+whether any block moved: nothing here can say so for embedded fonts or odd
+encodings, which the drawn cases in [docs/testing.md](docs/testing.md) do not
+use. A needless bump costs only an older export's edits on import, and nobody
+else has exports yet. Once they do, pin pdf.js and upgrade it on purpose
+rather than take every release as a bump.
+
+**A kept reading is not refreshed for you.** A document read by an older
+reader is not wrong — its edits still apply — only not getting the newer
+reading, and the editor does not say so. The reader will still change —
+tables, math, and diagram edges each move blocks — but all of that lands
+before anyone else has work in mdgest, and once its thresholds are chosen it
+is meant to stop. A person who wants the newer reading has *Revert to
+original* (*Review and edit*, above), the one way to refresh a document's
+reading as well as its edits. If the reader does change after people have work
+in it, their kept documents keep the old reading without being told — the
+case to revisit this for.
+
+Decided against:
+
+- **a corpus of real PDFs with a block snapshot**, to tell an upgrade that
+  moved blocks from one that did not. It would cover the few producers it
+  holds and no others, and it only saves bumps that cost nothing today
+- **offering a better reader** when a document's reading is older than the
+  build's. A prompt that fires only during development is code to keep for
+  nothing
+- **re-mapping edits onto a new reader's blocks by content**: when the reader
+  regroups blocks, the block an edit was about no longer exists in any form to
+  map to
+
 ### What gets learned, and when
 
 _Designed, not built._
@@ -304,7 +355,7 @@ table is in [docs/deployment.md](docs/deployment.md).
 |                                              |                                                                                               |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | [docs/pipeline.md](docs/pipeline.md)         | how a page becomes markdown: read → structure → emit, and every threshold either one leans on |
-| [docs/storage.md](docs/storage.md)           | what is left in the workspace story: history, unexported changes, new readers      |
+| [docs/storage.md](docs/storage.md)           | what is left in the workspace story: history and unexported changes                |
 | [docs/testing.md](docs/testing.md)           | running the tests, what they cover, and adding a reader case                                  |
 | [docs/deployment.md](docs/deployment.md)     | commit to edge to browser, the worker boundary, the browser floor                             |
 | [docs/brand/README.md](docs/brand/README.md) | the mark, and why there are two drawings of it                                                |
