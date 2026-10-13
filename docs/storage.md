@@ -67,13 +67,18 @@ same blocks, and its figures with them.
 **pdf.js is part of the reader.** It is not pinned, and an upgrade can change
 the text runs `read.ts` is given as surely as a change to `read.ts` can.
 `READ_WITH`, beside `READER` in `analysis.ts`, is the pdf.js version the reader
-was last checked against, and a test in `tests/reader.test.ts` fails when the
-installed one differs. So an upgrade cannot land unlooked-at: read real PDFs
-with the old version and the new, bump `READER` if any block moved, merged or
-split, and only then move `READ_WITH` up. The reader cases in
-[testing.md](testing.md) are part of that look but not all of it — they are
-drawn PDFs in standard fonts, and an upgrade that only changes how embedded
-fonts or odd encodings read passes them.
+was made with, and a test in `tests/reader.test.ts` fails when the installed
+one differs. The fix is to bump `READER` and move `READ_WITH` up together,
+without checking whether any block moved: nothing here can say so for
+embedded fonts or odd encodings, which the drawn cases in
+[testing.md](testing.md) do not use. A needless bump costs only an older
+export's edits on import, and nobody else has exports yet. Once they do, pin
+pdf.js and upgrade it on purpose rather than take every release as a bump.
+
+**Decided against: a corpus of real PDFs with a block snapshot**, to tell an
+upgrade that moved blocks from one that did not. It would cover the few
+producers it holds and no others, and it only saves bumps that cost nothing
+today.
 
 **Decided against: offering a better reader.** A document whose kept analysis
 is older than this build's reader is not wrong — its edits still apply — only

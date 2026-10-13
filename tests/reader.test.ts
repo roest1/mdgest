@@ -27,11 +27,11 @@ async function convert(bytes: Uint8Array<ArrayBuffer>) {
   }
 }
 
-test("pdf.js is the version READER was checked against", () => {
+test("pdf.js is the version READER was made with", () => {
   expect(
     version,
-    `pdf.js is ${version}, READER was checked against ${READ_WITH}: see docs/storage.md, ` +
-      `"pdf.js is part of the reader", before moving READ_WITH up`,
+    `pdf.js is ${version}, READER was made with ${READ_WITH}: bump READER in ` +
+      `src/lib/analysis.ts and set READ_WITH to ${version}, together`,
   ).toBe(READ_WITH);
 });
 

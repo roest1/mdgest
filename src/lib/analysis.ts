@@ -14,16 +14,17 @@
 export const ANALYSIS_FORMAT = 1;
 
 /** Which reader made an analysis. Bumped by hand whenever a change to
- *  `read.ts` or `structure.ts` could move, merge or split a block: edits are
+ *  `read.ts` or `structure.ts` could move, merge or split a block, and on
+ *  every pdf.js version change (`READ_WITH`): edits are
  *  keyed to block positions, so edits made on one reader's blocks mean
  *  nothing on another's. An export carries each document's, and an import
  *  from another reader starts that document over. */
 export const READER = 2;
 
-/** The pdf.js `READER` was last checked against. pdf.js is part of the
- *  reader: an upgrade can change the text runs `read.ts` is given. A test
- *  fails when the installed pdf.js is not this one, so an upgrade is looked
- *  at -- `READER` bumped if blocks moved -- before this is moved up to it. */
+/** The pdf.js `READER` was made with. pdf.js is part of the reader: an
+ *  upgrade can change the text runs `read.ts` is given. A test fails when
+ *  the installed pdf.js is not this one, and the fix is to bump `READER`
+ *  and move this up together -- never this alone. */
 export const READ_WITH = "6.3.289";
 
 export interface Box {
