@@ -52,7 +52,8 @@ fix it.
   heading level or paragraph, list kind and depth, bold, italic, quote, a page
   break before or after, hide, join. Each edit is written to `edits.json` as it
   is made, and the editor says *Autosaved* where a save button would be. Undo
-  with `ctrl`+`z`, redo with `ctrl`+`shift`+`z` or `ctrl`+`y`
+  with `ctrl`+`z`, redo with `ctrl`+`shift`+`z` or `ctrl`+`y`, or revert to
+  original to drop every edit and read the PDF again
 - mark done, which locks a document until it is reopened, and export, as a zip
   or into a folder (*Exporting*, below)
 - a guided tour on a bundled two-page example, so none of this has to be learned
@@ -89,6 +90,29 @@ come:
 - page numbers (on by default) — _not built yet_
 - hide — the block stays on the page and leaves the markdown
 - (ctrl + z) undo, (ctrl + shift + z or ctrl + y) redo; version history — _not built yet_
+- revert to original — below
+
+**Revert to original**, the third of the markdown pane's history buttons, drops
+a document's edits and reads its PDF again, as if it had just been added. It
+asks first, because undo cannot take it back: the undo history lives in the
+`edits.json` it removes. It removes what a revised source loses — `edits.json`,
+`analysis.json`, the figures and the markdown — keeps the PDF, and reads it
+again on the spot. A document marked done is locked, so it is reopened first.
+
+The reader that turns a PDF into blocks is versioned, and every reading
+records the version that made it. A reading is kept once made, so a document
+read by an earlier version keeps that version's reading after mdgest's reader
+improves (docs/storage.md, *What a change to the reader does to edits*).
+Reverting is how it gets the current one: it is not *back to the reading first
+made*, but a new reading by the current reader version. The button names both
+versions before it acts:
+
+- **edits to drop**: it asks first, and says which reader version made the
+  reading and which one will make the new one
+- **no edits, read by an older reader version**: it reads the document again
+  without asking, since nothing is lost
+- **no edits, read by the current reader version**: it is disabled. A new
+  reading would be the same as the one there is
 
 > Fixing in the markdown editor will apply and record changes the same way —
 > _not built yet_; the markdown pane is read-only today.
@@ -280,7 +304,7 @@ table is in [docs/deployment.md](docs/deployment.md).
 |                                              |                                                                                               |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | [docs/pipeline.md](docs/pipeline.md)         | how a page becomes markdown: read → structure → emit, and every threshold either one leans on |
-| [docs/storage.md](docs/storage.md)           | what is left in the workspace story: history, reverting, unexported changes, new readers      |
+| [docs/storage.md](docs/storage.md)           | what is left in the workspace story: history, unexported changes, new readers      |
 | [docs/testing.md](docs/testing.md)           | running the tests, what they cover, and adding a reader case                                  |
 | [docs/deployment.md](docs/deployment.md)     | commit to edge to browser, the worker boundary, the browser floor                             |
 | [docs/brand/README.md](docs/brand/README.md) | the mark, and why there are two drawings of it                                                |

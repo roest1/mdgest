@@ -903,6 +903,19 @@ export function saveEdits(docId: string, edits: Edits, markdown: string): Promis
   });
 }
 
+/** Take a document back to its original: everything derived from its PDF
+ *  removed, edits included, and the PDF kept. Under the lock, so an edit
+ *  saved just before lands before it rather than after, writing back an
+ *  `edits.json` that was meant to be gone. */
+export function revert(docId: string): Promise<void> {
+  return locked(async () => {
+    if ((await opfs.size(sourcePath(docId))) === null) {
+      throw new Error(`${docId} is not in this workspace.`);
+    }
+    await opfs.removeDerived(docId);
+  });
+}
+
 /** One of a document's figures, or null when there is no such file. */
 export function asset(docId: string, name: string): Promise<Uint8Array<ArrayBuffer> | null> {
   if (!FIGURE_NAME.test(name)) return Promise.reject(new Error(`${name} is not a figure's name.`));

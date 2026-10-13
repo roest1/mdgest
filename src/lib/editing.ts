@@ -4,8 +4,9 @@
  * The walkthrough's example is edited in memory alone, like the rest of
  * it: it is not the person's document and is kept nowhere. */
 
-import type { Block } from "./analysis";
-import { apply, join, redo, undo, unjoin, type Change, type Edits, type Shaped } from "./edits";
+import { READER, type Analysis, type Block } from "./analysis";
+import { releaseAssets } from "./assets";
+import { apply, isBlank, join, redo, undo, unjoin, type Change, type Edits, type Shaped } from "./edits";
 import { emit } from "./emit";
 import { engine } from "./engine";
 import { useEditor } from "./store";
@@ -110,4 +111,61 @@ export function undoEdit(docId: string) {
 
 export function redoEdit(docId: string) {
   commit(docId, redo);
+}
+
+/** What reverting a document would do, for the button that offers it:
+ *
+ * - `locked`: marked done, so it is reopened first;
+ * - `current`: nothing to drop and nothing to gain -- no edits, and read by
+ *   the current reader version, which would read it the same again;
+ * - `refresh`: no edits, read by an older reader version: read again
+ *   without asking, since nothing is lost;
+ * - `revert`: edits to drop, so it asks first.
+ *
+ * `read` is the reader version the document's analysis was made by. */
+export type Revert =
+  | { kind: "locked" | "current" }
+  | { kind: "refresh" | "revert"; read: number };
+
+export function revertOf(analysis: Analysis, edits: Edits): Revert {
+  if (edits.done) return { kind: "locked" };
+  if (!isBlank(edits)) return { kind: "revert", read: analysis.reader };
+  if (analysis.reader === READER) return { kind: "current" };
+  return { kind: "refresh", read: analysis.reader };
+}
+
+/** Revert a document to its original: every edit dropped, and its PDF read
+ *  again by the current reader version, as if it had just been added. Not an undo
+ *  step -- undo lives in the `edits.json` this removes -- so the caller asks
+ *  first. A document marked done is reopened before it can be reverted.
+ *
+ * The workspace goes first and the screen after: what is shown is never a
+ * reading the workspace no longer has. The walkthrough's example is kept
+ * nowhere, so for it there is only the screen. */
+export async function revertToOriginal(docId: string): Promise<void> {
+  const reading = useEditor.getState().readings[docId];
+  if (reading?.status !== "ready" || reading.edits.done) return;
+  let problem: string | undefined;
+  if (!isTourDoc(docId)) {
+    try {
+      await engine.revert(docId);
+    } catch (cause) {
+      problem = messageOf(cause);
+    }
+  }
+  const { selection, deselect, setReading, reread } = useEditor.getState();
+  if (selection?.docId === docId) deselect();
+  // A revert that stopped partway may have taken some files and not
+  // others, so what is on screen can no longer be trusted either. A reload
+  // reads the document again from whatever is left, which is consistent.
+  if (problem !== undefined) {
+    setReading(docId, {
+      status: "failed",
+      problem: `This document was not reverted (${problem}). Reload the page to open it again.`,
+    });
+    return;
+  }
+  setReading(docId, undefined);
+  releaseAssets(docId);
+  reread(docId);
 }

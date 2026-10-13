@@ -39,31 +39,11 @@ document is marked done again and replaces it. Versions would live in
 entry. Done is also what will learn folder rules (README, *What gets learned,
 and when*).
 
----
-
-## Decided, not built: revert to original
-
-**Revert to original** throws away a document's edits and reads its PDF again,
-as if it had just been added. It is the third of the markdown pane's history
-buttons, after undo and redo — in place, and doing nothing yet. It works on a
-document that is not done (done locks it, so it is reopened first), and it
-asks first: it is not one Ctrl+Z away, because undo lives in the `edits.json`
-it removes.
-
-It is not *back to the reading first made*: the read it starts over from is
-this build's, which is the point of it.
-
-It removes what a revised source loses — `edits.json`, `analysis.json`, the
-figures and the markdown — and opens the document again, so the read that
-follows is this build's reader's. That makes it the one way to refresh a
-document's reading as well as its edits. With an unchanged reader the two are
-the same thing; after a change to the reader they are not, which is the next
-section.
-
-When History ships, revert takes a version first, so a revert under the same
-reader is recoverable after all. A version keeps the `reader` of the blocks it
-was taken on, and one from another reader is listed but not restored: its
-block ids would point at different blocks.
+**Revert to original** (README, *Review and edit*) takes a version first, once
+History ships, so a revert under the same reader is recoverable after all. A
+version keeps the `reader` of the blocks it was taken on, and one from another
+reader is listed but not restored: its block ids would point at different
+blocks.
 
 ---
 
@@ -102,7 +82,8 @@ still change — tables, math, and diagram edges each move blocks — but all of
 that lands before anyone else has work in mdgest, and once its thresholds are
 chosen it is meant to stop. A prompt that fires only during development is
 code to keep for nothing; a person who wants the newer reading has *Revert to
-original*. If the reader does change after people have work in it, the cost is
+original* (README, *Review and edit*), which is the one way to refresh a
+document's reading as well as its edits. If the reader does change after people have work in it, the cost is
 that their kept documents keep the old reading without being told — the case
 to revisit this for.
 

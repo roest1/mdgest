@@ -65,6 +65,17 @@ export function blankEdits(): Edits {
   return { version: EDITS_VERSION, blocks: {}, joins: {}, undo: [], redo: [] };
 }
 
+/** Whether `edits` hold nothing a person made: no decisions, and no undo
+ *  or redo history either -- edits all undone are still history to keep. */
+export function isBlank(edits: Edits): boolean {
+  return (
+    Object.keys(edits.blocks).length === 0 &&
+    Object.keys(edits.joins).length === 0 &&
+    edits.undo.length === 0 &&
+    edits.redo.length === 0
+  );
+}
+
 /** Edits from their JSON, or an error saying what is wrong with them. */
 export function parseEdits(text: string): Edits {
   let value: unknown;

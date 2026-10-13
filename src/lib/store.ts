@@ -83,6 +83,11 @@ interface Editor {
   readings: Record<string, Reading>;
   /** Set, or with undefined forget, a document's reading. */
   setReading: (docId: string, reading: Reading | undefined) => void;
+  /** How many times each document has been sent back to be read again --
+   *  by a revert -- since the page loaded. The page pane reads it once
+   *  more whenever this moves. */
+  rereads: Record<string, number>;
+  reread: (docId: string) => void;
 
   /** Which documents are done, for the explorer. A document's own reading
    *  carries the same in its edits; this is the workspace's list. */
@@ -113,6 +118,8 @@ export const useEditor = create<Editor>((set, get) => ({
       else delete readings[docId];
       return { readings };
     }),
+  rereads: {},
+  reread: (docId) => set((s) => ({ rereads: { ...s.rereads, [docId]: (s.rereads[docId] ?? 0) + 1 } })),
 
   done: {},
   setDone: (docId, done) => set((s) => ({ done: { ...s.done, [docId]: done } })),

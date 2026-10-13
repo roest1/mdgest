@@ -16,6 +16,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import ReactMarkdown, {
   type Components,
@@ -23,13 +24,21 @@ import ReactMarkdown, {
 } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Spinner } from "src/components/shared/Spinner";
-import type { Analysis } from "src/lib/analysis";
+import { READER, type Analysis } from "src/lib/analysis";
 import { useAssetUrl } from "src/lib/assets";
 import type { Markdown, Placed } from "src/lib/emit";
-import { redoEdit, setDone, undoEdit } from "src/lib/editing";
+import {
+  redoEdit,
+  revertOf,
+  revertToOriginal,
+  setDone,
+  undoEdit,
+  type Revert,
+} from "src/lib/editing";
 import { attachSync, invalidateSync } from "src/lib/scrollsync";
 import { modifiers, useEditor, type Selection, type View } from "src/lib/store";
 import { assetsPrefix } from "src/lib/workspace";
+import { RevertDialog } from "./RevertDialog";
 
 /** What the source view needs of the selection: which blocks, where each
  *  one's lines are, which to bring into view, and whether to. The rendered
@@ -75,6 +84,9 @@ export function MarkdownPane({ docId }: { docId: string }) {
   const edits = reading?.status === "ready" ? reading.edits : null;
   const canUndo = edits !== null && !edits.done && edits.undo.length > 0;
   const canRedo = edits !== null && !edits.done && edits.redo.length > 0;
+  const revert =
+    reading?.status === "ready" ? revertOf(reading.analysis, reading.edits) : null;
+  const [reverting, setReverting] = useState(false);
   const marks = useMemo(
     () => (markdown ? marksOf(markdown, selection, docId) : NO_MARKS),
     [markdown, selection, docId],
@@ -97,9 +109,12 @@ export function MarkdownPane({ docId }: { docId: string }) {
         className="grid h-9 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-edge px-3 text-xs text-faint"
       >
         {/* The history controls: undo, redo, and revert to original --
-            every edit dropped and the PDF read again, by this build's
-            reader. Undo and redo work; revert does nothing yet. A document
-            marked done takes no edits, so both wait until it is reopened. */}
+            every edit dropped and the PDF read again by the current reader
+            version. Revert asks first when there are edits, since undo
+            cannot take it back; with none it only refreshes a reading made
+            by an older reader version, and with none and the current
+            version it has nothing to do. A document marked done takes no
+            edits, so all three wait until it is reopened. */}
         <div className="flex items-center gap-0.5 justify-self-start">
           <HistoryButton
             icon={Undo2}
@@ -116,9 +131,22 @@ export function MarkdownPane({ docId }: { docId: string }) {
           />
           <HistoryButton
             icon={RotateCcw}
-            title="Revert to original: drop every edit and read the PDF again"
-            disabled={markdown === null}
+            title={revertTitle(revert)}
+            disabled={revert?.kind !== "revert" && revert?.kind !== "refresh"}
+            onClick={() =>
+              revert?.kind === "refresh"
+                ? void revertToOriginal(docId)
+                : setReverting(true)
+            }
           />
+          {reverting && revert?.kind === "revert" && (
+            <RevertDialog
+              docId={docId}
+              read={revert.read}
+              onRevert={() => void revertToOriginal(docId)}
+              onClose={() => setReverting(false)}
+            />
+          )}
         </div>
         <ViewToggle view={view} onView={setView} />
         {/* Far right, the last thing done to a document. Done, it stays
@@ -215,6 +243,27 @@ function useScrollSync(
       detach();
     };
   }, [docId, ready, view, root, scroller, content]);
+}
+
+/** What the revert button says it will do, naming reader versions: the
+ *  reading a document has is the one the reader of its day made, and that
+ *  is worth saying in numbers rather than leaving a person to guess. */
+function revertTitle(revert: Revert | null): string {
+  switch (revert?.kind) {
+    case undefined:
+      return "Revert to original";
+    case "locked":
+      return "Revert to original: reopen this document first, since it is marked done";
+    case "current":
+      return `Nothing to revert: this document has no edits and was read by the current reader (version ${READER})`;
+    case "refresh":
+      return (
+        `Read again with the current reader: this document was read by reader version ` +
+        `${revert.read}, and version ${READER} is current. It has no edits, so nothing is lost`
+      );
+    case "revert":
+      return `Revert to original: drop every edit and read the PDF again with the current reader (version ${READER})`;
+  }
 }
 
 function DoneButton({ docId }: { docId: string }) {

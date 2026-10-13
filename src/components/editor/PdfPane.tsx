@@ -201,11 +201,13 @@ export function PdfPane({ docId }: { docId: string }) {
   const [snapshots] = useState(() => new Snapshots(THUMB_WIDTH));
 
   // The document is read once it is open: off its pages the first time,
-  // from the engine's cache after. Closing the pane mid-read gives it up.
+  // from the engine's cache after, and off its pages again after a revert.
+  // Closing the pane mid-read gives it up.
+  const rereads = useEditor((s) => s.rereads[docId] ?? 0);
   useEffect(() => {
     if (!loaded) return;
     return ensureRead(docId, loaded.pages);
-  }, [docId, loaded]);
+  }, [docId, loaded, rereads]);
   const reading = useEditor((s) => s.readings[docId]);
   const analysis = reading?.status === "ready" ? reading.analysis : null;
   const placed = reading?.status === "ready" ? reading.markdown.blocks : NO_PLACED;

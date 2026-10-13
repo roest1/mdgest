@@ -147,6 +147,10 @@ export interface Engine {
    *  pure and shared, so it is the text the engine would make, without the
    *  engine re-reading the analysis to make it. */
   saveEdits: { params: { docId: string; edits: Edits; markdown: string }; result: void };
+  /** Revert a document to its original: drop its edits, its analysis, its
+   *  figures and its markdown -- what a revised source loses -- and keep its
+   *  PDF, so the next open reads it again with this build's reader. */
+  revert: { params: { docId: string }; result: void };
   /** One of a document's figures, as `convert` wrote it, or null when there
    *  is no such file. Moved to the page, like `source`. */
   asset: { params: { docId: string; name: string }; result: Uint8Array<ArrayBuffer> | null };

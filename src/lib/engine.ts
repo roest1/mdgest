@@ -123,5 +123,6 @@ export const engine = {
     call("exportToFolder", { dir, markdownOnly }),
   saveEdits: (docId: string, edits: Edits, markdown: string) =>
     call("saveEdits", { docId, edits, markdown }),
+  revert: (docId: string) => call("revert", { docId }),
   asset: (docId: string, name: string) => call("asset", { docId, name }),
 };

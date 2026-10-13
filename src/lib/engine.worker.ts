@@ -49,6 +49,7 @@ const handlers: Handlers = {
   exportZip: ({ markdownOnly }) => stage.exportZip(markdownOnly),
   exportToFolder: ({ dir, markdownOnly }) => stage.exportToFolder(dir, markdownOnly),
   saveEdits: ({ docId, edits, markdown }) => stage.saveEdits(docId, edits, markdown),
+  revert: ({ docId }) => stage.revert(docId),
   asset: ({ docId, name }) => stage.asset(docId, name),
 };
 
