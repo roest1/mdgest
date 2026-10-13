@@ -602,8 +602,8 @@ function Blocks({
             tabIndex={-1}
             aria-pressed={on}
             data-block={block.id}
-            title={at ? `Block ${at.n}` : undefined}
-            className={`hit ${boxed ? "" : "quiet"} ${at?.hidden ? "hidden-block" : ""} ${on ? "selection on-paper" : ""}`}
+            title={at ? (at.deleted ? "Deleted from the markdown" : `Block ${at.n}`) : undefined}
+            className={`hit ${boxed ? "" : "quiet"} ${at?.hidden ? "hidden-block" : ""} ${at?.deleted ? "deleted-block" : ""} ${on ? "selection on-paper" : ""}`}
             style={{
               left,
               top: block.box.y * scale - INSET.y,
@@ -617,8 +617,9 @@ function Blocks({
             onMouseDown={(e) => e.shiftKey && e.preventDefault()}
           >
             {/* A selected block keeps its index whatever the dock says: the
-                index is how the block is found in the markdown. */}
-            {at && (notes || on) && (
+                index is how the block is found in the markdown. A deleted
+                block is not in the markdown, and has none. */}
+            {at && !at.deleted && (notes || on) && (
               <span className={`note ${left < NOTE_ROOM ? "inside" : ""}`} aria-hidden>
                 {at.n}
               </span>

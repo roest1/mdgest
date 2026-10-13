@@ -10,7 +10,10 @@
 import type { Block, Role } from "./analysis";
 import { isRecord } from "./workspace";
 
-export const EDITS_VERSION = 1;
+/** 2: `hidden` became a comment in the markdown, and what version 1 called
+ *  `hidden` -- out of the markdown -- is `deleted`. Version 1 is still read,
+ *  and moved over as it is (`upgrade`). */
+export const EDITS_VERSION = 2;
 
 /** How deep undo goes. Older steps fall off the bottom. */
 export const UNDO_DEPTH = 100;
@@ -30,9 +33,12 @@ export interface BlockEdit {
   /** Written as a blockquote, whatever its role: a quoted heading or list
    *  item stays one. */
   quote?: boolean;
-  /** Out of the markdown. The page keeps the block, to be picked and
-   *  restored. */
+  /** Written as an HTML comment: out of the rendered view, still in the
+   *  markdown's source, and still numbered. */
   hidden?: boolean;
+  /** Out of the markdown altogether, and out of the numbering. The page
+   *  keeps the block, to be picked and restored. */
+  deleted?: boolean;
   break_before?: Break;
   break_after?: Break;
 }
@@ -89,13 +95,45 @@ export function parseEdits(text: string): Edits {
 
 const ROLES = new Set<string>(["heading", "para", "bullet", "numbered", "alpha", "roman", "image"]);
 
+/** Version 1's overrides in version 2's terms: its `hidden` took a block
+ *  out of the markdown, which is `deleted` now. */
+function upgradeBlocks(blocks: unknown): unknown {
+  if (!isRecord(blocks)) return blocks;
+  return Object.fromEntries(
+    Object.entries(blocks).map(([id, edit]) => {
+      if (!isRecord(edit) || edit.hidden === undefined) return [id, edit];
+      const { hidden, ...rest } = edit;
+      return [id, { ...rest, deleted: hidden }];
+    }),
+  );
+}
+
+/** A version 1 file as version 2, undo and redo steps included -- or the
+ *  value as it came, to be checked as it is. Without this every block
+ *  hidden under version 1 would come back as a comment. */
+function upgrade(value: Record<string, unknown>): Record<string, unknown> {
+  if (value.version !== 1) return value;
+  const steps = (list: unknown) =>
+    Array.isArray(list)
+      ? list.map((s) => (isRecord(s) ? { ...s, blocks: upgradeBlocks(s.blocks) } : s))
+      : list;
+  return {
+    ...value,
+    version: EDITS_VERSION,
+    blocks: upgradeBlocks(value.blocks ?? {}),
+    undo: steps(value.undo),
+    redo: steps(value.redo),
+  };
+}
+
 /** Edits from a parsed value, checked field by field: every override a
  *  type the editor can use, every join one id to another. `what` begins
  *  each message -- "its edits.json", or a manifest entry's edits. The undo
  *  and redo stacks are the browser's own and are taken as written. */
-export function checkEdits(value: unknown, what: string): Edits {
+export function checkEdits(raw: unknown, what: string): Edits {
   const problem = (detail: string) => new Error(`${what} ${detail}.`);
-  if (!isRecord(value)) throw problem("is not a JSON object");
+  if (!isRecord(raw)) throw problem("is not a JSON object");
+  const value = upgrade(raw);
   if (value.version !== EDITS_VERSION) throw problem("is not in a format this version reads");
   const { blocks = {}, joins = {}, undo, redo } = value;
   if (!isRecord(blocks)) throw problem("has blocks that are not an object");
@@ -108,7 +146,7 @@ export function checkEdits(value: unknown, what: string): Edits {
       throw bad("level");
     }
     if (depth !== undefined && !(Number.isInteger(depth) && (depth as number) >= 0)) throw bad("depth");
-    for (const flag of ["bold", "italic", "quote", "hidden"] as const) {
+    for (const flag of ["bold", "italic", "quote", "hidden", "deleted"] as const) {
       if (edit[flag] !== undefined && typeof edit[flag] !== "boolean") throw bad(flag);
     }
     for (const [name, brk] of [["break_before", break_before], ["break_after", break_after]] as const) {
@@ -135,6 +173,7 @@ export function checkEdits(value: unknown, what: string): Edits {
 export interface Shaped extends Block {
   quote: boolean;
   hidden: boolean;
+  deleted: boolean;
   breakBefore: boolean;
   breakAfter: boolean;
 }
@@ -149,6 +188,7 @@ export function shape(block: Block, edit: BlockEdit | undefined): Shaped {
     italic: edit?.italic ?? block.italic,
     quote: edit?.quote ?? false,
     hidden: edit?.hidden ?? false,
+    deleted: edit?.deleted ?? false,
     breakBefore: edit?.break_before !== undefined,
     breakAfter: edit?.break_after !== undefined,
   };
@@ -164,6 +204,7 @@ export interface Change {
   italic?: boolean;
   quote?: boolean;
   hidden?: boolean;
+  deleted?: boolean;
   breakBefore?: boolean;
   breakAfter?: boolean;
 }
@@ -196,8 +237,9 @@ export function apply(
     field("depth");
     field("bold");
     field("italic");
-    // The reader never quotes or hides, so these are stored only when on.
-    for (const key of ["quote", "hidden"] as const) {
+    // The reader never quotes, hides or deletes, so these are stored only
+    // when on.
+    for (const key of ["quote", "hidden", "deleted"] as const) {
       if (c[key] === undefined) continue;
       if (c[key]) entry[key] = true;
       else delete entry[key];

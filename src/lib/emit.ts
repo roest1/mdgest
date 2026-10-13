@@ -12,10 +12,11 @@ import { shape, type Edits, type Shaped } from "./edits";
 
 /** A block as it was written: which page, its number on that page (the
  *  note on its box), and the source lines it became, 1-based inclusive.
- *  A hidden block keeps its number, so hiding one renumbers nothing, and
- *  became no lines: its `from` and `to` are 0. A block joined onto another
- *  is placed where that one is, with its number and lines, and `joined`
- *  names it. */
+ *  A hidden block is written as a comment, so it keeps its number and its
+ *  line. A deleted one became no lines and has no number: its `n`, `from`
+ *  and `to` are 0, and the blocks after it on the page count on without
+ *  it. A block joined onto another is placed where that one is, with its
+ *  number and lines, and `joined` names it. */
 export interface Placed {
   id: string;
   page: number;
@@ -23,6 +24,7 @@ export interface Placed {
   from: number;
   to: number;
   hidden: boolean;
+  deleted: boolean;
   joined?: string;
 }
 
@@ -119,6 +121,13 @@ function inline(block: Shaped): string {
   return text;
 }
 
+/** `text` as an HTML comment: there in the markdown's source, gone from
+ *  any rendered view. `-->` inside it would end the comment early and let
+ *  the rest render, so it is broken up. */
+function comment(text: string): string {
+  return `<!-- ${text.replaceAll("-->", "-- >")} -->`;
+}
+
 /** The markdown for a whole document, with `edits` made to it. `assets` is
  *  the path the figures are written under, relative to the markdown file:
  *  `<doc>.assets/`. */
@@ -184,8 +193,17 @@ export function emit(analysis: Analysis, assets: string, edits?: Edits): Markdow
     let counters = new Counters();
     let n = 0;
     let inList = false;
+    /** How far the last list item's text is indented: where a comment
+     *  inside the list starts. */
+    let listIndent = "";
     /** Whether the last block written was quoted. */
     let inQuote = false;
+    /** An image block as a markdown image, or null when its picture was
+     *  not kept. */
+    const figure = (block: Shaped): string | null => {
+      const pic = page.pictures[block.picture];
+      return pic ? `![page ${page.n} figure ${block.picture + 1}](${assets}${pic.path})` : null;
+    };
     /** A rule ends any list it falls in, and the next one counts from 1. */
     const breakHere = () => {
       rule(page.n);
@@ -207,9 +225,29 @@ export function emit(analysis: Analysis, assets: string, edits?: Edits): Markdow
           : raw,
         edits?.blocks[raw.id],
       );
+      if (block.deleted) {
+        blocks[block.id] = { id: block.id, page: page.n, n: 0, from: 0, to: 0, hidden: false, deleted: true };
+        order.push(block.id);
+        continue;
+      }
       if (block.hidden) {
+        const said = block.kind === "image" ? figure(block) : block.text.trim();
+        const q = block.quote ? "> " : "";
+        if (!said) continue;
+        // Inside a list the comment is indented into the item before it,
+        // so the list goes on past it rather than ending there.
+        let at: number;
+        if (inList) {
+          at = put(`${q}${listIndent}${comment(said)}`, block.id, page.n);
+        } else {
+          blank(page.n);
+          at = put(`${q}${comment(said)}`, block.id, page.n);
+          put("", null, page.n);
+        }
+        if (block.quote) quoted.add(at);
+        inQuote = block.quote;
         n += 1;
-        blocks[block.id] = { id: block.id, page: page.n, n, from: 0, to: 0, hidden: true };
+        blocks[block.id] = { id: block.id, page: page.n, n, from: at, to: at, hidden: true, deleted: false };
         order.push(block.id);
         continue;
       }
@@ -225,14 +263,10 @@ export function emit(analysis: Analysis, assets: string, edits?: Edits): Markdow
       // Each block is one line of the source; `at` is that line.
       let at: number;
       if (block.kind === "image") {
-        const pic = page.pictures[block.picture];
-        if (!pic) continue;
+        const pic = figure(block);
+        if (pic === null) continue;
         blank(page.n);
-        at = put(
-          `${q}![page ${page.n} figure ${block.picture + 1}](${assets}${pic.path})`,
-          block.id,
-          page.n,
-        );
+        at = put(`${q}${pic}`, block.id, page.n);
         put("", null, page.n);
         inList = false;
       } else {
@@ -250,6 +284,7 @@ export function emit(analysis: Analysis, assets: string, edits?: Edits): Markdow
         } else if (item) {
           if (!inList) blank(page.n);
           at = put(`${q}${item.indent}${item.marker} ${text}`, block.id, page.n);
+          listIndent = " ".repeat(item.indent.length + item.marker.length + 1);
           inList = true;
         } else {
           blank(page.n);
@@ -261,7 +296,7 @@ export function emit(analysis: Analysis, assets: string, edits?: Edits): Markdow
       if (block.quote) quoted.add(at);
       inQuote = block.quote;
       n += 1;
-      blocks[block.id] = { id: block.id, page: page.n, n, from: at, to: at, hidden: false };
+      blocks[block.id] = { id: block.id, page: page.n, n, from: at, to: at, hidden: false, deleted: false };
       order.push(block.id);
       if (block.breakAfter) breakHere();
     }

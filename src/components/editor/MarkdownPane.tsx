@@ -560,8 +560,31 @@ function figureFor(docId: string, analysis: Analysis): Components["img"] {
   };
 }
 
+/** A tree node, as far as `dropComments` looks at one. */
+interface Node {
+  type: string;
+  value?: string;
+  children?: Node[];
+}
+
+/** A remark plugin taking HTML comments out of the tree: a hidden block is
+ *  written as one, and is meant to be in the source and not on the
+ *  rendered page. react-markdown would otherwise show it as text. Any
+ *  other HTML is left as react-markdown has it. */
+function dropComments() {
+  const strip = (node: Node): void => {
+    if (!node.children) return;
+    node.children = node.children.filter(
+      (c) => !(c.type === "html" && c.value?.trimStart().startsWith("<!--")),
+    );
+    node.children.forEach(strip);
+  };
+  return strip;
+}
+
 /** The document as a reader would see it. react-markdown writes no raw HTML
- *  through, so what a PDF's text happens to contain stays text. The look is
+ *  through, so what a PDF's text happens to contain stays text -- and a
+ *  hidden block's comment is dropped (`dropComments`). The look is
  *  `.markdown` in index.css.
  *
  * The tree is memoised on the document alone: parsing it is the pane's one
@@ -585,7 +608,7 @@ function Rendered({
   return useMemo(
     () => (
       <article className="markdown mx-auto max-w-[72ch] px-8 pt-6 pb-24">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={parts}>
+        <ReactMarkdown remarkPlugins={[remarkGfm, dropComments]} components={parts}>
           {markdown.text}
         </ReactMarkdown>
       </article>

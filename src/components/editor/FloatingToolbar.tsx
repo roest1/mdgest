@@ -8,6 +8,7 @@ import {
   Italic,
   Merge,
   Scissors,
+  Trash2,
 } from "lucide-react";
 import { useMemo } from "react";
 import type { Block, Role } from "src/lib/analysis";
@@ -23,7 +24,7 @@ import { useEditor } from "src/lib/store";
  *  what it sets is already so of all of them -- the reader's call with a
  *  person's edits laid over it.
  *
- * A toggle -- bold, quote, a break, hide -- turns off when every selected
+ * A toggle -- bold, quote, a break, hide, delete -- turns off when every selected
  *  block has it, and on otherwise. A break is the exception to "every": it
  *  goes around each run of blocks selected together, so a break before
  *  lands on each run's first block and a break after on its last.
@@ -90,8 +91,9 @@ export function FloatingToolbar({ docId }: { docId: string }) {
   const groupHeads = new Set(Object.values(edits.joins));
   const unjoin = all((b) => groupHeads.has(b.id));
   const canJoin =
-    text && blocks.length > 1 && runs.length === 1 && !blocks.some((b) => b.hidden);
+    text && blocks.length > 1 && runs.length === 1 && !blocks.some((b) => b.hidden || b.deleted);
   const hidden = all((b) => b.hidden);
+  const deleted = all((b) => b.deleted);
   const heads = runs.map((run) => run[0]);
   const tails = runs.map((run) => run[run.length - 1]);
   const before = heads.every((i) => blocks[i].breakBefore);
@@ -220,13 +222,31 @@ export function FloatingToolbar({ docId }: { docId: string }) {
           <ArrowDownToLine className="h-3.5 w-3.5" />
         </Tool>
         <Rule />
+        {/* Hide and delete are one choice -- where the block's words go --
+            so turning either on turns the other off. */}
         <Tool
           on={hidden}
-          title={hidden ? "Put back in the markdown" : "Hide from the markdown -- the page keeps it"}
-          onClick={() => change(() => ({ hidden: !hidden }))}
+          title={
+            hidden
+              ? "Show again in the markdown"
+              : "Hide: written as a comment, in the raw markdown but not the rendered view"
+          }
+          onClick={() => change(() => (hidden ? { hidden: false } : { hidden: true, deleted: false }))}
         >
           <EyeOff className="h-3.5 w-3.5" />
           hide
+        </Tool>
+        <Tool
+          on={deleted}
+          title={
+            deleted
+              ? "Restore to the markdown"
+              : "Delete from the markdown -- the PDF keeps it, and it can be restored"
+          }
+          onClick={() => change(() => (deleted ? { deleted: false } : { deleted: true, hidden: false }))}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          {deleted ? "restore" : "delete"}
         </Tool>
       </div>
     </div>

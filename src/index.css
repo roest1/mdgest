@@ -473,10 +473,20 @@
     left: 2px;
     top: 2px;
   }
-  /* A block hidden from the markdown: still on the page, to be picked and
-     put back, and struck through in the brand red so it reads as taken
-     out whatever the boxes are set to. */
+  /* A block hidden as a comment: still in the markdown's source, so only
+     muted -- a quiet hatch in the ink's own grey. */
   .hit.hidden-block {
+    background: repeating-linear-gradient(
+      -45deg,
+      color-mix(in srgb, var(--color-muted) 14%, transparent) 0 2px,
+      transparent 2px 7px
+    );
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-muted) 40%, transparent);
+  }
+  /* A block deleted from the markdown: still on the page, to be picked and
+     restored, and struck through in the brand red so it reads as taken
+     out whatever the boxes are set to. */
+  .hit.deleted-block {
     background: repeating-linear-gradient(
       -45deg,
       color-mix(in srgb, var(--color-brand) 16%, transparent) 0 2px,

@@ -161,10 +161,23 @@ function SelectionChip({ docId }: { docId: string }) {
     return <span className="text-faint">Click a block on the page to select it</span>;
   }
 
+  // A deleted block has no number, so it is counted rather than listed.
   const byPage = new Map<number, number[]>();
-  for (const p of placed) byPage.set(p.page, [...(byPage.get(p.page) ?? []), p.n]);
-  const where = [...byPage]
-    .map(([page, ns]) => `p${page} · ${runs(ns.sort((a, b) => a - b))}`)
+  const gone = new Map<number, number>();
+  for (const p of placed) {
+    if (p.deleted) gone.set(p.page, (gone.get(p.page) ?? 0) + 1);
+    else byPage.set(p.page, [...(byPage.get(p.page) ?? []), p.n]);
+  }
+  const where = [...new Set([...byPage.keys(), ...gone.keys()])]
+    .sort((a, b) => a - b)
+    .map((page) => {
+      const ns = byPage.get(page) ?? [];
+      const said = [
+        ...(ns.length ? [runs(ns.sort((a, b) => a - b))] : []),
+        ...(gone.has(page) ? [`${gone.get(page)} deleted`] : []),
+      ].join(", ");
+      return `p${page} · ${said}`;
+    })
     .join("  ");
 
   return (

@@ -50,7 +50,7 @@ fix it.
   `ctrl`/`cmd`-click for distinct blocks, `esc` to deselect
 - editing: select blocks and set what they are from the floating toolbar —
   heading level or paragraph, list kind and depth, bold, italic, quote, a page
-  break before or after, hide, join. Each edit is written to `edits.json` as it
+  break before or after, hide, delete, join. Each edit is written to `edits.json` as it
   is made, and the editor says *Autosaved in this browser · export to keep it*
   where a save button would be. Undo with `ctrl`+`z`, redo with
   `ctrl`+`shift`+`z` or `ctrl`+`y`, or revert to original to drop every edit
@@ -89,7 +89,11 @@ come:
 - insert space (paragraph, indentation) — _not built yet_
 - `---` page breaks (before/after line). Today one is written between every page
 - page numbers (on by default) — _not built yet_
-- hide — the block stays on the page and leaves the markdown
+- **hide** — written as an HTML comment: in the raw markdown, not the rendered
+  view, and still numbered
+- **delete** — out of the markdown altogether, and out of the numbering, so
+  the blocks after it on the page count on without it. The page keeps it,
+  struck through in red, to restore
 - (ctrl + z) undo, (ctrl + shift + z or ctrl + y) redo, a hundred deep and kept
   across a reload. There is no version history: undo covers a sitting, and
   after reopening a done document, undoing what changed since puts it back as
@@ -168,8 +172,9 @@ export wrote is replaced, and nothing else there is touched.
 `mdgest.json` is the browser's per-document `edits.json` files gathered into
 one, without their undo history. Each document's entry carries its source's
 SHA-256, the `reader` version its blocks came from, whether it is done, its
-edits, and a `check`: the SHA-256 of the rest of the entry. In a zip the file is
-marked read-only, which most unzip tools honor. That is a hint, not a lock.
+edits with the version of their format, and a `check`: the SHA-256 of the
+rest of the entry. In a zip the file is marked read-only, which most unzip
+tools honor. That is a hint, not a lock.
 What protects it is the check:
 
 - **an entry changed since it was exported** is marked `edited` when the

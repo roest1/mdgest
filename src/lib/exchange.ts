@@ -7,7 +7,7 @@
  *       "sha256": "…",      the source the decisions were made on
  *       "reader": 1,        the reader whose blocks they are keyed to
  *       "done": true,
- *       "edits": { "blocks": {…}, "joins": {…} },
+ *       "edits": { "version": 2, "blocks": {…}, "joins": {…} },
  *       "check": "…"        SHA-256 of the entry without this field
  *     }
  *
@@ -22,7 +22,7 @@
  * Pure, and run in the worker on both sides. */
 
 import { READER } from "./analysis";
-import { checkEdits, EDITS_VERSION, type Edits } from "./edits";
+import { checkEdits, type Edits } from "./edits";
 import { sha256 } from "./opfs";
 import { messageOf } from "./words";
 import type { DocEntry } from "./workspace";
@@ -44,7 +44,9 @@ export async function sealed(entry: DocEntry): Promise<DocEntry> {
  *  has any, its edits and the reader its analysis came from. */
 export function entryFor(sha256: string, edits: Edits | null, reader: number): DocEntry {
   if (!edits) return { sha256 };
-  const { version: _v, undo: _u, redo: _r, done, ...decisions } = edits;
+  // The version goes with the decisions: what a field means can change
+  // between versions, and an import has to know which one wrote them.
+  const { undo: _u, redo: _r, done, ...decisions } = edits;
   return {
     sha256,
     reader,
@@ -88,10 +90,10 @@ export async function assess(entry: DocEntry): Promise<Assessed> {
     return { edits: null, altered, reset: "its edits are not an object, so it starts over" };
   }
   try {
-    const edits = checkEdits(
-      { ...decisions, version: EDITS_VERSION, done: entry.done },
-      "its entry",
-    );
+    // An entry with no version is from before entries carried one: the
+    // first format, which `checkEdits` moves over.
+    const version = "version" in decisions ? decisions.version : 1;
+    const edits = checkEdits({ ...decisions, version, done: entry.done }, "its entry");
     if (!edits.done) delete edits.done;
     return { edits: { ...edits, undo: [], redo: [] }, altered, reset: null };
   } catch (cause) {
