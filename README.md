@@ -51,9 +51,10 @@ fix it.
 - editing: select blocks and set what they are from the floating toolbar —
   heading level or paragraph, list kind and depth, bold, italic, quote, a page
   break before or after, hide, join. Each edit is written to `edits.json` as it
-  is made, and the editor says *Autosaved* where a save button would be. Undo
-  with `ctrl`+`z`, redo with `ctrl`+`shift`+`z` or `ctrl`+`y`, or revert to
-  original to drop every edit and read the PDF again
+  is made, and the editor says *Autosaved in this browser · export to keep it*
+  where a save button would be. Undo with `ctrl`+`z`, redo with
+  `ctrl`+`shift`+`z` or `ctrl`+`y`, or revert to original to drop every edit
+  and read the PDF again
 - mark done, which locks a document until it is reopened, and export, as a zip
   or into a folder (*Exporting*, below)
 - a guided tour on a bundled two-page example, so none of this has to be learned
@@ -358,7 +359,6 @@ table is in [docs/deployment.md](docs/deployment.md).
 |                                              |                                                                                               |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | [docs/pipeline.md](docs/pipeline.md)         | how a page becomes markdown: read → structure → emit, and every threshold either one leans on |
-| [docs/storage.md](docs/storage.md)           | what is left in the workspace story: unexported changes                                       |
 | [docs/testing.md](docs/testing.md)           | running the tests, what they cover, and adding a reader case                                  |
 | [docs/deployment.md](docs/deployment.md)     | commit to edge to browser, the worker boundary, the browser floor                             |
 | [docs/brand/README.md](docs/brand/README.md) | the mark, and why there are two drawings of it                                                |

@@ -21,7 +21,7 @@ function Code({ children }: { children: string }) {
 }
 
 /** The questions someone checks the claims with. Answers are lifted from
- *  docs/storage.md and the README, so they stay as honest as the docs are.
+ *  the README, so they stay as honest as the docs are.
  *  Every answer is shown, none folded: seven short answers are less to read
  *  than seven clicks. */
 const QA = [

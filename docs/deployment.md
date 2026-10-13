@@ -145,8 +145,7 @@ one workspace at once.
 **OPFS to disk.** Browser storage is evictable and there is no account, so an
 export is what saving means. `persist` asks the browser not to evict, and a
 `true` there is advisory. Export writes a zip or a folder (README,
-*Exporting*), and dropping an export back in continues from it; what is still
-to build is in [storage.md](storage.md).
+*Exporting*), and dropping an export back in continues from it.
 
 ## One drop, end to end
 

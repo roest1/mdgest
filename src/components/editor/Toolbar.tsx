@@ -51,7 +51,7 @@ export function Toolbar({ docId }: { docId: string }) {
               className="text-faint"
               title="Every edit is written to this browser as it is made. Export is the copy you keep."
             >
-              Autosaved
+              Autosaved in this browser · export to keep it
             </span>
           )
         )}

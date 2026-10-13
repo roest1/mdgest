@@ -1,8 +1,11 @@
 import { Download, FileArchive, FolderDown } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { FileTree } from "src/components/shared/FileTree";
 import { Spinner } from "src/components/shared/Spinner";
 import { useMenuDismiss } from "src/components/shared/useMenuDismiss";
 import { engine } from "src/lib/engine";
+import { useEditor } from "src/lib/store";
+import type { Entry } from "src/lib/tree";
 import { messageOf } from "src/lib/words";
 
 /** Chromium's folder picker. Not in TypeScript's DOM library, and not in
@@ -39,14 +42,48 @@ function download(bytes: Uint8Array<ArrayBuffer>, name: string): void {
 
 type Status = { kind: "idle" } | { kind: "busy" } | { kind: "done"; said: string } | { kind: "failed"; said: string };
 
+/** The workspace's documents and which are done, read each time the menu
+ *  opens. The editor's own marks win over what was read: a document marked
+ *  done a moment ago may still be on its way to `edits.json`. Null until
+ *  the engine answers, and left null if it refuses -- the menu still
+ *  exports without the listing. */
+function useListing(open: boolean): { entries: Entry[]; done: number } | null {
+  const [read, setRead] = useState<{ docs: string[]; done: Set<string> } | null>(null);
+  const marks = useEditor((s) => s.done);
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    Promise.all([engine.docs(), engine.doneDocs()]).then(
+      ([docs, done]) => live && setRead({ docs, done: new Set(done) }),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [open]);
+  return useMemo(() => {
+    if (!read) return null;
+    const entries: Entry[] = read.docs.map((path) => ({
+      path,
+      kind: "pdf",
+      done: marks[path] ?? read.done.has(path),
+    }));
+    return { entries, done: entries.filter((e) => e.done).length };
+  }, [read, marks]);
+}
+
 /** The way out of the browser: the workspace as a project to continue, or
  *  its finished markdown alone. Browser storage is evictable, so an export
- *  is the one save a person can be sure of -- the menu says so. */
+ *  is the one save a person can be sure of -- the menu says so, and lists
+ *  the documents with their done marks, since done is what decides which
+ *  ones a markdown export writes. */
 export function ExportMenu() {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const root = useRef<HTMLDivElement>(null);
   const folders = typeof window.showDirectoryPicker === "function";
+  const listing = useListing(open);
+  const doneOf = listing ? `${listing.done} of ${listing.entries.length}` : null;
 
   useMenuDismiss(open, root, setOpen);
 
@@ -112,16 +149,26 @@ export function ExportMenu() {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-30 mt-1 w-72 rounded-lg border border-edge bg-raised py-1 text-sm shadow-xl shadow-black/40"
+          className="absolute right-0 top-full z-30 mt-1 w-80 rounded-lg border border-edge bg-raised py-1 text-sm shadow-xl shadow-black/40"
         >
           <p className="px-3 pt-1 pb-1.5 text-xs leading-snug text-faint">
             This browser can clear what it stores. An export is the copy you keep.
           </p>
+          {listing && listing.entries.length > 0 && (
+            <>
+              <div className="my-1 h-px bg-edge" />
+              <p className="px-3 pt-1 text-xs text-muted">
+                {doneOf} marked done
+                <span className="text-faint"> · mark a document done to write its markdown</span>
+              </p>
+              <FileTree entries={listing.entries} className="max-h-48" />
+            </>
+          )}
           <div className="my-1 h-px bg-edge" />
           <Item
             icon={<FileArchive className="mt-0.5 h-4 w-4 shrink-0 text-muted" />}
             title="Project as .zip"
-            detail="Everything, to continue later: drop it on mdgest again"
+            detail="Every PDF and every edit, done or not: drop it on mdgest again to continue"
             onClick={() => void run(false, false)}
           />
           {folders && (
@@ -136,7 +183,7 @@ export function ExportMenu() {
           <Item
             icon={<FileArchive className="mt-0.5 h-4 w-4 shrink-0 text-muted" />}
             title="Markdown as .zip"
-            detail="Only the documents marked done, with their figures"
+            detail={`Only the ${doneOf ?? "documents"} marked done, with their figures`}
             onClick={() => void run(true, false)}
           />
           {folders && (
