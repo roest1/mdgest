@@ -36,7 +36,7 @@ import {
   type Revert,
 } from "src/lib/editing";
 import { attachSync, invalidateSync } from "src/lib/scrollsync";
-import { modifiers, useEditor, type Selection, type View } from "src/lib/store";
+import { modifiers, offBlocks, useEditor, type Selection, type View } from "src/lib/store";
 import { assetsPrefix } from "src/lib/workspace";
 import { RevertDialog } from "./RevertDialog";
 
@@ -79,6 +79,7 @@ export function MarkdownPane({ docId }: { docId: string }) {
   const setView = useEditor((s) => s.setView);
   const selection = useEditor((s) => s.selection);
   const pick = useEditor((s) => s.pick);
+  const deselect = useEditor((s) => s.deselect);
 
   const markdown = reading?.status === "ready" ? reading.markdown : null;
   const edits = reading?.status === "ready" ? reading.edits : null;
@@ -172,6 +173,7 @@ export function MarkdownPane({ docId }: { docId: string }) {
       <div
         ref={scroller}
         data-scroller
+        onClick={(e) => offBlocks(e) && deselect()}
         className="min-h-0 flex-1 overflow-auto [scrollbar-gutter:stable]"
       >
         {reading === undefined || reading.status === "reading" ? (

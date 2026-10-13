@@ -24,7 +24,7 @@ import {
   type PDFPageProxy,
   type Properties,
 } from "src/lib/pdf";
-import { modifiers, useEditor, type Boxes } from "src/lib/store";
+import { modifiers, offBlocks, useEditor, type Boxes } from "src/lib/store";
 import { isTourDoc, tourSource } from "src/lib/tour-doc";
 import { attachSync, invalidateSync } from "src/lib/scrollsync";
 import { messageOf } from "src/lib/words";
@@ -214,6 +214,7 @@ export function PdfPane({ docId }: { docId: string }) {
   const selection = useEditor((s) => s.selection);
   const selectedIds = selection?.docId === docId ? selection.ids : NO_IDS;
   const pick = useEditor((s) => s.pick);
+  const deselect = useEditor((s) => s.deselect);
   const boxes = useEditor((s) => s.boxes);
   const notes = useEditor((s) => s.notes);
   const onPick = useCallback(
@@ -444,6 +445,7 @@ export function PdfPane({ docId }: { docId: string }) {
         <div
           ref={scroller}
           onScroll={onScroll}
+          onClick={(e) => offBlocks(e) && deselect()}
           className="relative min-w-0 flex-1 overflow-auto bg-ground [scrollbar-gutter:stable]"
         >
           {problem ? (

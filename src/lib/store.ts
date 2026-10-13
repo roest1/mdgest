@@ -68,6 +68,20 @@ export function modifiers(e: {
   return { range: e.shiftKey, toggle: e.ctrlKey || e.metaKey };
 }
 
+/** Whether a plain click landed off every block -- on a pane's background
+ *  or a page's bare paper -- rather than ending a drag that selected text.
+ *  Both panes clear the selection on one. */
+export function offBlocks(e: {
+  target: EventTarget;
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+}): boolean {
+  if (e.shiftKey || e.ctrlKey || e.metaKey) return false;
+  if (!(e.target instanceof Element) || e.target.closest("[data-block]")) return false;
+  return window.getSelection()?.isCollapsed ?? true;
+}
+
 interface Editor {
   view: View;
   setView: (view: View) => void;
@@ -150,6 +164,9 @@ export const useEditor = create<Editor>((set, get) => ({
       if (ids.length === 0) return set({ selection: null });
       return set({ selection: { docId, ids, focus: id, anchor: id, from } });
     }
+    // A plain click on the one block selected lets it go.
+    if (!range && !toggle && same?.ids.length === 1 && same.ids[0] === id)
+      return set({ selection: null });
     set({ selection: { docId, ids: [id], focus: id, anchor: id, from } });
   },
   deselect: () => set({ selection: null }),
