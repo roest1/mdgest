@@ -10,7 +10,7 @@ import {
 } from "react";
 import { Spinner } from "src/components/shared/Spinner";
 import { useMenuDismiss } from "src/components/shared/useMenuDismiss";
-import { blocksById, type Block } from "src/lib/analysis";
+import { blocksById, overlapX, overlapY, union, type Block, type Box } from "src/lib/analysis";
 import { divided } from "src/lib/divide";
 import { ensureRead } from "src/lib/convert";
 import type { Placed } from "src/lib/emit";
@@ -581,12 +581,77 @@ const INSET = { x: 3, y: 2 };
  *  the pane clips it, so it sits inside the box instead. */
 const NOTE_ROOM = 24;
 
+/** A block's box as drawn on the page, in CSS px: its glyphs' box at the
+ *  page's scale, with the inset around it. */
+function drawn(box: Box, scale: number): Box {
+  return {
+    x: box.x * scale - INSET.x,
+    y: box.y * scale - INSET.y,
+    w: box.w * scale + 2 * INSET.x,
+    h: box.h * scale + 2 * INSET.y,
+  };
+}
+
+/** What a page draws for a block, or for the members of a join whose
+ *  drawn boxes overlap or touch: one box around them all, so the index they
+ *  share is shown once. Members of a join that lie apart keep a box each,
+ *  every one with that index. */
+interface Drawn {
+  /** The block a click picks: any member of a join does, since the store
+   *  takes a joined block to its head. */
+  id: string;
+  image: boolean;
+  box: Box;
+}
+
+/** The page's boxes in the order they are stacked: pictures first, so the
+ *  text over one stays on top; then joins, so a block that falls in the
+ *  gap of a join's box is still over it and can be picked. */
+function drawnBlocks(blocks: Block[], placed: Record<string, Placed>, scale: number): Drawn[] {
+  const images: Drawn[] = [];
+  const groups = new Map<string, Drawn[]>();
+  for (const block of blocks) {
+    const one = { id: block.id, image: block.kind === "image", box: drawn(block.box, scale) };
+    if (one.image) images.push(one);
+    else {
+      const key = placed[block.id]?.joined ?? block.id;
+      groups.set(key, [...(groups.get(key) ?? []), one]);
+    }
+  }
+  const joins: Drawn[] = [];
+  const lone: Drawn[] = [];
+  for (const members of groups.values()) {
+    if (members.length === 1) {
+      lone.push(members[0]);
+      continue;
+    }
+    // Merged two at a time until no two meet -- from the top each time,
+    // as a grown box may meet one it was already held against. A join is
+    // a handful of blocks.
+    const clusters = [...members];
+    const meet = (a: Box, b: Box) => overlapX(a, b) >= 0 && overlapY(a, b) >= 0;
+    for (let again = true; again; ) {
+      again = false;
+      outer: for (let i = 0; i < clusters.length; i++) {
+        for (let j = i + 1; j < clusters.length; j++) {
+          if (!meet(clusters[i].box, clusters[j].box)) continue;
+          clusters[i] = { ...clusters[i], box: union(clusters[i].box, clusters[j].box) };
+          clusters.splice(j, 1);
+          again = true;
+          break outer;
+        }
+      }
+    }
+    joins.push(...clusters);
+  }
+  return [...images, ...joins, ...lone];
+}
+
 /** One page's blocks, each a box over where it is drawn, at the page's
  *  scale, with its number -- restarting at 1 on every page -- on a note.
  *  A block is picked by clicking it; the selected ones take the selection
  *  style. The look is `.hit`, `.selection` and `.note` in index.css,
- *  shared with the markdown pane's. Pictures first, so the text over one
- *  stays on top. */
+ *  shared with the markdown pane's. */
 function Blocks({
   blocks,
   placed,
@@ -604,34 +669,25 @@ function Blocks({
   scale: number;
   onPick: (id: string, e: React.MouseEvent) => void;
 }) {
-  const ordered = useMemo(
-    () => [...blocks.filter((b) => b.kind === "image"), ...blocks.filter((b) => b.kind === "text")],
-    [blocks],
-  );
+  const ordered = useMemo(() => drawnBlocks(blocks, placed, scale), [blocks, placed, scale]);
   return (
     <>
-      {ordered.map((block) => {
-        const at = placed[block.id];
+      {ordered.map(({ id, image, box }) => {
+        const at = placed[id];
         // A joined block is drawn selected with the block it joined.
-        const on = selected.includes(at?.joined ?? block.id);
-        const boxed = block.kind === "image" ? boxes.images : boxes.text;
-        const left = block.box.x * scale - INSET.x;
+        const on = selected.includes(at?.joined ?? id);
+        const boxed = image ? boxes.images : boxes.text;
         return (
           <div
-            key={block.id}
+            key={id}
             role="button"
             tabIndex={-1}
             aria-pressed={on}
-            data-block={block.id}
+            data-block={id}
             title={at ? (at.deleted ? "Deleted from the markdown" : `Block ${at.n}`) : undefined}
             className={`hit ${boxed ? "" : "quiet"} ${at?.hidden ? "hidden-block" : ""} ${at?.deleted ? "deleted-block" : ""} ${at?.corrected ? "corrected-block" : ""} ${on ? "selection on-paper" : ""}`}
-            style={{
-              left,
-              top: block.box.y * scale - INSET.y,
-              width: block.box.w * scale + 2 * INSET.x,
-              height: block.box.h * scale + 2 * INSET.y,
-            }}
-            onClick={(e) => onPick(block.id, e)}
+            style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
+            onClick={(e) => onPick(id, e)}
             // A shift-click extends the browser's own text selection from
             // wherever it last was -- across the bars' labels -- unless
             // the press is taken here.
@@ -641,7 +697,7 @@ function Blocks({
                 index is how the block is found in the markdown. A deleted
                 block is not in the markdown, and has none. */}
             {at && !at.deleted && (notes || on) && (
-              <span className={`note ${left < NOTE_ROOM ? "inside" : ""}`} aria-hidden>
+              <span className={`note ${box.x < NOTE_ROOM ? "inside" : ""}`} aria-hidden>
                 {at.n}
               </span>
             )}
