@@ -8,7 +8,9 @@
  * (`shape`), and the result is written the same way. */
 
 import { blocksById, LIST_ROLES, type Analysis, type Block, type Page } from "./analysis";
-import { shape, type Edits, type Shaped } from "./edits";
+import { divided } from "./divide";
+import { shape, type Edits, type Insert, type Shaped } from "./edits";
+import { headersFooters, pageNumberOf, type Choice } from "./furniture";
 
 /** A block as it was written: which page, its number on that page (the
  *  note on its box), and the source lines it became, 1-based inclusive.
@@ -25,6 +27,10 @@ export interface Placed {
   to: number;
   hidden: boolean;
   deleted: boolean;
+  /** Its words are a person's correction, not the page's. */
+  corrected?: boolean;
+  /** Text a person inserted, not a block of the page: it has no number. */
+  inserted?: boolean;
   joined?: string;
 }
 
@@ -130,8 +136,10 @@ function comment(text: string): string {
 
 /** The markdown for a whole document, with `edits` made to it. `assets` is
  *  the path the figures are written under, relative to the markdown file:
- *  `<doc>.assets/`. */
-export function emit(analysis: Analysis, assets: string, edits?: Edits): Markdown {
+ *  `<doc>.assets/`. A divided block is written as its pieces, each a block
+ *  of its own from here on. */
+export function emit(read: Analysis, assets: string, edits?: Edits): Markdown {
+  const analysis = divided(read, edits?.cuts);
   const lines: SourceLine[] = [];
   const blocks: Record<string, Placed> = {};
   const order: string[] = [];
@@ -189,6 +197,12 @@ export function emit(analysis: Analysis, assets: string, edits?: Edits): Markdow
     put("", null, page);
   };
 
+  const pageNumbers = edits?.page_numbers ?? "keep";
+  const headers = edits?.headers_footers ?? "keep";
+  // Found once per document, and only when it is asked for: it looks at
+  // every page to know what repeats.
+  const repeated = headers === "keep" ? new Set<string>() : headersFooters(analysis);
+
   const emitPage = (page: Page) => {
     let counters = new Counters();
     let n = 0;
@@ -210,8 +224,9 @@ export function emit(analysis: Analysis, assets: string, edits?: Edits): Markdow
       counters = new Counters();
       inList = false;
     };
-    for (const raw of page.blocks) {
-      if (joined.has(raw.id)) continue;
+    /** One block of the page, written -- or passed over. */
+    const one = (raw: Block) => {
+      if (joined.has(raw.id)) return;
       const kids = children.get(raw.id);
       // A joined block keeps its link only when every member points the
       // same way: one `[...]` around words from elsewhere would claim them.
@@ -225,15 +240,29 @@ export function emit(analysis: Analysis, assets: string, edits?: Edits): Markdow
           : raw,
         edits?.blocks[raw.id],
       );
+      // Page furniture takes the document's setting, unless the block was
+      // hidden or deleted by hand -- that decision stands. A hidden page
+      // number is written as the number it prints, not its wording.
+      const byHand = !!kids || block.hidden || block.deleted;
+      const printed = !byHand && pageNumbers !== "keep" ? pageNumberOf(raw, page) : null;
+      const furniture: Choice =
+        printed !== null ? pageNumbers : !byHand && repeated.has(raw.id) ? headers : "keep";
+      if (furniture === "delete") block.deleted = true;
+      if (furniture === "hide") block.hidden = true;
       if (block.deleted) {
         blocks[block.id] = { id: block.id, page: page.n, n: 0, from: 0, to: 0, hidden: false, deleted: true };
         order.push(block.id);
-        continue;
+        return;
       }
       if (block.hidden) {
-        const said = block.kind === "image" ? figure(block) : block.text.trim();
+        const said =
+          printed !== null
+            ? `page ${printed}`
+            : block.kind === "image"
+              ? figure(block)
+              : block.text.trim();
         const q = block.quote ? "> " : "";
-        if (!said) continue;
+        if (!said) return;
         // Inside a list the comment is indented into the item before it,
         // so the list goes on past it rather than ending there.
         let at: number;
@@ -249,7 +278,7 @@ export function emit(analysis: Analysis, assets: string, edits?: Edits): Markdow
         n += 1;
         blocks[block.id] = { id: block.id, page: page.n, n, from: at, to: at, hidden: true, deleted: false };
         order.push(block.id);
-        continue;
+        return;
       }
       if (block.breakBefore) breakHere();
       // A list that goes into a quote or comes out of one is two lists:
@@ -264,14 +293,14 @@ export function emit(analysis: Analysis, assets: string, edits?: Edits): Markdow
       let at: number;
       if (block.kind === "image") {
         const pic = figure(block);
-        if (pic === null) continue;
+        if (pic === null) return;
         blank(page.n);
         at = put(`${q}${pic}`, block.id, page.n);
         put("", null, page.n);
         inList = false;
       } else {
         const text = inline(block);
-        if (!text) continue;
+        if (!text) return;
         if (block.role === "heading") {
           blank(page.n);
           at = put(
@@ -296,10 +325,40 @@ export function emit(analysis: Analysis, assets: string, edits?: Edits): Markdow
       if (block.quote) quoted.add(at);
       inQuote = block.quote;
       n += 1;
-      blocks[block.id] = { id: block.id, page: page.n, n, from: at, to: at, hidden: false, deleted: false };
+      blocks[block.id] = {
+        id: block.id,
+        page: page.n,
+        n,
+        from: at,
+        to: at,
+        hidden: false,
+        deleted: false,
+        ...(block.corrected ? { corrected: true } : {}),
+      };
       order.push(block.id);
       if (block.breakAfter) breakHere();
+    };
+    // Text a person inserted goes where they put it: at the page's top,
+    // after the block it follows, or -- when that block no longer stands
+    // here, joined away or made whole -- at the page's end.
+    const mine = (edits?.inserts ?? []).filter((ins) => ins.page === page.n);
+    const put1 = (ins: Insert) => {
+      blank(page.n);
+      const from = lines.length + 1;
+      for (const text of ins.text.replace(/\s+$/, "").split("\n")) put(text, ins.id, page.n);
+      blocks[ins.id] = { id: ins.id, page: page.n, n: 0, from, to: lines.length, hidden: false, deleted: false, inserted: true };
+      put("", null, page.n);
+      counters = new Counters();
+      inList = false;
+      inQuote = false;
+    };
+    const here = new Set(page.blocks.map((b) => b.id));
+    for (const ins of mine) if (ins.after === null) put1(ins);
+    for (const raw of page.blocks) {
+      one(raw);
+      for (const ins of mine) if (ins.after === raw.id) put1(ins);
     }
+    for (const ins of mine) if (ins.after !== null && !here.has(ins.after)) put1(ins);
   };
 
   analysis.pages.forEach((page, i) => {

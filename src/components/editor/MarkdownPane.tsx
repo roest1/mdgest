@@ -5,6 +5,7 @@ import {
   RotateCcw,
   SquarePen,
   Undo2,
+  X,
 } from "lucide-react";
 import {
   type CSSProperties,
@@ -23,11 +24,16 @@ import ReactMarkdown, {
   type ExtraProps,
 } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { DraftEditor, InsertDialog } from "src/components/editor/DraftEditor";
+import { MarkdownMenu } from "src/components/editor/MarkdownMenu";
 import { Spinner } from "src/components/shared/Spinner";
 import { READER, type Analysis } from "src/lib/analysis";
 import { useAssetUrl } from "src/lib/assets";
+import type { Edits } from "src/lib/edits";
 import type { Markdown, Placed } from "src/lib/emit";
 import {
+  commitDraft,
+  readDraft,
   redoEdit,
   revertOf,
   revertToOriginal,
@@ -83,8 +89,36 @@ export function MarkdownPane({ docId }: { docId: string }) {
 
   const markdown = reading?.status === "ready" ? reading.markdown : null;
   const edits = reading?.status === "ready" ? reading.edits : null;
-  const canUndo = edits !== null && !edits.done && edits.undo.length > 0;
-  const canRedo = edits !== null && !edits.done && edits.redo.length > 0;
+  // A draft: the whole markdown open as text, and the source it was opened
+  // on -- what it is matched against when it is done. While one is open
+  // nothing else edits the document.
+  const [draft, setDraft] = useState<{ text: string; base: Markdown } | null>(null);
+  const [problems, setProblems] = useState<{ line: number; problem: string }[]>([]);
+  const [confirming, setConfirming] = useState<{ edits: Edits; inserted: string[] } | null>(null);
+  const setDrafting = useEditor((s) => s.setDrafting);
+  const drafting = draft !== null;
+  useEffect(() => {
+    if (!drafting) return;
+    setDrafting(docId);
+    return () => setDrafting(null);
+  }, [drafting, docId, setDrafting]);
+  const closeDraft = () => {
+    setDraft(null);
+    setProblems([]);
+    setConfirming(null);
+  };
+  const finishDraft = () => {
+    if (!draft) return;
+    if (draft.text === draft.base.text) return closeDraft();
+    const made = readDraft(docId, draft.base, draft.text);
+    if ("problems" in made) return setProblems(made.problems);
+    if (made.inserted.length) return setConfirming(made);
+    commitDraft(docId, made.edits);
+    closeDraft();
+  };
+
+  const canUndo = edits !== null && !edits.done && !drafting && edits.undo.length > 0;
+  const canRedo = edits !== null && !edits.done && !drafting && edits.redo.length > 0;
   const revert =
     reading?.status === "ready" ? revertOf(reading.analysis, reading.edits) : null;
   const [reverting, setReverting] = useState(false);
@@ -133,7 +167,7 @@ export function MarkdownPane({ docId }: { docId: string }) {
           <HistoryButton
             icon={RotateCcw}
             title={revertTitle(revert)}
-            disabled={revert?.kind !== "revert" && revert?.kind !== "refresh"}
+            disabled={drafting || (revert?.kind !== "revert" && revert?.kind !== "refresh")}
             onClick={() =>
               revert?.kind === "refresh"
                 ? void revertToOriginal(docId)
@@ -152,21 +186,49 @@ export function MarkdownPane({ docId }: { docId: string }) {
         <ViewToggle view={view} onView={setView} />
         {/* Far right, the last thing done to a document. Done, it stays
             green and says so, and offers the way back under the pointer.
-            Edit sits before it -- the shape the pane's edit control will
-            take. It does nothing yet: there is no way to edit markdown
-            back into decisions. */}
+            Edit before it opens the markdown as a draft; while one is open
+            they give way to the draft's own apply and cancel. */}
         <div className="flex items-center gap-1.5 justify-self-end">
-          <button
-            type="button"
-            disabled={markdown === null}
-            className="flex cursor-pointer items-center gap-1.5 rounded-md
-              border border-edge bg-raised/40 px-2 py-1 text-muted transition-colors
-              enabled:hover:bg-raised enabled:hover:text-ink disabled:cursor-default disabled:opacity-40"
-          >
-            <SquarePen className="h-4 w-4" />
-            edit
-          </button>
-          <DoneButton docId={docId} />
+          {drafting ? (
+            <>
+              <button
+                type="button"
+                onClick={closeDraft}
+                className="flex cursor-pointer items-center gap-1.5 rounded-md border border-edge bg-raised/40 px-2 py-1
+                  text-muted transition-colors hover:bg-raised hover:text-ink"
+              >
+                <X className="h-4 w-4" />
+                cancel
+              </button>
+              <button
+                type="button"
+                title="Apply: the changes become edits, one undo step"
+                onClick={finishDraft}
+                className="flex cursor-pointer items-center gap-1.5 rounded-md border border-accent/60 bg-accent/15 px-2 py-1
+                  text-ink transition-colors hover:bg-accent/25"
+              >
+                <Check className="h-4 w-4" />
+                apply
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                disabled={markdown === null || !!edits?.done}
+                title={edits?.done ? "Done: reopen it to edit" : "Edit the markdown as text; it becomes edits when you apply"}
+                onClick={() => markdown && setDraft({ text: markdown.text, base: markdown })}
+                className="flex cursor-pointer items-center gap-1.5 rounded-md border border-edge bg-raised/40 px-2 py-1
+                  text-muted transition-colors enabled:hover:bg-raised enabled:hover:text-ink
+                  disabled:cursor-default disabled:opacity-40"
+              >
+                <SquarePen className="h-4 w-4" />
+                edit
+              </button>
+              <DoneButton docId={docId} />
+              <MarkdownMenu docId={docId} />
+            </>
+          )}
         </div>
       </div>
 
@@ -189,6 +251,15 @@ export function MarkdownPane({ docId }: { docId: string }) {
           <p className="p-6 text-center text-sm text-red-300">
             {reading.problem}
           </p>
+        ) : draft ? (
+          <DraftEditor
+            text={draft.text}
+            problems={problems}
+            onChange={(text) => {
+              setDraft({ ...draft, text });
+              if (problems.length) setProblems([]);
+            }}
+          />
         ) : view === "rendered" ? (
           <div ref={content}>
             <Rendered
@@ -204,6 +275,16 @@ export function MarkdownPane({ docId }: { docId: string }) {
           </div>
         )}
       </div>
+      {confirming && (
+        <InsertDialog
+          inserted={confirming.inserted}
+          onApply={() => {
+            commitDraft(docId, confirming.edits);
+            closeDraft();
+          }}
+          onClose={() => setConfirming(null)}
+        />
+      )}
     </div>
   );
 }
@@ -640,12 +721,16 @@ const Row = memo(function Row({
   text,
   block,
   at,
+  corrected,
+  inserted,
   scroll,
   onPick,
 }: {
   text: string;
   block: string | null;
   at: Placed | undefined;
+  corrected: boolean;
+  inserted: boolean;
   scroll: boolean;
   onPick: Pick;
 }) {
@@ -656,6 +741,8 @@ const Row = memo(function Row({
       data-kind={kindOf(text)}
       data-selected={at ? "" : undefined}
       data-pick={block ? "" : undefined}
+      data-corrected={corrected ? "" : undefined}
+      data-inserted={inserted ? "" : undefined}
       data-block={block ?? undefined}
       onClick={block ? (e) => onPick(block, e) : undefined}
     >
@@ -692,16 +779,22 @@ function Raw({
         { "--digits": String(markdown.lines.length).length } as CSSProperties
       }
     >
-      {markdown.lines.map((line, i) => (
-        <Row
-          key={i}
-          text={line.text}
-          block={line.block}
-          at={marks.byLine.get(i + 1)}
-          scroll={scrollLine === i + 1}
-          onPick={onPick}
-        />
-      ))}
+      {markdown.lines.map((line, i) => {
+        const at = line.block ? markdown.blocks[line.block] : undefined;
+        return (
+          <Row
+            key={i}
+            text={line.text}
+            block={line.block}
+            at={marks.byLine.get(i + 1)}
+            corrected={!!at?.corrected}
+            inserted={!!at?.inserted}
+            scroll={scrollLine === i + 1}
+            onPick={onPick}
+          />
+        );
+      })}
     </ol>
   );
 }
+

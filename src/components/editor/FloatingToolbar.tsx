@@ -2,11 +2,13 @@ import {
   ArrowDownToLine,
   ArrowUpToLine,
   Bold,
+  Eye,
   EyeOff,
   IndentDecrease,
   IndentIncrease,
   Italic,
   Merge,
+  RotateCcw,
   Scissors,
   Trash2,
 } from "lucide-react";
@@ -15,7 +17,8 @@ import type { Block, Role } from "src/lib/analysis";
 import { blocksById, LIST_ROLES } from "src/lib/analysis";
 import { shape, type Change, type Shaped } from "src/lib/edits";
 import { tourShowsTools } from "src/components/editor/tour-steps";
-import { editBlocks, joinBlocks, unjoinBlocks } from "src/lib/editing";
+import { divided } from "src/lib/divide";
+import { editBlocks, joinBlocks, restoreWording, unjoinBlocks } from "src/lib/editing";
 import { useEditor } from "src/lib/store";
 
 /** The block tools: they float over the foot of both panes while there is a
@@ -29,9 +32,11 @@ import { useEditor } from "src/lib/store";
  *  goes around each run of blocks selected together, so a break before
  *  lands on each run's first block and a break after on its last.
  *
- * Join makes one run of text blocks one block, onto the first; selected
- *  joined blocks light it, and it takes them apart. Divide is drawn, and
- *  waits for the edits that cut a block's lines. */
+ * Join and divide are one button: join for several blocks -- a run of text,
+ *  onto the first, or pieces of one divided block made whole again where
+ *  they meet -- and divide for one: a joined block back into what it was
+ *  joined from, or any other block of two words or more into pieces, at
+ *  cuts placed on the page (`DivideCursor`). */
 export function FloatingToolbar({ docId }: { docId: string }) {
   const selection = useEditor((s) => s.selection);
   const reading = useEditor((s) => s.readings[docId]);
@@ -40,8 +45,15 @@ export function FloatingToolbar({ docId }: { docId: string }) {
   // the exception: they point at the bar itself.
   const tour = useEditor((s) => s.tour);
   const touring = tour !== null && !tourShowsTools(tour);
+  // While a block is being divided its cut cursor has the page, and its own
+  // OK and cancel; the bar would sit over the pieces being made.
+  const dividing = useEditor((s) => s.dividing);
+  // An open draft holds the document: the tools wait for it.
+  const drafting = useEditor((s) => s.drafting === docId);
+  const setDividing = useEditor((s) => s.setDividing);
 
-  const analysis = reading?.status === "ready" ? reading.analysis : null;
+  // The blocks as the page lays them out: a divided block as its pieces.
+  const analysis = reading?.status === "ready" ? divided(reading.analysis, reading.edits.cuts) : null;
   const order = reading?.status === "ready" ? reading.markdown.order : null;
   const edits = reading?.status === "ready" ? reading.edits : null;
   const byId = useMemo(
@@ -78,7 +90,7 @@ export function FloatingToolbar({ docId }: { docId: string }) {
   }, [blocks, position]);
 
   // A document marked done is locked: it is reopened before it is edited.
-  if (touring || !edits || edits.done || blocks.length === 0) return null;
+  if (touring || dividing || drafting || !edits || edits.done || blocks.length === 0) return null;
 
   const text = blocks.every((b) => b.kind === "text");
   const all = (test: (b: Shaped) => boolean) => blocks.every(test);
@@ -89,7 +101,18 @@ export function FloatingToolbar({ docId }: { docId: string }) {
   const italic = !heading && all((b) => b.italic);
   const quote = all((b) => b.quote);
   const groupHeads = new Set(Object.values(edits.joins));
-  const unjoin = all((b) => groupHeads.has(b.id));
+  const unjoin = blocks.length === 1 && groupHeads.has(blocks[0].id);
+  // Divide is for one block, join for several: one button, which a single
+  // block of two words or more, or a joined one, turns into divide.
+  const single = blocks.length === 1;
+  // A cut is a place among the page's words, so corrected words are put
+  // back before a block is divided.
+  const canCut =
+    single &&
+    blocks[0].kind === "text" &&
+    !blocks[0].corrected &&
+    blocks[0].text.split(/\s+/).filter(Boolean).length > 1;
+  const corrected = blocks.filter((b) => b.corrected);
   const canJoin =
     text && blocks.length > 1 && runs.length === 1 && !blocks.some((b) => b.hidden || b.deleted);
   const hidden = all((b) => b.hidden);
@@ -151,20 +174,23 @@ export function FloatingToolbar({ docId }: { docId: string }) {
             <Glyph on={role("roman")} onClick={setRole("roman")} title="Roman list (i.)">
               i.
             </Glyph>
-            <Tool
-              title="Outdent"
-              disabled={!list || all((b) => b.depth === 0)}
-              onClick={() => change((b) => ({ depth: Math.max(0, b.depth - 1) }))}
-            >
-              <IndentDecrease className="h-3.5 w-3.5" />
-            </Tool>
-            <Tool
-              title="Indent"
-              disabled={!list}
-              onClick={() => change((b) => ({ depth: b.depth + 1 }))}
-            >
-              <IndentIncrease className="h-3.5 w-3.5" />
-            </Tool>
+            {/* Indentation is a list's depth, and nothing else's: the
+                buttons are there only while every block selected is an
+                item of a list. */}
+            {list && (
+              <>
+                <Tool
+                  title="Outdent"
+                  disabled={all((b) => b.depth === 0)}
+                  onClick={() => change((b) => ({ depth: Math.max(0, b.depth - 1) }))}
+                >
+                  <IndentDecrease className="h-3.5 w-3.5" />
+                </Tool>
+                <Tool title="Indent" onClick={() => change((b) => ({ depth: b.depth + 1 }))}>
+                  <IndentIncrease className="h-3.5 w-3.5" />
+                </Tool>
+              </>
+            )}
             <Rule />
             <Tool
               on={bold}
@@ -183,27 +209,41 @@ export function FloatingToolbar({ docId }: { docId: string }) {
               <Italic className="h-3.5 w-3.5" />
             </Tool>
             <Rule />
-            <Tool
-              on={unjoin}
-              title={
-                unjoin
-                  ? "Take apart into the blocks it was joined from"
-                  : "Join into one block, onto the first"
-              }
-              disabled={!unjoin && !canJoin}
-              onClick={() =>
-                unjoin
-                  ? unjoinBlocks(docId, picked.map((b) => b.id))
-                  : joinBlocks(docId, picked.map((b) => b.id))
-              }
-            >
-              <Merge className="h-3.5 w-3.5" />
-              join
-            </Tool>
-            <Tool title="Divide into two blocks (not built yet)" disabled>
-              <Scissors className="h-3.5 w-3.5" />
-              divide
-            </Tool>
+            {single ? (
+              <Tool
+                title={
+                  unjoin
+                    ? "Divide back into the blocks it was joined from"
+                    : canCut
+                      ? "Divide: place cuts between its words, then OK"
+                      : blocks[0].corrected
+                        ? "Restore the page's wording first, then divide it"
+                        : "One word cannot be divided"
+                }
+                disabled={!unjoin && !canCut}
+                onClick={() =>
+                  unjoin
+                    ? unjoinBlocks(docId, [blocks[0].id])
+                    : setDividing({ docId, id: blocks[0].id })
+                }
+              >
+                <Scissors className="h-3.5 w-3.5" />
+                divide
+              </Tool>
+            ) : (
+              <Tool
+                title={
+                  canJoin
+                    ? "Join into one block, onto the first"
+                    : "Only blocks of text next to each other join"
+                }
+                disabled={!canJoin}
+                onClick={() => joinBlocks(docId, picked.map((b) => b.id))}
+              >
+                <Merge className="h-3.5 w-3.5" />
+                join
+              </Tool>
+            )}
             <Rule />
           </>
         )}
@@ -222,6 +262,20 @@ export function FloatingToolbar({ docId }: { docId: string }) {
           <ArrowDownToLine className="h-3.5 w-3.5" />
         </Tool>
         <Rule />
+        {/* Shown only when there is a correction to take back: the page's
+            own words, in place of what a person wrote in the markdown. */}
+        {corrected.length > 0 && (
+          <>
+            <Tool
+              title="Restore the page's wording, in place of the corrected words"
+              onClick={() => restoreWording(docId, corrected.map((b) => b.id))}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              wording
+            </Tool>
+            <Rule />
+          </>
+        )}
         {/* Hide and delete are one choice -- where the block's words go --
             so turning either on turns the other off. */}
         <Tool
@@ -233,8 +287,8 @@ export function FloatingToolbar({ docId }: { docId: string }) {
           }
           onClick={() => change(() => (hidden ? { hidden: false } : { hidden: true, deleted: false }))}
         >
-          <EyeOff className="h-3.5 w-3.5" />
-          hide
+          {hidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+          {hidden ? "show" : "hide"}
         </Tool>
         <Tool
           on={deleted}

@@ -109,6 +109,15 @@ interface Editor {
   setDone: (docId: string, done: boolean) => void;
 
   selection: Selection | null;
+  /** The block being divided on the page: the one selected, while its cut
+   *  cursor is out. Any change of selection puts the cursor away. */
+  dividing: { docId: string; id: string } | null;
+  setDividing: (dividing: { docId: string; id: string } | null) => void;
+  /** The document whose markdown is open as a draft. Until the draft is
+   *  done or cancelled, nothing else edits that document: the draft is
+   *  applied to the edits it was made from. */
+  drafting: string | null;
+  setDrafting: (docId: string | null) => void;
   /** Click on block `id` of `docId` in the pane `from`. */
   pick: (docId: string, id: string, modifiers: Modifiers, from: Side) => void;
   deselect: () => void;
@@ -139,7 +148,12 @@ export const useEditor = create<Editor>((set, get) => ({
   setDone: (docId, done) => set((s) => ({ done: { ...s.done, [docId]: done } })),
 
   selection: null,
+  dividing: null,
+  setDividing: (dividing) => set({ dividing }),
+  drafting: null,
+  setDrafting: (drafting) => set({ drafting }),
   pick: (docId, picked, { range, toggle }, from) => {
+    if (get().dividing) set({ dividing: null });
     const { selection, readings } = get();
     const reading = readings[docId];
     const order = reading?.status === "ready" ? reading.markdown.order : [];
@@ -169,5 +183,5 @@ export const useEditor = create<Editor>((set, get) => ({
       return set({ selection: null });
     set({ selection: { docId, ids: [id], focus: id, anchor: id, from } });
   },
-  deselect: () => set({ selection: null }),
+  deselect: () => set({ selection: null, dividing: null }),
 }));

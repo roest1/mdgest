@@ -18,9 +18,14 @@ export function RevertDialog({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
 
+  const keep = useRef<HTMLButtonElement>(null);
+
   // Modal, as the properties are: focus held inside, Escape closes it.
+  // `showModal` focuses the first button -- Revert -- not React's
+  // `autoFocus` one, so Keep is focused after it opens.
   useEffect(() => {
     dialog.current?.showModal();
+    keep.current?.focus();
   }, []);
 
   return (
@@ -59,7 +64,7 @@ export function RevertDialog({
           </button>
           <button
             type="button"
-            autoFocus
+            ref={keep}
             onClick={() => dialog.current?.close()}
             className="cursor-pointer rounded-full bg-accent-lit/25 px-5 py-2 text-sm font-medium text-ink transition-colors hover:bg-accent-lit/35"
           >

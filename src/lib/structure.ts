@@ -77,7 +77,7 @@ interface Marker {
 /** The list marker a line starts with, and the words after it, or no role
  *  and the text as it was. Roman before alpha, so `i.` and `v.` are numerals
  *  and `c.` is a letter. */
-function markerOf(text: string): Marker {
+export function markerOf(text: string): Marker {
   let m = BULLET_RE.exec(text);
   if (m && m[0].length < text.length) {
     return { role: "bullet", marker: m[0].trim(), rest: text.slice(m[0].length).trim() };

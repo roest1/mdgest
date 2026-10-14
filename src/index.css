@@ -341,6 +341,16 @@
   .source > li[data-kind="image"] {
     @apply text-muted;
   }
+  /* A block whose words a person corrected: a dotted accent underline, so
+     the words that are not the page's own are told apart at a glance. */
+  .source > li[data-corrected] {
+    @apply underline decoration-accent-lit/50 decoration-dotted underline-offset-[3px];
+  }
+  /* Text a person inserted: no page block behind it, so it is tinted the
+     way the page's own words never are. */
+  .source > li[data-inserted] {
+    @apply text-pink-200/90;
+  }
 
   /* ── selection ──────────────────────────────────────────────────────
      One accent at a few strengths, so a white page and the dark panes share
@@ -483,11 +493,35 @@
     );
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-muted) 40%, transparent);
   }
+  /* A block whose words a person corrected: a dashed accent edge on the
+     page too, beside the box the boxes toggle draws. */
+  .hit.corrected-block {
+    outline: 1px dashed color-mix(in srgb, var(--color-accent-lit) 70%, transparent);
+    outline-offset: 1px;
+  }
   /* A block deleted from the markdown: still on the page, to be picked and
      restored, and struck through in the brand red so it reads as taken
      out whatever the boxes are set to. */
   .hit.deleted-block {
     background: repeating-linear-gradient(
+      -45deg,
+      color-mix(in srgb, var(--color-brand) 16%, transparent) 0 2px,
+      transparent 2px 7px
+    );
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-brand) 45%, transparent);
+  }
+  /* The document menu's chosen Hide and Delete wear the page's hatches, so
+     the menu reads the way the page will look. */
+  .seg-hide {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      color-mix(in srgb, var(--color-muted) 14%, transparent) 0 2px,
+      transparent 2px 7px
+    );
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-muted) 40%, transparent);
+  }
+  .seg-delete {
+    background-image: repeating-linear-gradient(
       -45deg,
       color-mix(in srgb, var(--color-brand) 16%, transparent) 0 2px,
       transparent 2px 7px

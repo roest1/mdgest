@@ -11,6 +11,7 @@ import {
 import { Spinner } from "src/components/shared/Spinner";
 import { useMenuDismiss } from "src/components/shared/useMenuDismiss";
 import { blocksById, type Block } from "src/lib/analysis";
+import { divided } from "src/lib/divide";
 import { ensureRead } from "src/lib/convert";
 import type { Placed } from "src/lib/emit";
 import { engine } from "src/lib/engine";
@@ -31,6 +32,7 @@ import { messageOf } from "src/lib/words";
 import { sourcePath } from "src/lib/workspace";
 import { PageCanvas } from "./PageCanvas";
 import { PdfSidebar, THUMB_WIDTH, type SidebarView } from "./PdfSidebar";
+import { DivideCursor } from "./DivideCursor";
 import { PropertiesDialog } from "./PropertiesDialog";
 import { Snapshots } from "./snapshots";
 
@@ -209,7 +211,9 @@ export function PdfPane({ docId }: { docId: string }) {
     return ensureRead(docId, loaded.pages);
   }, [docId, loaded, rereads]);
   const reading = useEditor((s) => s.readings[docId]);
-  const analysis = reading?.status === "ready" ? reading.analysis : null;
+  // The blocks as the markdown has them: a divided block as its pieces.
+  const analysis = reading?.status === "ready" ? divided(reading.analysis, reading.edits.cuts) : null;
+  const dividing = useEditor((s) => (s.dividing?.docId === docId ? s.dividing.id : null));
   const placed = reading?.status === "ready" ? reading.markdown.blocks : NO_PLACED;
   const selection = useEditor((s) => s.selection);
   const selectedIds = selection?.docId === docId ? selection.ids : NO_IDS;
@@ -476,6 +480,8 @@ export function PdfPane({ docId }: { docId: string }) {
                   boxes={boxes}
                   notes={notes}
                   onPick={onPick}
+                  docId={docId}
+                  dividing={dividing}
                 />
               ))}
             </div>
@@ -507,6 +513,8 @@ const PageRow = memo(
     boxes,
     notes,
     onPick,
+    docId,
+    dividing,
   }: {
     row: Row;
     pages: PDFPageProxy[];
@@ -520,6 +528,8 @@ const PageRow = memo(
     boxes: Boxes;
     notes: boolean;
     onPick: (id: string, e: React.MouseEvent) => void;
+    docId: string;
+    dividing: string | null;
   }) {
     return (
       <div className="flex items-start" style={{ gap: GAP, height: row.height, marginLeft }}>
@@ -545,12 +555,21 @@ const PageRow = memo(
                 onPick={onPick}
               />
             )}
+            {active && dividing && (
+              <Dividing docId={docId} id={dividing} blocks={blocksOf(p.n)} scale={scale} />
+            )}
           </div>
         ))}
       </div>
     );
   },
 );
+
+/** The cut cursor, on the page that holds the block being divided. */
+function Dividing({ docId, id, blocks, scale }: { docId: string; id: string; blocks: Block[]; scale: number }) {
+  const block = blocks.find((b) => b.id === id);
+  return block ? <DivideCursor docId={docId} block={block} scale={scale} /> : null;
+}
 
 /** Around a block, a little outside the text: the box the page's reading
  *  gives is the glyphs' own, and a border on it would touch them. */
@@ -605,7 +624,7 @@ function Blocks({
             aria-pressed={on}
             data-block={block.id}
             title={at ? (at.deleted ? "Deleted from the markdown" : `Block ${at.n}`) : undefined}
-            className={`hit ${boxed ? "" : "quiet"} ${at?.hidden ? "hidden-block" : ""} ${at?.deleted ? "deleted-block" : ""} ${on ? "selection on-paper" : ""}`}
+            className={`hit ${boxed ? "" : "quiet"} ${at?.hidden ? "hidden-block" : ""} ${at?.deleted ? "deleted-block" : ""} ${at?.corrected ? "corrected-block" : ""} ${on ? "selection on-paper" : ""}`}
             style={{
               left,
               top: block.box.y * scale - INSET.y,

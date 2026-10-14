@@ -6,9 +6,24 @@
 
 import { READER, type Analysis, type Block } from "./analysis";
 import { releaseAssets } from "./assets";
-import { apply, isBlank, join, redo, undo, unjoin, type Change, type Edits, type Shaped } from "./edits";
-import { emit } from "./emit";
+import {
+  apply,
+  isBlank,
+  join,
+  redo,
+  restoreText,
+  setCuts,
+  setFurniture,
+  undo,
+  unjoin,
+  type Change,
+  type Edits,
+  type Shaped,
+} from "./edits";
+import { emit, type Markdown } from "./emit";
 import { engine } from "./engine";
+import type { Choice, Furniture } from "./furniture";
+import { applyDraft, type DraftResult } from "./draft";
 import { useEditor } from "./store";
 import { isTourDoc } from "./tour-doc";
 import { messageOf } from "./words";
@@ -18,10 +33,13 @@ import { assetsPrefix } from "./workspace";
  *  there. A document marked done takes no edits until it is reopened --
  *  `setDone` alone passes `unlocked`. */
 function commit(docId: string, next: (edits: Edits) => Edits, unlocked = false): void {
-  const { readings, setReading } = useEditor.getState();
+  const { readings, setReading, drafting } = useEditor.getState();
   const reading = readings[docId];
   if (reading?.status !== "ready") return;
   if (reading.edits.done && !unlocked) return;
+  // An open draft holds the document: it is applied to the edits it was
+  // made from, so nothing else may change them in the meantime.
+  if (drafting === docId && !unlocked) return;
   const edits = next(reading.edits);
   if (edits === reading.edits) return;
   const markdown = emit(reading.analysis, assetsPrefix(docId), edits);
@@ -71,6 +89,37 @@ export function joinBlocks(docId: string, ids: string[]) {
   if (ids[0]) reselect(docId, [ids[0]]);
 }
 
+/** Divide block `id` -- or the piece of a block it is -- at `cuts`, word
+ *  positions in the whole block, replacing the cuts it had: one step. What
+ *  is left selected is every piece of it. */
+export function divideBlock(docId: string, id: string, cuts: number[]) {
+  commit(docId, (edits) => setCuts(edits, id, cuts));
+  const reading = useEditor.getState().readings[docId];
+  if (reading?.status !== "ready") return;
+  const pieces = reading.markdown.order.filter((x) => x === id || x.startsWith(`${id}c`));
+  reselect(docId, pieces);
+}
+
+/** What a draft of the markdown would make of the document's edits --
+ *  `base`, the source it was opened on -- without making it: the edits and
+ *  the text it inserts, or the problems in the way. */
+export function readDraft(docId: string, base: Markdown, text: string): DraftResult {
+  const reading = useEditor.getState().readings[docId];
+  if (reading?.status !== "ready") return { problems: [{ line: 1, problem: "The document is still being read." }] };
+  return applyDraft(reading.analysis, reading.edits, base, text);
+}
+
+/** Make the edits a draft came to, as the one step they are. The draft's
+ *  own hold on the document is what this goes past. */
+export function commitDraft(docId: string, edits: Edits) {
+  commit(docId, () => edits, true);
+}
+
+/** Put the page's own words back on every corrected block of `ids`. */
+export function restoreWording(docId: string, ids: string[]) {
+  commit(docId, (edits) => restoreText(edits, ids));
+}
+
 /** Take apart every joined block headed by one of `ids`, as one step, and
  *  select every block they come apart into. */
 export function unjoinBlocks(docId: string, ids: string[]) {
@@ -103,6 +152,12 @@ export function setDone(docId: string, done: boolean) {
   // The workspace's list, for the explorer. The example is not in the
   // workspace, and a check for it would outlive the tour.
   if (!isTourDoc(docId)) useEditor.getState().setDone(docId, done);
+}
+
+/** Keep, hide or delete one kind of the document's page furniture, as one
+ *  step. */
+export function setFurnitureEdit(docId: string, kind: Furniture, choice: Choice) {
+  commit(docId, (edits) => setFurniture(edits, kind, choice));
 }
 
 export function undoEdit(docId: string) {

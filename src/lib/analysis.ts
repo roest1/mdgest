@@ -117,6 +117,11 @@ export interface Block {
   /** Where the block links, when every line of it carries one link. The
    *  markdown writes the block as `[text](href)`. */
   href?: string;
+  /** A piece of a block a person divided (`divide.ts`): the block it was
+   *  cut from, and which of that block's words it holds, `from` up to but
+   *  not including `to`. Never in an analysis.json -- pieces are made from
+   *  the edits each time the blocks are laid out. */
+  piece?: { of: string; from: number; to: number };
 }
 
 export interface Page {

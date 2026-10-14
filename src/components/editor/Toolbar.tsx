@@ -161,20 +161,24 @@ function SelectionChip({ docId }: { docId: string }) {
     return <span className="text-faint">Click a block on the page to select it</span>;
   }
 
-  // A deleted block has no number, so it is counted rather than listed.
+  // A deleted block, and inserted text, have no number, so they are
+  // counted rather than listed.
   const byPage = new Map<number, number[]>();
   const gone = new Map<number, number>();
+  const mine = new Map<number, number>();
   for (const p of placed) {
     if (p.deleted) gone.set(p.page, (gone.get(p.page) ?? 0) + 1);
+    else if (p.inserted) mine.set(p.page, (mine.get(p.page) ?? 0) + 1);
     else byPage.set(p.page, [...(byPage.get(p.page) ?? []), p.n]);
   }
-  const where = [...new Set([...byPage.keys(), ...gone.keys()])]
+  const where = [...new Set([...byPage.keys(), ...gone.keys(), ...mine.keys()])]
     .sort((a, b) => a - b)
     .map((page) => {
       const ns = byPage.get(page) ?? [];
       const said = [
         ...(ns.length ? [runs(ns.sort((a, b) => a - b))] : []),
         ...(gone.has(page) ? [`${gone.get(page)} deleted`] : []),
+        ...(mine.has(page) ? [`${mine.get(page)} inserted`] : []),
       ].join(", ");
       return `p${page} · ${said}`;
     })

@@ -50,9 +50,9 @@ fix it.
   `ctrl`/`cmd`-click for distinct blocks, `esc` to deselect
 - editing: select blocks and set what they are from the floating toolbar —
   heading level or paragraph, list kind and depth, bold, italic, quote, a page
-  break before or after, hide, delete, join. Each edit is written to `edits.json` as it
-  is made, and the editor says *Autosaved in this browser · export to keep it*
-  where a save button would be. Undo with `ctrl`+`z`, redo with
+  break before or after, hide, delete, join, divide. Each edit is written to
+  `edits.json` as it is made, and the editor says *Autosaved in this browser ·
+  export to keep it* where a save button would be. Undo with `ctrl`+`z`, redo with
   `ctrl`+`shift`+`z` or `ctrl`+`y`, or revert to original to drop every edit
   and read the PDF again
 - mark done, which locks a document until it is reopened, and export, as a zip
@@ -64,11 +64,10 @@ fix it.
 
 |                              |                                                                                                                   |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| the rest of the editor       | divide, drag to reorder, insert space, page numbers, editing from the markdown pane                               |
+| the rest of the editor       | drag to reorder                                                                                                   |
 | `rules.json`                 | what the engine learns from a folder's documents                                                                  |
 | tables                       | read as the lines they are printed as, not as a table                                                             |
 | math                         | read as the glyphs it is set in, not as `$…$`                                                                     |
-| repeated headers and footers | no detection, so running heads and page numbers come through on every page                                        |
 | rotate                       | a page's own rotation is applied, but a block cannot be turned by hand                                            |
 
 ### Review and edit
@@ -78,17 +77,34 @@ does with a selection — what is marked _not built yet_ is the design still to
 come:
 
 - click-and-drag reordering of text and images — _not built yet_
-- control groups of text: **join** two blocks into one, or **divide** one into
-  two (divide is _not built yet_)
+- **join** and **divide**, one button: with several blocks selected it joins
+  them into one; with one, it divides it. A joined block divides back into
+  what it was joined from. Any other block shows a cut cursor: click between
+  words — mid-line too — to place cuts, then OK (or Enter). A piece that
+  starts with a list marker becomes that kind of list item, so a list read
+  as one paragraph comes apart into its items. Joining pieces of one block
+  makes it whole again. Only words the page printed are moved; a cut never
+  adds or changes one
 - modify markdown headings: (**H1**, `#`), (**H2**, `##`), (**H3**, `###`), (**H4**, `####`), or back to a paragraph
 - edit font styles: **bold** and _italics_
 - lists: (unordered: `-`), (ordered: numerical, alpha, or roman), a level in or
-  out. Every ordered list is written `1.` in the markdown, which has no lettered
-  or numeral lists; the rendered view letters and numerals the levels back
+  out. Every ordered list is numbered `1.`, `2.`, `3.` in the markdown, which
+  has no lettered or roman lists; the rendered view letters and numerals the
+  levels back
 - **quote**: a block written as a blockquote, whatever it is
-- insert space (paragraph, indentation) — _not built yet_
+- insert a paragraph of your own: write it in the markdown (*Editing the
+  markdown*, below). Indentation is a list's depth, and the indent buttons
+  show only for list items; space between blocks is a page break
 - `---` page breaks (before/after line). Today one is written between every page
-- page numbers (on by default) — _not built yet_
+- **page numbers** and **repeated headers and footers**, each from the ⋮
+  beside *mark done*: keep them as text (the default), hide them as comments
+  — a page number as `<!-- page 12 -->` — or delete them. Both are looked for
+  only in the top and bottom 12% of the page. A page number is a line there
+  that prints only a number: `12`, `iv`, `Page 12`, `12 of 40`. A header or
+  footer is wording printed there on two pages or more, numbers wildcarded,
+  so `Chapter 2 — Methods` matches `Chapter 3 — Methods`. Wording that repeats
+  in the body is never one: there it is more likely a section title. A block
+  hidden or deleted by hand keeps that decision whatever the setting
 - **hide** — written as an HTML comment: in the raw markdown, not the rendered
   view, and still numbered
 - **delete** — out of the markdown altogether, and out of the numbering, so
@@ -122,8 +138,34 @@ versions before it acts:
 - **no edits, read by the current reader version**: it is disabled. A new
   reading would be the same as the one there is
 
-> Fixing in the markdown editor will apply and record changes the same way —
-> _not built yet_; the markdown pane is read-only today.
+**Editing the markdown.** *edit*, in the markdown pane's bar, opens the whole
+markdown as text. Write in it as in any editor — across blocks, several
+changes at once — then *apply*, or *cancel* to leave it as it was. While it
+is open the rest of the editor waits, so what you wrote is applied to the
+document as it was when you opened it.
+
+On *apply* the text is matched to what it was, line by line, and every run
+that changed is read through the blocks whose lines it covers — mdgest
+knows which block wrote each line, so no line is guessed at. Lines are
+paired with blocks by the words they share, not by where they sit:
+
+- markup — `#`s, a list marker and its indent, `**`, `*`, `>` — sets what a
+  block is; wrapped in `<!-- -->` it is hidden
+- a block's lines removed: it is deleted
+- the break between blocks removed, the words kept: they are joined
+- a new line between a block's words: it is divided there
+- a block's words changed — a typo, a broken `ﬁ` — are a **correction**:
+  kept on the block beside the page's own words, which stay in the
+  analysis. A corrected block is underlined in the raw view and edged on
+  the page, and *wording* in the toolbar puts the page's words back
+- lines that are no block's — new paragraphs, or a block rewritten past
+  recognition — are **inserted text**: written where you put them, tinted
+  in the raw view, and marked as yours. Before any goes in, *apply* lists
+  it and asks, since the page cannot vouch for it
+
+Everything one *apply* changes is one undo step. In an export, corrections
+are each block's `text` and inserted text is the document's `inserts`, so a
+person's words are always told apart from the page's.
 
 ## The more technical: Workspaces, rules, and how learning works
 

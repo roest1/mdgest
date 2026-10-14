@@ -8,6 +8,7 @@
  * so a field a newer build writes survives an older build's rewrite. */
 
 import type { Block, Role } from "./analysis";
+import { CHOICES, FURNITURE, type Choice, type Furniture } from "./furniture";
 import { isRecord } from "./workspace";
 
 /** 2: `hidden` became a comment in the markdown, and what version 1 called
@@ -41,6 +42,22 @@ export interface BlockEdit {
   deleted?: boolean;
   break_before?: Break;
   break_after?: Break;
+  /** The block's words as a person corrected them -- a typo, a broken
+   *  ligature -- in place of the words the page printed, which stay in the
+   *  analysis. The one field here whose words are not the page's. */
+  text?: string;
+}
+
+/** Text a person wrote into the markdown where the page has none: written
+ *  as it was typed, markdown and all, after block `after` -- or at the top
+ *  of page `page` when `after` is null. The only words in the markdown no
+ *  page block stands behind, which is why they are kept apart from the
+ *  blocks rather than passed off as one. */
+export interface Insert {
+  id: string;
+  page: number;
+  after: string | null;
+  text: string;
 }
 
 /** What one undo step puts back: the decisions as they were. A step saved
@@ -48,6 +65,14 @@ export interface BlockEdit {
 export interface Step {
   blocks: Record<string, BlockEdit>;
   joins?: Record<string, string>;
+  /** Absent from a step saved before cuts or inserts were kept, which
+   *  leaves them as they are. */
+  cuts?: Record<string, number[]>;
+  inserts?: Insert[];
+  /** The furniture settings. Absent from a step saved before a setting
+   *  was kept, which leaves that setting as it is. */
+  page_numbers?: Choice;
+  headers_footers?: Choice;
 }
 
 export interface Edits {
@@ -57,10 +82,20 @@ export interface Edits {
    *  leaves the markdown; its parent writes both. Always to a block that
    *  is not itself a child: a join onto a joined group joins its head. */
   joins: Record<string, string>;
+  /** Block id to the word positions it is divided at (`divide.ts`): each
+   *  starts a piece. Absent when nothing is divided. */
+  cuts?: Record<string, number[]>;
+  /** Text a person wrote in, in the order it was added. Absent when there
+   *  is none. */
+  inserts?: Insert[];
   /** Marked done: locked against edits until it is reopened, and what an
    *  export writes markdown for. Not part of an undo step -- reopening is
    *  what takes it back. */
   done?: boolean;
+  /** What is done with printed page numbers, and with headers and footers
+   *  repeated from page to page (`furniture.ts`). Absent is `keep`. */
+  page_numbers?: Choice;
+  headers_footers?: Choice;
   undo: Step[];
   redo: Step[];
   /** Whatever else the file held, passed through untouched. */
@@ -77,6 +112,9 @@ export function isBlank(edits: Edits): boolean {
   return (
     Object.keys(edits.blocks).length === 0 &&
     Object.keys(edits.joins).length === 0 &&
+    Object.keys(edits.cuts ?? {}).length === 0 &&
+    (edits.inserts ?? []).length === 0 &&
+    FURNITURE.every((kind) => edits[kind] === undefined) &&
     edits.undo.length === 0 &&
     edits.redo.length === 0
   );
@@ -149,6 +187,7 @@ export function checkEdits(raw: unknown, what: string): Edits {
     for (const flag of ["bold", "italic", "quote", "hidden", "deleted"] as const) {
       if (edit[flag] !== undefined && typeof edit[flag] !== "boolean") throw bad(flag);
     }
+    if (edit.text !== undefined && typeof edit.text !== "string") throw bad("text");
     for (const [name, brk] of [["break_before", break_before], ["break_after", break_after]] as const) {
       if (brk !== undefined && brk !== "page") throw bad(name);
     }
@@ -157,7 +196,32 @@ export function checkEdits(raw: unknown, what: string): Edits {
   for (const [child, parent] of Object.entries(joins)) {
     if (typeof parent !== "string") throw problem(`joins ${child} onto something that is not a block id`);
   }
+  const { cuts } = value;
+  if (cuts !== undefined) {
+    if (!isRecord(cuts)) throw problem("has cuts that are not an object");
+    for (const [id, at] of Object.entries(cuts)) {
+      if (!Array.isArray(at) || !at.every((k) => Number.isInteger(k) && (k as number) > 0)) {
+        throw problem(`divides ${id} somewhere that is not a word of it`);
+      }
+    }
+  }
+  const { inserts } = value;
+  if (inserts !== undefined) {
+    const ok = (i: unknown) =>
+      isRecord(i) &&
+      typeof i.id === "string" &&
+      typeof i.text === "string" &&
+      Number.isInteger(i.page) &&
+      (i.after === null || typeof i.after === "string");
+    if (!Array.isArray(inserts) || !inserts.every(ok)) throw problem("has inserted text it cannot read");
+  }
   if (value.done !== undefined && typeof value.done !== "boolean") throw problem("has a done that is not true or false");
+  for (const kind of FURNITURE) {
+    const choice = value[kind];
+    if (choice !== undefined && !(typeof choice === "string" && (CHOICES as string[]).includes(choice))) {
+      throw problem(`has a ${kind} setting it cannot have`);
+    }
+  }
   return {
     ...value,
     version: EDITS_VERSION,
@@ -171,6 +235,8 @@ export function checkEdits(raw: unknown, what: string): Edits {
 /** A block as the markdown writes it: the reader's block with a person's
  *  overrides laid over it. */
 export interface Shaped extends Block {
+  /** Whether `text` is a person's correction rather than the page's. */
+  corrected: boolean;
   quote: boolean;
   hidden: boolean;
   deleted: boolean;
@@ -181,6 +247,8 @@ export interface Shaped extends Block {
 export function shape(block: Block, edit: BlockEdit | undefined): Shaped {
   return {
     ...block,
+    text: edit?.text ?? block.text,
+    corrected: edit?.text !== undefined,
     role: edit?.role ?? block.role,
     level: edit?.level ?? block.level,
     depth: edit?.depth ?? block.depth,
@@ -255,7 +323,7 @@ export function apply(
     if (Object.keys(entry).length === 0) delete next[block.id];
     else next[block.id] = entry;
   }
-  return step(edits, { blocks: next, joins: edits.joins });
+  return step(edits, { ...decided(edits), blocks: next });
 }
 
 /** The edits with `ids` joined into one block, in the order given: every
@@ -263,6 +331,8 @@ export function apply(
  *  heading a group brings its children with it, so a join of joined
  *  blocks is one group, never a chain. */
 export function join(edits: Edits, ids: string[]): Edits {
+  const whole = rejoin(edits, ids);
+  if (whole) return whole;
   const [head, ...rest] = ids.map((id) => edits.joins[id] ?? id);
   if (!head) return edits;
   const absorbed = new Set(rest.filter((id) => id !== head));
@@ -272,7 +342,35 @@ export function join(edits: Edits, ids: string[]): Edits {
     if (absorbed.has(parent)) joins[child] = head;
   }
   for (const id of absorbed) joins[id] = head;
-  return step(edits, { blocks: edits.blocks, joins });
+  return step(edits, { ...decided(edits), joins });
+}
+
+/** Pieces of one divided block (`<id>` and `<id>c<k>`), given in order:
+ *  the cuts between them taken out, as one step, so the block is whole
+ *  again where they meet rather than joined. Null when `ids` are not that. */
+function rejoin(edits: Edits, ids: string[]): Edits | null {
+  const of = (id: string) => id.replace(/c\d+$/, "");
+  const from = (id: string) => Number(/c(\d+)$/.exec(id)?.[1] ?? 0);
+  const block = of(ids[0]);
+  const at = edits.cuts?.[block];
+  if (!at || ids.length < 2 || !ids.every((id) => of(id) === block)) return null;
+  const starts = ids.map(from);
+  const pieces = [0, ...at];
+  const first = pieces.indexOf(starts[0]);
+  // Next to each other: the ids are pieces `first`, `first + 1`, ... in turn.
+  if (first < 0 || !starts.every((k, i) => pieces[first + i] === k)) return null;
+  const gone = new Set(starts.slice(1));
+  return setCuts(edits, block, at.filter((k) => !gone.has(k)));
+}
+
+/** The edits with `block` divided at `at` -- word positions -- as one step.
+ *  An empty `at` makes it whole. */
+export function setCuts(edits: Edits, block: string, at: number[]): Edits {
+  const cuts = { ...edits.cuts };
+  const clean = [...new Set(at)].filter((k) => Number.isInteger(k) && k > 0).sort((a, b) => a - b);
+  if (clean.length) cuts[block] = clean;
+  else delete cuts[block];
+  return step(edits, { ...decided(edits), cuts });
 }
 
 /** The edits with every group headed by one of `heads` taken apart. */
@@ -281,19 +379,100 @@ export function unjoin(edits: Edits, heads: string[]): Edits {
   const joins = Object.fromEntries(
     Object.entries(edits.joins).filter(([, parent]) => !apart.has(parent)),
   );
-  return step(edits, { blocks: edits.blocks, joins });
+  return step(edits, { ...decided(edits), joins });
+}
+
+/** The edits with one kind of furniture kept, hidden or deleted, as one
+ *  step. */
+export function setFurniture(edits: Edits, kind: Furniture, choice: Choice): Edits {
+  return step(edits, { ...decided(edits), [kind]: choice });
+}
+
+/** What one step records of `edits`: everything undo puts back. */
+function decided(edits: Edits): Required<Step> {
+  return {
+    blocks: edits.blocks,
+    joins: edits.joins,
+    cuts: edits.cuts ?? {},
+    inserts: edits.inserts ?? [],
+    page_numbers: edits.page_numbers ?? "keep",
+    headers_footers: edits.headers_footers ?? "keep",
+  };
+}
+
+/** `edits` with `step`'s decisions -- a setting the step does not record
+ *  left as it is, and `keep` stored as nothing. */
+function restore(edits: Edits, s: Step): Edits {
+  const next: Edits = { ...edits, blocks: s.blocks, joins: s.joins ?? edits.joins };
+  const cuts = s.cuts ?? edits.cuts;
+  if (cuts && Object.keys(cuts).length) next.cuts = cuts;
+  else delete next.cuts;
+  const inserts = s.inserts ?? edits.inserts;
+  if (inserts && inserts.length) next.inserts = inserts;
+  else delete next.inserts;
+  for (const kind of FURNITURE) {
+    const choice = s[kind] ?? edits[kind];
+    if (choice === undefined || choice === "keep") delete next[kind];
+    else next[kind] = choice;
+  }
+  return next;
 }
 
 /** `edits` with `next` made its decisions, as one undo step -- or `edits`
  *  itself when `next` decides nothing new. */
 function step(edits: Edits, next: Required<Step>): Edits {
-  if (sameBlocks(edits.blocks, next.blocks) && sameJoins(edits.joins, next.joins)) return edits;
+  if (
+    sameBlocks(edits.blocks, next.blocks) &&
+    sameJoins(edits.joins, next.joins) &&
+    sameCuts(edits.cuts ?? {}, next.cuts) &&
+    JSON.stringify(edits.inserts ?? []) === JSON.stringify(next.inserts) &&
+    FURNITURE.every((kind) => (edits[kind] ?? "keep") === next[kind])
+  ) {
+    return edits;
+  }
   return {
-    ...edits,
-    ...next,
-    undo: [...edits.undo, { blocks: edits.blocks, joins: edits.joins }].slice(-UNDO_DEPTH),
+    ...restore(edits, next),
+    undo: [...edits.undo, decided(edits)].slice(-UNDO_DEPTH),
     redo: [],
   };
+}
+
+/** The edits with `text` inserted after block `after` -- at the top of
+ *  page `page` when null -- as one step. */
+export function addInsert(edits: Edits, page: number, after: string | null, text: string): Edits {
+  const had = edits.inserts ?? [];
+  const n = had.reduce((m, i) => Math.max(m, Number(/^i(\d+)$/.exec(i.id)?.[1] ?? 0)), 0) + 1;
+  return step(edits, { ...decided(edits), inserts: [...had, { id: `i${n}`, page, after, text }] });
+}
+
+/** The edits with insert `id` written as `text` instead, or taken out
+ *  when `text` is empty: one step. */
+export function updateInsert(edits: Edits, id: string, text: string): Edits {
+  const had = edits.inserts ?? [];
+  const inserts = text.trim()
+    ? had.map((i) => (i.id === id ? { ...i, text } : i))
+    : had.filter((i) => i.id !== id);
+  return step(edits, { ...decided(edits), inserts });
+}
+
+/** The edits with every correction on `ids` taken off -- the page's own
+ *  words back -- as one step. */
+export function restoreText(edits: Edits, ids: string[]): Edits {
+  const blocks = { ...edits.blocks };
+  for (const id of ids) {
+    if (blocks[id]?.text === undefined) continue;
+    const { text: _, ...rest } = blocks[id];
+    if (Object.keys(rest).length) blocks[id] = rest;
+    else delete blocks[id];
+  }
+  return step(edits, { ...decided(edits), blocks });
+}
+
+/** `after`, made from `before` by several changes, as the one step they
+ *  are to a person: undo takes them back together. */
+export function asOneStep(before: Edits, after: Edits): Edits {
+  if (after === before) return before;
+  return { ...after, undo: [...before.undo, decided(before)].slice(-UNDO_DEPTH), redo: [] };
 }
 
 /** One step back, or the same edits when there is none. */
@@ -301,11 +480,9 @@ export function undo(edits: Edits): Edits {
   const back = edits.undo[edits.undo.length - 1];
   if (!back) return edits;
   return {
-    ...edits,
-    blocks: back.blocks,
-    joins: back.joins ?? edits.joins,
+    ...restore(edits, back),
     undo: edits.undo.slice(0, -1),
-    redo: [...edits.redo, { blocks: edits.blocks, joins: edits.joins }],
+    redo: [...edits.redo, decided(edits)],
   };
 }
 
@@ -314,10 +491,8 @@ export function redo(edits: Edits): Edits {
   const again = edits.redo[edits.redo.length - 1];
   if (!again) return edits;
   return {
-    ...edits,
-    blocks: again.blocks,
-    joins: again.joins ?? edits.joins,
-    undo: [...edits.undo, { blocks: edits.blocks, joins: edits.joins }].slice(-UNDO_DEPTH),
+    ...restore(edits, again),
+    undo: [...edits.undo, decided(edits)].slice(-UNDO_DEPTH),
     redo: edits.redo.slice(0, -1),
   };
 }
@@ -331,6 +506,12 @@ function shallowEqual(a: object, b: object): boolean {
 
 function sameJoins(a: Record<string, string>, b: Record<string, string>): boolean {
   return shallowEqual(a, b);
+}
+
+function sameCuts(a: Record<string, number[]>, b: Record<string, number[]>): boolean {
+  const ids = Object.keys(a);
+  if (ids.length !== Object.keys(b).length) return false;
+  return ids.every((id) => b[id] !== undefined && a[id].join() === b[id].join());
 }
 
 function sameBlocks(a: Record<string, BlockEdit>, b: Record<string, BlockEdit>): boolean {
