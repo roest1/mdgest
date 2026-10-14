@@ -137,6 +137,20 @@ function useEscapeDeselects() {
   }, [deselect]);
 }
 
+/** Closing the tab with a changed draft open loses what was written in it
+ *  -- the one thing here not already in the workspace -- so the browser
+ *  asks first, then and only then. */
+function useDraftGuard() {
+  useEffect(() => {
+    const onLeave = (e: BeforeUnloadEvent) => {
+      const { drafts } = useEditor.getState();
+      if (Object.values(drafts).some((d) => d.text !== d.base.text)) e.preventDefault();
+    };
+    window.addEventListener("beforeunload", onLeave);
+    return () => window.removeEventListener("beforeunload", onLeave);
+  }, []);
+}
+
 /** Ctrl+Z undoes the open document's last edit, and Ctrl+Shift+Z or Ctrl+Y
  *  does it again -- from anywhere but a field, which keeps its own. */
 function useUndoKeys(docId: string) {
@@ -163,6 +177,7 @@ export default function Editor() {
   const navigate = useNavigate();
   useEscapeDeselects();
   useUndoKeys(docId);
+  useDraftGuard();
 
   // Every document visited stays open as a tab until its tab is closed, in
   // the order first opened. Adjusted during render, like the tree's reveal,

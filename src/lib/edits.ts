@@ -187,7 +187,9 @@ export function checkEdits(raw: unknown, what: string): Edits {
     for (const flag of ["bold", "italic", "quote", "hidden", "deleted"] as const) {
       if (edit[flag] !== undefined && typeof edit[flag] !== "boolean") throw bad(flag);
     }
-    if (edit.text !== undefined && typeof edit.text !== "string") throw bad("text");
+    // An empty correction would write the block as nothing at all, neither
+    // there nor marked deleted.
+    if (edit.text !== undefined && !(typeof edit.text === "string" && edit.text.trim())) throw bad("text");
     for (const [name, brk] of [["break_before", break_before], ["break_after", break_after]] as const) {
       if (brk !== undefined && brk !== "page") throw bad(name);
     }
@@ -214,6 +216,8 @@ export function checkEdits(raw: unknown, what: string): Edits {
       Number.isInteger(i.page) &&
       (i.after === null || typeof i.after === "string");
     if (!Array.isArray(inserts) || !inserts.every(ok)) throw problem("has inserted text it cannot read");
+    const ids = (inserts as { id: string }[]).map((i) => i.id);
+    if (new Set(ids).size !== ids.length) throw problem("has two inserted texts with one id");
   }
   if (value.done !== undefined && typeof value.done !== "boolean") throw problem("has a done that is not true or false");
   for (const kind of FURNITURE) {

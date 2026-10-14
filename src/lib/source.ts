@@ -33,6 +33,10 @@ export interface Written {
   italic: boolean;
   quote: boolean;
   hidden: boolean;
+  /** Emphasis on part of the line -- `some *word* here` -- which a block
+   *  cannot carry: emphasis is the whole block's, and these `*`s would be
+   *  kept as characters. */
+  partial: boolean;
 }
 
 /** Markdown's backslash escapes taken off, as `escapeText` put them on. */
@@ -51,6 +55,7 @@ export function readLine(line: string): Written {
     italic: false,
     quote: false,
     hidden: false,
+    partial: false,
   };
   let s = line.replace(/\s+$/, "");
   const q = /^>\s?/.exec(s);
@@ -60,12 +65,12 @@ export function readLine(line: string): Written {
   }
   out.indent = /^ */.exec(s)![0].length;
   s = s.trimStart();
-  // A comment holds the words as they were, unescaped: emit writes them so.
+  // A comment is a hidden line: emit writes the line the block would be,
+  // commented out, so what is inside is read like any other line.
   const c = /^<!--\s?([\s\S]*?)\s?-->$/.exec(s);
   if (c) {
-    out.hidden = true;
-    out.text = c[1].replaceAll("-- >", "-->").trim();
-    return out;
+    const inner = readLine(c[1].replaceAll("-- >", "-->"));
+    return { ...inner, quote: out.quote, indent: out.indent, hidden: true };
   }
   let m = /^(#{1,6})\s+(.*)$/.exec(s);
   if (m) {
@@ -79,17 +84,21 @@ export function readLine(line: string): Written {
     out.role = "numbered";
     s = m[1];
   }
-  // Emphasis as `inline` nests it: italic outside, bold inside.
-  if ((m = /^\*\*\*(.+)\*\*\*$/.exec(s))) {
+  // Emphasis as `inline` nests it: italic outside, bold inside -- and only
+  // around the whole line: inside, emit escapes every `*`, so one that is
+  // not escaped was written there, around part of the line.
+  const bare = (t: string) => !/(^|[^\\])\*/.test(t);
+  if ((m = /^\*\*\*(.+)\*\*\*$/.exec(s)) && bare(m[1])) {
     out.bold = out.italic = true;
     s = m[1];
-  } else if ((m = /^\*\*(.+)\*\*$/.exec(s))) {
+  } else if ((m = /^\*\*(.+)\*\*$/.exec(s)) && bare(m[1])) {
     out.bold = true;
     s = m[1];
-  } else if ((m = /^\*(.+)\*$/.exec(s))) {
+  } else if ((m = /^\*(.+)\*$/.exec(s)) && bare(m[1])) {
     out.italic = true;
     s = m[1];
   }
+  out.partial = !bare(s);
   // A link around the whole line is the block's own; its words are inside.
   if ((m = /^\[(.*)\]\([^)]*\)$/.exec(s))) s = m[1];
   out.text = unescape(s).trim();
@@ -192,12 +201,25 @@ export function editSource(
     return { edits: apply(edits, [block], () => ({ hidden: w.hidden, quote: w.quote })) };
   }
 
+  if (wrote.some((w) => w.partial)) {
+    return {
+      problem:
+        "Emphasis on part of a line is not kept: bold and italic are a whole block's. " +
+        "Take out the *s, or set the whole block from the toolbar.",
+    };
+  }
+
   if (lines.length === 1) {
     const [w] = wrote;
     // A comment says only that it is hidden: its shape is kept as it was.
-    const change = w.hidden ? { hidden: true } : shapeOf(w, before, shaped);
+    // Taking the comment off a line written plain only shows it again --
+    // a hidden list item or heading stays what it was.
+    const shown = before.hidden && !w.hidden && w.role === null && !w.bold && !w.italic;
+    const change = w.hidden ? { hidden: true } : shown ? { hidden: false } : shapeOf(w, before, shaped);
     let next = apply(edits, [block], () => change);
-    if (!same(w.text, shaped.text)) next = correct(next, blockId, w.text, printed);
+    // Words are set against what the line showed: a hidden page number
+    // shows `page 12`, and written so again it is no correction.
+    if (!same(w.text, before.text)) next = correct(next, blockId, w.text, printed);
     return { edits: asOneStep(edits, next) };
   }
 

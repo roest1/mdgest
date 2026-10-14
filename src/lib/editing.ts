@@ -33,13 +33,13 @@ import { assetsPrefix } from "./workspace";
  *  there. A document marked done takes no edits until it is reopened --
  *  `setDone` alone passes `unlocked`. */
 function commit(docId: string, next: (edits: Edits) => Edits, unlocked = false): void {
-  const { readings, setReading, drafting } = useEditor.getState();
+  const { readings, setReading, drafts } = useEditor.getState();
   const reading = readings[docId];
   if (reading?.status !== "ready") return;
   if (reading.edits.done && !unlocked) return;
   // An open draft holds the document: it is applied to the edits it was
   // made from, so nothing else may change them in the meantime.
-  if (drafting === docId && !unlocked) return;
+  if (drafts[docId] && !unlocked) return;
   const edits = next(reading.edits);
   if (edits === reading.edits) return;
   const markdown = emit(reading.analysis, assetsPrefix(docId), edits);

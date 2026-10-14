@@ -31,6 +31,8 @@ export interface Placed {
   corrected?: boolean;
   /** Text a person inserted, not a block of the page: it has no number. */
   inserted?: boolean;
+  /** Hidden or deleted by the document's furniture setting, not by hand. */
+  furniture?: "page_numbers" | "headers_footers";
   joined?: string;
 }
 
@@ -255,12 +257,24 @@ export function emit(read: Analysis, assets: string, edits?: Edits): Markdown {
         return;
       }
       if (block.hidden) {
+        // The line it would be, commented out: markup and all, so reading
+        // it back is reading any line. A page number hidden by the setting
+        // is the number it prints.
+        const words = inline(block);
         const said =
           printed !== null
             ? `page ${printed}`
             : block.kind === "image"
               ? figure(block)
-              : block.text.trim();
+              : !words
+                ? ""
+                : block.role === "heading"
+                  ? `${"#".repeat(Math.max(1, Math.min(6, block.level || 2)))} ${words}`
+                  : block.role === "bullet"
+                    ? `- ${words}`
+                    : LIST_ROLES.includes(block.role)
+                      ? `1. ${words}`
+                      : words;
         const q = block.quote ? "> " : "";
         if (!said) return;
         // Inside a list the comment is indented into the item before it,
@@ -276,7 +290,16 @@ export function emit(read: Analysis, assets: string, edits?: Edits): Markdown {
         if (block.quote) quoted.add(at);
         inQuote = block.quote;
         n += 1;
-        blocks[block.id] = { id: block.id, page: page.n, n, from: at, to: at, hidden: true, deleted: false };
+          blocks[block.id] = {
+          id: block.id,
+          page: page.n,
+          n,
+          from: at,
+          to: at,
+          hidden: true,
+          deleted: false,
+          ...(furniture !== "keep" ? { furniture: printed !== null ? "page_numbers" : "headers_footers" } : {}),
+        };
         order.push(block.id);
         return;
       }
@@ -365,6 +388,17 @@ export function emit(read: Analysis, assets: string, edits?: Edits): Markdown {
     if (i > 0) rule(page.n);
     emitPage(page);
   });
+  // Inserted text on a page the document does not have -- an export from
+  // another reading of it -- is written at the end rather than lost.
+  const end = analysis.pages[analysis.pages.length - 1]?.n ?? 1;
+  const stray = (edits?.inserts ?? []).filter((ins) => !analysis.pages.some((p) => p.n === ins.page));
+  for (const ins of stray) {
+    blank(end);
+    const from = lines.length + 1;
+    for (const text of ins.text.replace(/\s+$/, "").split("\n")) put(text, ins.id, end);
+    blocks[ins.id] = { id: ins.id, page: end, n: 0, from, to: lines.length, hidden: false, deleted: false, inserted: true };
+    put("", null, end);
+  }
 
   // A child is wherever its head went -- or nowhere, with a head that
   // wrote nothing.

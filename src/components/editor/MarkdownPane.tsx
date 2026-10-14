@@ -24,11 +24,12 @@ import ReactMarkdown, {
   type ExtraProps,
 } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { DraftEditor, InsertDialog } from "src/components/editor/DraftEditor";
+import { DraftEditor, ReviewDialog } from "src/components/editor/DraftEditor";
 import { MarkdownMenu } from "src/components/editor/MarkdownMenu";
 import { Spinner } from "src/components/shared/Spinner";
 import { READER, type Analysis } from "src/lib/analysis";
 import { useAssetUrl } from "src/lib/assets";
+import type { WordChanges } from "src/lib/draft";
 import type { Edits } from "src/lib/edits";
 import type { Markdown, Placed } from "src/lib/emit";
 import {
@@ -42,7 +43,7 @@ import {
   type Revert,
 } from "src/lib/editing";
 import { attachSync, invalidateSync } from "src/lib/scrollsync";
-import { modifiers, offBlocks, useEditor, type Selection, type View } from "src/lib/store";
+import { modifiers, offBlocks, useEditor, type Draft, type Selection, type View } from "src/lib/store";
 import { assetsPrefix } from "src/lib/workspace";
 import { RevertDialog } from "./RevertDialog";
 
@@ -92,16 +93,12 @@ export function MarkdownPane({ docId }: { docId: string }) {
   // A draft: the whole markdown open as text, and the source it was opened
   // on -- what it is matched against when it is done. While one is open
   // nothing else edits the document.
-  const [draft, setDraft] = useState<{ text: string; base: Markdown } | null>(null);
+  const draft = useEditor((s) => s.drafts[docId] ?? null);
+  const putDraft = useEditor((s) => s.setDraft);
+  const setDraft = (d: Draft | null) => putDraft(docId, d);
   const [problems, setProblems] = useState<{ line: number; problem: string }[]>([]);
-  const [confirming, setConfirming] = useState<{ edits: Edits; inserted: string[] } | null>(null);
-  const setDrafting = useEditor((s) => s.setDrafting);
+  const [confirming, setConfirming] = useState<({ edits: Edits } & WordChanges) | null>(null);
   const drafting = draft !== null;
-  useEffect(() => {
-    if (!drafting) return;
-    setDrafting(docId);
-    return () => setDrafting(null);
-  }, [drafting, docId, setDrafting]);
   const closeDraft = () => {
     setDraft(null);
     setProblems([]);
@@ -112,7 +109,8 @@ export function MarkdownPane({ docId }: { docId: string }) {
     if (draft.text === draft.base.text) return closeDraft();
     const made = readDraft(docId, draft.base, draft.text);
     if ("problems" in made) return setProblems(made.problems);
-    if (made.inserted.length) return setConfirming(made);
+    // Anything that changes what the page says is shown before it is made.
+    if (made.corrected.length || made.deleted.length || made.inserted.length) return setConfirming(made);
     commitDraft(docId, made.edits);
     closeDraft();
   };
@@ -276,8 +274,8 @@ export function MarkdownPane({ docId }: { docId: string }) {
         )}
       </div>
       {confirming && (
-        <InsertDialog
-          inserted={confirming.inserted}
+        <ReviewDialog
+          changes={confirming}
           onApply={() => {
             commitDraft(docId, confirming.edits);
             closeDraft();
@@ -562,6 +560,7 @@ function components(
       const classes = [
         className,
         id ? "pick" : "",
+        id !== null && markdown.blocks[id]?.corrected ? "corrected" : "",
         on && !WRAPPED.has(tag) ? "selection" : "",
       ]
         .filter(Boolean)

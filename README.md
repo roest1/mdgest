@@ -105,8 +105,8 @@ come:
   so `Chapter 2 — Methods` matches `Chapter 3 — Methods`. Wording that repeats
   in the body is never one: there it is more likely a section title. A block
   hidden or deleted by hand keeps that decision whatever the setting
-- **hide** — written as an HTML comment: in the raw markdown, not the rendered
-  view, and still numbered
+- **hide** — the block's line commented out, `<!-- ## Intro -->`: in the raw
+  markdown, not the rendered view, and still numbered
 - **delete** — out of the markdown altogether, and out of the numbering, so
   the blocks after it on the page count on without it. The page keeps it,
   struck through in red, to restore
@@ -150,7 +150,9 @@ knows which block wrote each line, so no line is guessed at. Lines are
 paired with blocks by the words they share, not by where they sit:
 
 - markup — `#`s, a list marker and its indent, `**`, `*`, `>` — sets what a
-  block is; wrapped in `<!-- -->` it is hidden
+  block is; wrapped in `<!-- -->` it is hidden, and taking the comment off
+  shows it again as what it was. Emphasis is a whole block's: `*` around
+  part of a line is refused rather than kept as characters
 - a block's lines removed: it is deleted
 - the break between blocks removed, the words kept: they are joined
 - a new line between a block's words: it is divided there
@@ -160,8 +162,16 @@ paired with blocks by the words they share, not by where they sit:
   the page, and *wording* in the toolbar puts the page's words back
 - lines that are no block's — new paragraphs, or a block rewritten past
   recognition — are **inserted text**: written where you put them, tinted
-  in the raw view, and marked as yours. Before any goes in, *apply* lists
-  it and asks, since the page cannot vouch for it
+  in the raw view, and marked as yours
+- a line a page-number or header/footer setting hides is that setting's:
+  changing it is refused, and the ⋮ beside *mark done* is where it changes
+
+Anything that changes what the page says — a correction, a deleted block,
+inserted text — is shown before it is made: *apply* lists each one, a
+correction word by word, and asks. A draft that only reshapes, joins or
+divides changes no word and applies at once. A draft is kept per document
+while you look at another, and closing the tab with one changed asks
+first.
 
 Everything one *apply* changes is one undo step. In an export, corrections
 are each block's `text` and inserted text is the document's `inserts`, so a

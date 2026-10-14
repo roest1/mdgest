@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest";
 import { ANALYSIS_FORMAT, READER, type Analysis, type Block, type Line } from "src/lib/analysis";
 import { diffLines } from "src/lib/diff";
 import { applyDraft } from "src/lib/draft";
-import { blankEdits, undo, type Edits } from "src/lib/edits";
+import { addInsert, blankEdits, setFurniture, undo, type Edits } from "src/lib/edits";
 import { emit } from "src/lib/emit";
 
 function doc(): Analysis {
@@ -137,6 +137,17 @@ describe("a draft", () => {
     expect(r.edits.joins).toEqual({ p1b3: "p1b2" });
   });
 
+  test("every word it changes is reported for review; markup alone is not", () => {
+    const typo = ok(edit(blankEdits(), (s) => s.replace("Second paragraph here.", "Second paragraasdph here.")));
+    expect(typo.corrected).toEqual([
+      { id: "p1b2", page: 1, n: 3, was: "Second paragraph here.", now: "Second paragraasdph here." },
+    ]);
+    const gone = ok(edit(blankEdits(), (s) => s.replace("Third one.", "")));
+    expect(gone.deleted).toEqual([{ id: "p1b3", page: 1, n: 4, was: "Third one." }]);
+    const markup = ok(edit(blankEdits(), (s) => s.replace("Third one.", "## Third one.")));
+    expect([markup.corrected, markup.deleted, markup.inserted]).toEqual([[], [], []]);
+  });
+
   test("everything a draft changes is one undo step", () => {
     const r = ok(
       edit(blankEdits(), (s) =>
@@ -147,3 +158,119 @@ describe("a draft", () => {
     expect(undo(r.edits).blocks).toEqual({});
   });
 });
+
+/** One page of `texts`, each a block of `role`; the first a heading. */
+function page(texts: [string, Block["role"]][]): Analysis {
+  const lines: Line[] = texts.map(([text], i) => ({
+    text,
+    box: { x: 100, y: 200 + i * 20, w: 200, h: 10 },
+    size: 10,
+    bold: false,
+    italic: false,
+    font: "Body",
+  }));
+  const blocks = texts.map(([text, role], i): Block => ({
+    id: `p1b${i}`,
+    kind: "text",
+    page: 1,
+    box: lines[i].box,
+    lines: [i],
+    text,
+    role,
+    level: role === "heading" ? 1 : 0,
+    depth: 0,
+    bold: false,
+    italic: false,
+    marker: "",
+    size: 10,
+    font: "Body",
+    picture: -1,
+  }));
+  return { format: ANALYSIS_FORMAT, reader: READER, bodySize: 10, pages: [{ n: 1, width: 600, height: 800, lines, pictures: [], blocks }] };
+}
+
+/** `change` made to the source of `a` with `edits`. */
+function on(a: Analysis, edits: Edits, change: (s: string) => string) {
+  const md = emit(a, "a/", edits);
+  const r = applyDraft(a, edits, md, change(md.text));
+  if ("problems" in r) throw new Error(r.problems.map((p) => p.problem).join("; "));
+  return r;
+}
+
+describe("what the review found", () => {
+  test("a typo in a one-word block corrects it, never deletes it", () => {
+    const a = page([["Teh", "heading"], ["Body.", "para"]]);
+    const r = on(a, blankEdits(), (s) => s.replace("# Teh", "# The"));
+    expect(r.edits.blocks.p1b0).toEqual({ text: "The" });
+    expect(r.edits.inserts).toBeUndefined();
+  });
+
+  test("a typo of a few characters in a short list item corrects it", () => {
+    const a = page([["Intro", "heading"], ["nested", "numbered"], ["second", "numbered"]]);
+    const r = on(a, blankEdits(), (s) => s.replace("1. nested", "1. nestedd"));
+    expect(r.edits.blocks.p1b1).toEqual({ text: "nestedd" });
+    expect(emit(a, "a/", r.edits).text).toContain("2. second");
+  });
+
+  test("markup written inside a comment is read as markup", () => {
+    const a = page([["Intro", "heading"], ["Body.", "para"]]);
+    const r = on(a, blankEdits(), (s) => s.replace("# Intro", "<!-- # Intro -->"));
+    expect(r.edits.blocks.p1b0).toEqual({ hidden: true });
+  });
+
+  test("taking the comment off a hidden list item shows it, still an item", () => {
+    const a = page([["Intro", "heading"], ["one", "bullet"], ["two", "bullet"]]);
+    const hidden = { ...blankEdits(), blocks: { p1b2: { hidden: true } } };
+    const r = on(a, hidden, (s) => s.replace(/<!-- (- )?two -->/, "two"));
+    expect(r.edits.blocks.p1b2).toBeUndefined();
+  });
+
+  test("emphasis on part of a line is refused, not kept as asterisks", () => {
+    const a = page([["Intro", "heading"], ["Some word here.", "para"]]);
+    const md = emit(a, "a/", blankEdits());
+    const r = applyDraft(a, blankEdits(), md, md.text.replace("Some word here.", "Some *word* here."));
+    expect(r).toHaveProperty("problems");
+  });
+
+  test("two lines edited across the rule between pages insert no `---`", () => {
+    const a = doc();
+    const two: Analysis = {
+      ...a,
+      pages: [a.pages[0], { ...a.pages[0], n: 2, blocks: a.pages[0].blocks.map((b) => ({ ...b, id: b.id.replace("p1", "p2"), page: 2 })) }],
+    };
+    const r = on(two, blankEdits(), (s) => s.replace("Third one.\n\n---\n\n# Title", "Third one, edited.\n\n---\n\n# Title, edited"));
+    expect(r.edits.inserts).toBeUndefined();
+    expect(r.inserted).toEqual([]);
+  });
+
+  test("a corrected block is not joined: its words would be lost", () => {
+    const corrected = { ...blankEdits(), blocks: { p1b2: { text: "Second paragraph, here." } } };
+    const r = on(read, corrected, (s) => s.replace("First paragraph here.\n\nSecond paragraph, here.", "First paragraph here. Second paragraph, here."));
+    expect(r.edits.joins).toEqual({});
+    expect(emit(read, "a/", r.edits).text).toContain("Second paragraph, here.");
+  });
+
+  test("on a tie, a line goes to the earlier block", () => {
+    const a = page([["Steps", "heading"], ["Step one", "numbered"], ["Step two", "numbered"]]);
+    const r = on(a, blankEdits(), (s) => s.replace("1. Step one\n2. Step two", "1. Step 1"));
+    expect(r.edits.blocks.p1b1).toEqual({ text: "Step 1" });
+    expect(r.edits.blocks.p1b2).toEqual({ deleted: true });
+  });
+
+  test("a line typed inside inserted text stays inside it", () => {
+    const withInsert = addInsert(blankEdits(), 1, "p1b1", "line one\nline two");
+    const r = on(read, withInsert, (s) => s.replace("line one\nline two", "line one\nMIDDLE\nline two"));
+    expect(r.edits.inserts).toEqual([{ id: "i1", page: 1, after: "p1b1", text: "line one\nMIDDLE\nline two" }]);
+  });
+
+  test("a page number hidden by the setting is left alone, and its line refused", () => {
+    const a = page([["Intro", "heading"], ["Body.", "para"], ["12", "para"]]);
+    a.pages[0].blocks[2].box = { x: 280, y: 780, w: 10, h: 10 };
+    const set = setFurniture(blankEdits(), "page_numbers", "hide");
+    const same = on(a, set, (s) => s.replace("<!-- page 12 -->", "<!-- page 12 --> "));
+    expect(same.edits).toBe(set);
+    const md = emit(a, "a/", set);
+    expect(applyDraft(a, set, md, md.text.replace("<!-- page 12 -->", "page 12"))).toHaveProperty("problems");
+  });
+});
+

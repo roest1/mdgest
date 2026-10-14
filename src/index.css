@@ -584,6 +584,11 @@
   .markdown li.selection > .note {
     left: -30px;
   }
+  /* Words a person corrected, told from the page's own in the rendered
+     view too: the dotted accent underline the source view uses. */
+  .markdown .corrected {
+    @apply underline decoration-accent-lit/50 decoration-dotted underline-offset-[3px];
+  }
   /* What a click picks, shown as such. */
   .markdown .pick {
     cursor: pointer;

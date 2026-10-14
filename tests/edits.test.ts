@@ -84,7 +84,7 @@ describe("emit", () => {
       block("p1b2", "three", "numbered", "3."),
     ]);
     const md = emit(list, "doc.assets/", withEdits({ p1b1: { hidden: true } }));
-    expect(md.text).toBe("1. one\n   <!-- two -->\n2. three\n");
+    expect(md.text).toBe("1. one\n   <!-- 1. two -->\n2. three\n");
   });
 });
 

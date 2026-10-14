@@ -35,6 +35,13 @@ export type Reading =
     }
   | { status: "failed"; problem: string };
 
+/** The markdown open as text: what has been written, and the source it
+ *  was opened on, which it is matched against when it is applied. */
+export interface Draft {
+  text: string;
+  base: Markdown;
+}
+
 /** Which pane a selection was made in. The other one follows it into view;
  *  the one it was made in does not move under the pointer. */
 export type Side = "page" | "markdown";
@@ -113,11 +120,13 @@ interface Editor {
    *  cursor is out. Any change of selection puts the cursor away. */
   dividing: { docId: string; id: string } | null;
   setDividing: (dividing: { docId: string; id: string } | null) => void;
-  /** The document whose markdown is open as a draft. Until the draft is
-   *  done or cancelled, nothing else edits that document: the draft is
-   *  applied to the edits it was made from. */
-  drafting: string | null;
-  setDrafting: (docId: string | null) => void;
+  /** Each document whose markdown is open as a draft: the text written so
+   *  far and the source it was opened on. Kept here, not in the pane, so a
+   *  draft outlives a switch to another document. Until it is applied or
+   *  cancelled nothing else edits that document: the draft is applied to
+   *  the edits it was made from. */
+  drafts: Record<string, Draft>;
+  setDraft: (docId: string, draft: Draft | null) => void;
   /** Click on block `id` of `docId` in the pane `from`. */
   pick: (docId: string, id: string, modifiers: Modifiers, from: Side) => void;
   deselect: () => void;
@@ -150,8 +159,14 @@ export const useEditor = create<Editor>((set, get) => ({
   selection: null,
   dividing: null,
   setDividing: (dividing) => set({ dividing }),
-  drafting: null,
-  setDrafting: (drafting) => set({ drafting }),
+  drafts: {},
+  setDraft: (docId, draft) =>
+    set((s) => {
+      const drafts = { ...s.drafts };
+      if (draft) drafts[docId] = draft;
+      else delete drafts[docId];
+      return { drafts };
+    }),
   pick: (docId, picked, { range, toggle }, from) => {
     if (get().dividing) set({ dividing: null });
     const { selection, readings } = get();

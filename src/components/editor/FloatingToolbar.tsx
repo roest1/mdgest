@@ -49,7 +49,7 @@ export function FloatingToolbar({ docId }: { docId: string }) {
   // OK and cancel; the bar would sit over the pieces being made.
   const dividing = useEditor((s) => s.dividing);
   // An open draft holds the document: the tools wait for it.
-  const drafting = useEditor((s) => s.drafting === docId);
+  const drafting = useEditor((s) => docId in s.drafts);
   const setDividing = useEditor((s) => s.setDividing);
 
   // The blocks as the page lays them out: a divided block as its pieces.
@@ -113,8 +113,14 @@ export function FloatingToolbar({ docId }: { docId: string }) {
     !blocks[0].corrected &&
     blocks[0].text.split(/\s+/).filter(Boolean).length > 1;
   const corrected = blocks.filter((b) => b.corrected);
+  // A join writes the first block's words with the others' after them: a
+  // corrected block among them would lose its correction, so wording is
+  // restored first.
   const canJoin =
-    text && blocks.length > 1 && runs.length === 1 && !blocks.some((b) => b.hidden || b.deleted);
+    text &&
+    blocks.length > 1 &&
+    runs.length === 1 &&
+    !blocks.some((b) => b.hidden || b.deleted || b.corrected);
   const hidden = all((b) => b.hidden);
   const deleted = all((b) => b.deleted);
   const heads = runs.map((run) => run[0]);
@@ -235,7 +241,9 @@ export function FloatingToolbar({ docId }: { docId: string }) {
                 title={
                   canJoin
                     ? "Join into one block, onto the first"
-                    : "Only blocks of text next to each other join"
+                    : blocks.some((b) => b.corrected)
+                      ? "Restore the page's wording first, then join"
+                      : "Only blocks of text next to each other join"
                 }
                 disabled={!canJoin}
                 onClick={() => joinBlocks(docId, picked.map((b) => b.id))}
