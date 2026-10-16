@@ -32,102 +32,62 @@ Upload any collection of pdfs:
 - all text from the pdf makes it into the markdown
 - every picture large enough to be a figure is written beside the markdown and
   linked from it.
-  - Images below the figure thresholds (hairline rules, bullet
-    glyphs drawn as bitmaps, stretched one-pixel shims) are decoration, and are
-    left out on purpose (`src/lib/read.ts`).
 
 Nothing is summarized, rewritten or dropped for being hard to place: a block the
 engine cannot make sense of comes out as a paragraph, where you can see it and
 fix it.
 
-**Working today**
+**Formatting and Edit features:**
 
-- the conversion: pdf.js reads every line and picture, `structure.ts` makes
-  blocks in reading order and gives each a role (heading, paragraph, bullet, etc.), `emit.ts` writes the markdown.
-  The result is cached as `analysis.json` and written to `markdown/<doc>.md`
-  with its figures beside it
-- review: every block boxed and numbered on the page, the same numbers beside
-  the markdown lines they became, click to select, `shift`-click for a range,
-  `ctrl`/`cmd`-click for distinct blocks, `esc` to deselect
-- editing: select blocks and set what they are from the floating toolbar —
-  heading level or paragraph, list kind and depth, bold, italic, quote, a page
-  break before or after, hide, delete, join, divide. Each edit is written to
-  `edits.json` as it is made, and the editor says _Autosaved in this browser ·
-  export to keep it_ where a save button would be. Undo with `ctrl`+`z`, redo with
-  `ctrl`+`shift`+`z` or `ctrl`+`y`, or revert to original to drop every edit
-  and read the PDF again
-- mark done, which locks a document until it is reopened, and export, as a zip
-  or into a folder (_Exporting_, below)
-- a guided tour on a bundled two-page example, so none of this has to be learned
-  on your own document
+- pdf -> md - `pdf.js` reads every line and picture, `structure.ts` makes determines reading order and formatting, `emit.ts` writes the markdown.
+- toggle - click to select, `shift`-click for a range, `ctrl`/`cmd`-click for distinct blocks, click away or `esc` deselects.
+- format - toggle blocks and set their formatting from the floating toolbar.
+  - heading level (**H1**, `#`), (**H2**, `##`), (**H3**, `###`), (**H4**, `####`)
+  - ¶ paragraph (plain text)
+  - > Blockquotes
+  - lists (unordered: `-`, numbered: `1.`, alpha: `a.`, roman: `i.`)
+    - we do not yet support capital alphabetical or roman lists.
+    - this could be implemented so when a user hovers over the `a.` or `i.` in the toolbar, a capital `A.` and `I.` show above the respective bottons.
+    - this would be similar to the iphone keyboard feature where you press an hold on a key and then special letters come up above it.
+  - Indentation (for lists only) - mdgest allows left and right indentation
+  - **bold**
+  - _italic_
+  - insert page break (`---`) before or after selected block
+  - hide (writes the block content in a `<!-- markdown comment -->`)
+  - delete (keeps the block out of the markdown)
+  - join (two or more consecutive blocks)
+  - divide (one block at a time; you decide where to split.)
+- edit - raw markdown; free text. _apply_ checks formatting, spelling, and saves changes. Revert with one undo.
+- Undo with `ctrl`+`z`
+- Redo with `ctrl`+`shift`+`z` or `ctrl`+`y`
+- Revert to original to drop every edit and read the PDF again
+- control page numbers and repeated headers and footers: keep them as text (the default), hide them as comments, or delete to keep them out of markdown.
+- mark done, which locks a document until it is reopened
+- export workspace (includes rules from edits made and pdf sources) or just the markdown as a zip or folder
+- a guided tour on a bundled two-page example, so none of this has to be learned on your own document
 
 **Not built yet** — in the order they matter
 
-|                        |                                                                        |
-| ---------------------- | ---------------------------------------------------------------------- |
-| the rest of the editor | drag to reorder                                                        |
-| `rules.json`           | what the engine learns from a folder's documents                       |
-| tables                 | read as the lines they are printed as, not as a table                  |
-| math                   | read as the glyphs it is set in, not as `$…$`                          |
-| rotate                 | a page's own rotation is applied, but a block cannot be turned by hand |
+|                  |                                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------------ |
+| cross out        | ~~strikethrough~~ option in floating toolbar. Needs to click and drag to highlight text.               |
+| task Lists       | Use - [ ] for unchecked boxes and - [x] for checked boxes.                                             |
+| mutable indices  | click-and-drag to reorder or click and edit index                                                      |
+| tables           | convert to markdown table syntax                                                                       |
+| code             | `inline_code()` and ```<language> multi-line code                                                      |
+| math             | Needs research. Markdown supports latex. `$...$`                                                       |
+| images           | drag corners to resize heigh / width; choose left, center, right placement; rotate                     |
+| mermaid diagrams | https://mermaid.ai/open-source/intro/ for different diagrams. Simple one to start: DAG (detect arrows) |
+| `rules.json`     | what the engine learns from a folder's documents (biggest design piece left)                           |
 
-### Review and edit
-
-Every image and line of text is boxed into indexed blocks. What the toolbar
-does with a selection — what is marked _not built yet_ is the design still to
-come:
-
-- click-and-drag reordering of text and images — _not built yet_
-- **join** and **divide**, one button: with several blocks selected it joins
-  them into one; with one, it divides it. A joined block divides back into
-  what it was joined from. Any other block shows a cut cursor: click between
-  words — mid-line too — to place cuts, then OK (or Enter). A piece that
-  starts with a list marker becomes that kind of list item, so a list read
-  as one paragraph comes apart into its items. Joining pieces of one block
-  makes it whole again. Only words the page printed are moved; a cut never
-  adds or changes one
-- modify markdown headings: (**H1**, `#`), (**H2**, `##`), (**H3**, `###`), (**H4**, `####`), or back to a paragraph
-- edit font styles: **bold** and _italics_
-- lists: (unordered: `-`), (ordered: numerical, alpha, or roman), a level in or
-  out. Every ordered list is numbered `1.`, `2.`, `3.` in the markdown, which
-  has no lettered or roman lists; the rendered view letters and numerals the
-  levels back
-- **quote**: a block written as a blockquote, whatever it is
-- insert a paragraph of your own: write it in the markdown (_Editing the
-  markdown_, below). Indentation is a list's depth, and the indent buttons
-  show only for list items; space between blocks is a page break
-- `---` page breaks (before/after line). Today one is written between every page
-- **page numbers** and **repeated headers and footers**, each from the ⋮
-  beside _mark done_: keep them as text (the default), hide them as comments
-  — a page number as `<!-- page 12 -->` — or delete them. Both are looked for
-  only in the top and bottom 12% of the page. A page number is a line there
-  that prints only a number: `12`, `iv`, `Page 12`, `12 of 40`. A header or
-  footer is wording printed there on two pages or more, numbers wildcarded,
-  so `Chapter 2 — Methods` matches `Chapter 3 — Methods`. Wording that repeats
-  in the body is never one: there it is more likely a section title. A block
-  hidden or deleted by hand keeps that decision whatever the setting
-- **hide** — the block's line commented out, `<!-- ## Intro -->`: in the raw
-  markdown, not the rendered view, and still numbered
-- **delete** — out of the markdown altogether, and out of the numbering, so
-  the blocks after it on the page count on without it. The page keeps it,
-  struck through in red, to restore
-- (ctrl + z) undo, (ctrl + shift + z or ctrl + y) redo, a hundred deep and kept
-  across a reload. There is no version history: undo covers a sitting, and
-  after reopening a done document, undoing what changed since puts it back as
-  it was marked done
-- revert to original — below
-
-**Revert to original**, the third of the markdown pane's history buttons, drops
-a document's edits and reads its PDF again, as if it had just been added. It
-asks first, because undo cannot take it back: the undo history lives in the
-`edits.json` it removes. It removes what a revised source loses — `edits.json`,
-`analysis.json`, the figures and the markdown — keeps the PDF, and reads it
-again on the spot. A document marked done is locked, so it is reopened first.
+> Note to self: Do we need any tooling for table of contents and configuring those?
+> Maybe [^1] for footnotes?
 
 The reader that turns a PDF into blocks is versioned, and every reading
 records the version that made it. A reading is kept once made, so a document
 read by an earlier version keeps that version's reading after mdgest's reader
 improves (_When the reader changes_, below).
+
 Reverting is how it gets the current one: it is not _back to the reading first
 made_, but a new reading by the current reader version. The button names both
 versions before it acts:
@@ -139,44 +99,61 @@ versions before it acts:
 - **no edits, read by the current reader version**: it is disabled. A new
   reading would be the same as the one there is
 
-**Editing the markdown.** _edit_, in the markdown pane's bar, opens the whole
-markdown as text. Write in it as in any editor — across blocks, several
-changes at once — then _apply_, or _cancel_ to leave it as it was. While it
-is open the rest of the editor waits, so what you wrote is applied to the
-document as it was when you opened it.
+---
 
-On _apply_ the text is matched to what it was, line by line, and every run
-that changed is read through the blocks whose lines it covers — mdgest
-knows which block wrote each line, so no line is guessed at. Lines are
-paired with blocks by the words they share, not by where they sit:
+## Getting Started
 
-- markup — `#`s, a list marker and its indent, `**`, `*`, `>` — sets what a
-  block is; wrapped in `<!-- -->` it is hidden, and taking the comment off
-  shows it again as what it was. Emphasis is a whole block's: `*` around
-  part of a line is refused rather than kept as characters
-- a block's lines removed: it is deleted
-- the break between blocks removed, the words kept: they are joined
-- a new line between a block's words: it is divided there
-- a block's words changed — a typo, a broken `ﬁ` — are a **correction**:
-  kept on the block beside the page's own words, which stay in the
-  analysis. A corrected block is underlined in the raw view and edged on
-  the page, and _wording_ in the toolbar puts the page's words back
-- lines that are no block's — new paragraphs, or a block rewritten past
-  recognition — are **inserted text**: written where you put them, tinted
-  in the raw view, and marked as yours
-- a line a page-number or header/footer setting hides is that setting's:
-  changing it is refused, and the ⋮ beside _mark done_ is where it changes
+```bash
+git clone https://github.com/roest1/mdgest.git && cd mdgest
+curl -fsSL https://bun.com/install | bash
+bun install
+bun run dev          # http://127.0.0.1:2048, or set WEB_PORT
+```
 
-Anything that changes what the page says — a correction, a deleted block,
-inserted text — is shown before it is made: _apply_ lists each one, a
-correction word by word, and asks. A draft that only reshapes, joins or
-divides changes no word and applies at once. A draft is kept per document
-while you look at another, and closing the tab with one changed asks
-first.
+`bun run lint` (oxlint), `bun run typecheck` (`tsc -b`), `bun run test`
+(vitest in headless Chromium, [docs/testing.md](docs/testing.md)) and
+`bun run build` (`tsc -b` then vite) are what CI runs, in that order.
 
-Everything one _apply_ changes is one undo step. In an export, corrections
-are each block's `text` and inserted text is the document's `inserts`, so a
-person's words are always told apart from the page's.
+## Tech stack
+
+**the app** — one bundle, hosted as static files on Cloudflare Pages. No server,
+no account, and no request to any other origin: what it fetches after the page
+loads — the editor, pdf.js's worker and data, the tour — is its own.
+
+|          |                                                                                                                                                |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| build    | `vite` 8 (rolldown), `typescript` 7, `oxlint`                                                                                                  |
+| ui       | `react` 19, `react-router` 8, `tailwind` 4, `lucide-react` icons                                                                               |
+| state    | `zustand` — one store for what both editor panes read                                                                                          |
+| pdf      | `pdfjs-dist` 6, with cmaps, standard fonts and the wasm fallback emitted as assets by a plugin in `vite.config.ts`                             |
+| markdown | `react-markdown` + `remark-gfm` for the rendered view                                                                                          |
+| archives | `fflate` — unzip on the way in, zip on the way out                                                                                             |
+| fonts    | Literata (serif), Geist Sans (ui), JetBrains Mono (code), Caveat (the tour's hand) — self-hosted via `@fontsource`, never a request off-origin |
+
+**pdf.js reads the PDF.** Every line with its box, size and weight, and every
+picture with the bounds it was drawn to. It was chosen over pdfium by
+measurement, not preference — see [docs/pipeline.md](docs/pipeline.md). Its own
+parsing worker does the decoding; `src/lib/read.ts` does the geometry.
+
+**OPFS is the workspace.** The origin-private file system is the only storage
+every browser has, and its synchronous access handle reads or writes a whole
+file in one call. The workspace runs in a worker, because that handle is not
+exposed on the main thread.
+That worker is a module worker, which is what actually sets the floor on
+Firefox: 114, not the 111 that OPFS alone would ask for. Web Locks, which keep
+two tabs from writing one workspace at once, set Safari's: 15.4. The whole
+table is in [docs/deployment.md](docs/deployment.md).
+
+## Documentation
+
+|                                              |                                                                                               |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [docs/pipeline.md](docs/pipeline.md)         | how a page becomes markdown: read → structure → emit, and every threshold either one leans on |
+| [docs/testing.md](docs/testing.md)           | running the tests, what they cover, and adding a reader case                                  |
+| [docs/deployment.md](docs/deployment.md)     | commit to edge to browser, the worker boundary, the browser floor                             |
+| [docs/brand/README.md](docs/brand/README.md) | the mark, and why there are two drawings of it                                                |
+
+---
 
 ## The more technical: Workspaces, rules, and how learning works
 
@@ -366,59 +343,5 @@ When you apply a rule, the deepest matching folder wins, and your own `edits.jso
 ### Why it's worth caring about
 
 The second document in `invoices/` that shares a template edits faster than the first — headings, footers, and boilerplate that formatted the same way get recognized before you touch them. And because a rule is a plain, readable JSON entry with an example block attached, you can see exactly why the engine made a call, and delete or override any single rule without retraining anything.
-
----
-
-## Getting Started
-
-```bash
-git clone https://github.com/roest1/mdgest.git && cd mdgest
-curl -fsSL https://bun.com/install | bash
-bun install
-bun run dev          # http://127.0.0.1:2048, or set WEB_PORT
-```
-
-`bun run lint` (oxlint), `bun run typecheck` (`tsc -b`), `bun run test`
-(vitest in headless Chromium, [docs/testing.md](docs/testing.md)) and
-`bun run build` (`tsc -b` then vite) are what CI runs, in that order.
-
-## Tech stack
-
-**the app** — one bundle, hosted as static files on Cloudflare Pages. No server,
-no account, and no request to any other origin: what it fetches after the page
-loads — the editor, pdf.js's worker and data, the tour — is its own.
-
-|          |                                                                                                                                                |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| build    | `vite` 8 (rolldown), `typescript` 7, `oxlint`                                                                                                  |
-| ui       | `react` 19, `react-router` 8, `tailwind` 4, `lucide-react` icons                                                                               |
-| state    | `zustand` — one store for what both editor panes read                                                                                          |
-| pdf      | `pdfjs-dist` 6, with cmaps, standard fonts and the wasm fallback emitted as assets by a plugin in `vite.config.ts`                             |
-| markdown | `react-markdown` + `remark-gfm` for the rendered view                                                                                          |
-| archives | `fflate` — unzip on the way in, zip on the way out                                                                                             |
-| fonts    | Literata (serif), Geist Sans (ui), JetBrains Mono (code), Caveat (the tour's hand) — self-hosted via `@fontsource`, never a request off-origin |
-
-**pdf.js reads the PDF.** Every line with its box, size and weight, and every
-picture with the bounds it was drawn to. It was chosen over pdfium by
-measurement, not preference — see [docs/pipeline.md](docs/pipeline.md). Its own
-parsing worker does the decoding; `src/lib/read.ts` does the geometry.
-
-**OPFS is the workspace.** The origin-private file system is the only storage
-every browser has, and its synchronous access handle reads or writes a whole
-file in one call. The workspace runs in a worker, because that handle is not
-exposed on the main thread.
-That worker is a module worker, which is what actually sets the floor on
-Firefox: 114, not the 111 that OPFS alone would ask for. Web Locks, which keep
-two tabs from writing one workspace at once, set Safari's: 15.4. The whole
-table is in [docs/deployment.md](docs/deployment.md).
-
-## Documentation
-
-|                                              |                                                                                               |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| [docs/pipeline.md](docs/pipeline.md)         | how a page becomes markdown: read → structure → emit, and every threshold either one leans on |
-| [docs/testing.md](docs/testing.md)           | running the tests, what they cover, and adding a reader case                                  |
-| [docs/deployment.md](docs/deployment.md)     | commit to edge to browser, the worker boundary, the browser floor                             |
-| [docs/brand/README.md](docs/brand/README.md) | the mark, and why there are two drawings of it                                                |
 
 ---
