@@ -45,7 +45,7 @@ flowchart TB
             RT --> ED
             LAND -->|"onFiles(File[])"| ENG
             LAND -->|"stageView on mount &middot; commit"| ENG
-            ED -->|"docs &middot; doneDocs &middot; source &middot; analysis &middot; convert<br/>edits &middot; saveEdits &middot; asset &middot; exportZip &middot; exportToFolder"| ENG
+            ED -->|"docs &middot; doneDocs &middot; source &middot; analysis &middot; convert<br/>edits &middot; saveEdits &middot; revert &middot; asset<br/>exportZip &middot; exportToFolder"| ENG
         end
 
         PW["<b>pdf.js worker</b> &mdash; parsing and decoding<br/>started by pdf.ts on the first open, type: module"]
@@ -53,7 +53,7 @@ flowchart TB
 
         subgraph WT ["engine worker &mdash; engine.worker-*.js, type: module"]
             direction TB
-            DISP["<b>dispatch table</b> exhaustive over Engine<br/>stage &middot; unstage &middot; keep &middot; renameCandidate<br/>discardWorkspace &middot; stageView &middot; commit<br/>docs &middot; doneDocs &middot; source &middot; analysis &middot; convert<br/>edits &middot; saveEdits &middot; asset &middot; exportZip &middot; exportToFolder"]
+            DISP["<b>dispatch table</b> exhaustive over Engine<br/>stage &middot; unstage &middot; keep &middot; renameCandidate<br/>discardWorkspace &middot; stageView &middot; commit<br/>docs &middot; doneDocs &middot; source &middot; analysis &middot; convert<br/>edits &middot; saveEdits &middot; revert &middot; asset<br/>exportZip &middot; exportToFolder"]
             OPFS["<b>opfs.ts</b><br/>navigator.storage.getDirectory()<br/>getDirectoryHandle / getFileHandle &mdash; async<br/>createSyncAccessHandle() &mdash; sync read/write<br/>truncate(0) &rarr; write &rarr; flush &rarr; close"]
             DISP --> OPFS
         end

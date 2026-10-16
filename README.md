@@ -54,7 +54,7 @@ fix it.
   - _italic_
   - insert page break (`---`) before or after selected block
   - hide (writes the block content in a `<!-- markdown comment -->`)
-  - delete (keeps the block out of the markdown)
+  - delete (omits block content from going into markdown at all)
   - join (two or more consecutive blocks)
   - divide (one block at a time; you decide where to split.)
 - edit - raw markdown; free text. _apply_ checks formatting, spelling, and saves changes. Revert with one undo.

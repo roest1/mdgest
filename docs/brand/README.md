@@ -53,6 +53,9 @@ safe area     46 × 50
 type          Nunito 900, lowercase, tracking −0.015em
 layout        arrow rule — type at 19.01/64, clearance 0.16em, arrow shaft 0.21em
 wordmark      Literata 600 at opsz 12 (the text cut), tracking −0.028em
+lockup        502 × 144 on paper, radius 20 — the mark 104 tall, 52 of side
+              padding, 20 above and below. The mark, not the wordmark, sets
+              the height: its descender stops 14 short of the mark's foot
 ```
 
 Both faces are OFL. **Neither is a dependency** — every glyph is already converted
