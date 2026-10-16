@@ -32,7 +32,7 @@ import { assess, bare, entryFor, sealed, type Assessed } from "./exchange";
 import { emit } from "./emit";
 import { unzip } from "./unzip";
 import { isJunk, isPdf, isZip, relativeTo, under, workspaceRoots } from "./upload";
-import { human, messageOf, plural } from "./words";
+import { few, human, messageOf, plural } from "./words";
 import {
   FIGURE_NAME,
   MANIFEST,
@@ -278,9 +278,7 @@ function sayRepeats(repeats: Repeats, rejected: string[]): void {
     [repeats.staged, "already staged"],
   ] as const) {
     if (names.length === 0) continue;
-    const shown = names.slice(0, 3).join(", ");
-    const more = names.length > 3 ? ` and ${names.length - 3} more` : "";
-    rejected.push(`${shown}${more} ${names.length === 1 ? "is" : "are"} ${where}.`);
+    rejected.push(`${few(names)} ${names.length === 1 ? "is" : "are"} ${where}.`);
   }
 }
 
@@ -386,7 +384,16 @@ async function stageGroup(
     arriving = { name, origin: "upload", manifest, assessed: await assessAll(manifest) };
     const sources = root ? `${root}/${SOURCES}` : SOURCES;
     for (const item of inside) {
-      if (!under(item.path, sources) || !isPdf(item.path)) continue;
+      if (!isPdf(item.path)) continue;
+      // A PDF in the workspace but outside `sources/` belongs to nothing:
+      // this pass wants it under `sources/`, and the loose pass below sees
+      // it as the workspace's. Said here, so it is not dropped in silence.
+      if (!under(item.path, sources)) {
+        rejected.push(
+          `${item.path} was not staged: a workspace's documents are the ones under ${SOURCES}/.`,
+        );
+        continue;
+      }
       // An exported source already sits at its id, and cleaning is the
       // identity on a clean path. Not slugged: a slug of a hand-renamed
       // file would invent an id the manifest has never heard of.
@@ -738,7 +745,17 @@ export function commit(): Promise<{ docs: string[] }> {
       }
       final.documents[row.docId] = next;
       // `undefined` is left out by JSON, so on disk this entry has no hash.
-      pending.documents[row.docId] = { ...entry, sha256: staged.blob ? undefined : staged.sha256 };
+      //
+      // A revised source's decisions go out of the interim manifest as
+      // well as the final one. They are being dropped -- the document
+      // starts over on the new bytes -- and those bytes are written right
+      // after this. Left in, a commit that stopped between the two would
+      // leave them beside a source they were not made on, and the next
+      // look, finding no hash, would hash the new bytes and write that
+      // hash down beside them: a document that reads as consistent while
+      // every block its edits name belongs to the PDF it no longer has.
+      const held = row.status === "revised" && entry ? bare(entry) : entry;
+      pending.documents[row.docId] = { ...held, sha256: staged.blob ? undefined : staged.sha256 };
     }
 
     await guarded(async () => {
@@ -754,8 +771,9 @@ export function commit(): Promise<{ docs: string[] }> {
       // to be written, and a document with no hash is one whose bytes are
       // hashed on the next look. So a commit that stops partway -- a full
       // disk, a dropped file since moved -- leaves a manifest that is wrong
-      // about nothing: every decision is in it, and every hash in it matches
-      // its bytes. The second write adds the hashes once the bytes are down.
+      // about nothing: every decision it still stands by is in it, and every
+      // hash in it matches its bytes. The second write adds the hashes once
+      // the bytes are down.
       await opfs.writeManifest(pending);
       for (const { row, staged } of chosen) {
         if (!staged.blob) continue;
@@ -1002,10 +1020,8 @@ async function gather(markdownOnly: boolean): Promise<Out[]> {
     // no markdown to write, and a zip quietly short of it would be taken for
     // all of it. Said instead, so the person opens them and exports again.
     if (unread.length > 0) {
-      const shown = unread.slice(0, 3).join(", ");
-      const more = unread.length > 3 ? ` and ${unread.length - 3} more` : "";
       throw new Error(
-        `${shown}${more} ${unread.length === 1 ? "is" : "are"} marked done but ` +
+        `${few(unread)} ${unread.length === 1 ? "is" : "are"} marked done but ` +
           `${unread.length === 1 ? "has" : "have"} not been opened in this browser, so ` +
           `${unread.length === 1 ? "its" : "their"} markdown is not written yet. Open ` +
           `${unread.length === 1 ? "it" : "each one"} once, then export again.`,
@@ -1093,10 +1109,16 @@ export function exportToFolder(dir: FileSystemDirectoryHandle, markdownOnly: boo
     const ours = markdownOnly ? [MARKDOWN] : [MANIFEST, SOURCES, MARKDOWN];
     const names: string[] = [];
     for await (const name of dir.keys()) names.push(name);
+    // What no export put there and no person would miss: a file manager's
+    // own notes, a half-written file the browser left behind. A folder
+    // holding nothing else is empty enough to export into, and one of
+    // these turning up beside an export does not stop writing it again --
+    // which looking at the result in a file manager is enough to do.
+    const kept = names.filter((n) => !n.startsWith(".") && !n.endsWith(".crswap"));
     const earlier = markdownOnly
-      ? names.length > 0 && names.every((n) => n === MARKDOWN)
-      : names.includes(MANIFEST);
-    if (names.length > 0 && !earlier) {
+      ? kept.length > 0 && kept.every((n) => n === MARKDOWN)
+      : kept.includes(MANIFEST);
+    if (kept.length > 0 && !earlier) {
       throw new Error(
         markdownOnly
           ? "That folder has other files in it. Pick an empty folder, or one a markdown export wrote."
@@ -1110,8 +1132,17 @@ export function exportToFolder(dir: FileSystemDirectoryHandle, markdownOnly: boo
       for (const part of parts.slice(0, -1)) at = await at.getDirectoryHandle(part, { create: true });
       const file = await at.getFileHandle(parts.at(-1)!, { create: true });
       const writable = await file.createWritable();
-      await writable.write(bytes as Uint8Array<ArrayBuffer>);
-      await writable.close();
+      // A stream left open holds that file's write lock, and the browser's
+      // own half-written copy of it stays in the folder beside it: the
+      // next export into the same folder would fail on the file this one
+      // did not finish, and go on failing until the page is reloaded.
+      try {
+        await writable.write(bytes as Uint8Array<ArrayBuffer>);
+        await writable.close();
+      } catch (cause) {
+        await writable.abort().catch(() => {});
+        throw cause;
+      }
     }
     const wrote = new Set(files.map((f) => f.path));
     for (const name of ours) {

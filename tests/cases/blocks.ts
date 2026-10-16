@@ -174,4 +174,27 @@ export const blocks: Case[] = [
     ],
     blocks: ["p Grease pump", "p Greasepump"],
   },
+  {
+    name: "blocks-superscript-joins-its-line",
+    about: "A superscript is set small and above the baseline, and is still of the line it sits on, not a line of its own.",
+    pages: [
+      (pen) => {
+        pen.text(X, TOP, "Readings are logged daily.");
+        pen.then(0, "1", { size: 6, rise: 3 });
+        pen.text(X, TOP + LEADING, "Gauges are checked weekly.");
+      },
+    ],
+    blocks: ["p Readings are logged daily.1 Gauges are checked weekly."],
+  },
+  {
+    name: "blocks-tall-run-does-not-draw-two-lines-together",
+    about: "A drop cap reaches over the lines beside it, but stands on its own baseline: the lines it overlaps stay whole and apart, with their words in order.",
+    pages: [
+      (pen) => {
+        pen.text(X, TOP + 2 * LEADING, "T", { size: 30 });
+        prose(3).forEach((t, i) => pen.text(X + 24, TOP + i * LEADING, t));
+      },
+    ],
+    blocks: ["h1 T", `p ${joined(prose(3))}`],
+  },
 ];

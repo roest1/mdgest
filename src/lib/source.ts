@@ -17,7 +17,7 @@
  * Every change it makes is one undo step. Pure, and shared like emit.ts. */
 
 import { blocksById, LIST_ROLES, type Analysis, type Block, type Role } from "./analysis";
-import { divided, pieceId } from "./divide";
+import { divided, pieceId, wordsOf } from "./divide";
 import { apply, asOneStep, setCuts, shape, type Change, type Edits } from "./edits";
 import { BULLET_ONLY, MARKER_ONLY } from "./structure";
 
@@ -230,7 +230,17 @@ export function editSource(
   }
   const source = block.piece?.of ?? block.id;
   const from = block.piece?.from ?? 0;
-  const at = starts(words(block.text), wrote.map((w) => words(w.text)));
+  const to = block.piece?.to ?? Infinity;
+  // The lines are set against the block's printed words, which the cuts
+  // count: a later piece's text has the marker it opens with taken off,
+  // and the whole block's drops a line that is only a bullet, so its text
+  // can stand a word short of where its cuts fall.
+  const page = read.pages.find((p) => p.n === block.page) ?? read.pages[0];
+  const whole = block.piece ? (page.blocks.find((b) => b.id === source) ?? block) : block;
+  const printedWords = wordsOf(whole, page)
+    .slice(from, to)
+    .map((w) => w.text);
+  const at = starts(printedWords, wrote.map((w) => words(w.text)));
   if (!at) {
     return {
       problem:
@@ -241,7 +251,6 @@ export function editSource(
   // A block's first piece starts after any marker the reader took off, so a
   // piece's place in the whole block is its start here plus the block's.
   const had = edits.cuts?.[source] ?? [];
-  const to = block.piece?.to ?? Infinity;
   const cuts = [...had.filter((k) => k <= from || k >= to), ...at.slice(1).map((k) => from + k)];
   let next = setCuts(edits, source, cuts);
   const pieces = blocksById(divided(read, next.cuts));

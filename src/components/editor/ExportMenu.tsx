@@ -29,15 +29,34 @@ function today(): string {
   return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
 }
 
+/** The last export's URL, let go when the next one is made.
+ *
+ * Not let go on a timer. The browser reads the blob while it writes the
+ * file, and how long that takes is the size of the export and the speed of
+ * the disk: a wait short enough to be worth having is short enough to cut a
+ * large zip off partway, and the person is told "Exported" either way.
+ *
+ * Holding it until the next export does not make that impossible, only
+ * unlikely. Exporting again while a large zip is still being written
+ * revokes the URL that write is reading: the same cut-off, needing a
+ * second export inside the first's write rather than arriving on its own.
+ * One export's bytes stay until the next, and closing the page frees
+ * them. */
+let last: string | null = null;
+
 /** Hand `bytes` to the browser as a download named `name`. */
 function download(bytes: Uint8Array<ArrayBuffer>, name: string): void {
-  const url = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
+  if (last) URL.revokeObjectURL(last);
+  last = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
   const a = document.createElement("a");
-  a.href = url;
+  a.href = last;
   a.download = name;
+  a.style.display = "none";
+  // In the document before it is clicked: a click on an anchor outside one
+  // does nothing in Firefox.
+  document.body.append(a);
   a.click();
-  // After the click has had a turn to start the download.
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+  a.remove();
 }
 
 type Status = { kind: "idle" } | { kind: "busy" } | { kind: "done"; said: string } | { kind: "failed"; said: string };

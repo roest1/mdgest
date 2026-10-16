@@ -10,6 +10,9 @@ import { joined, prose, TOP, X } from "./text";
 
 const GUIDE = "https://example.com/pumps/guide";
 
+/** Lines narrow enough to leave a right column beside them. */
+const LEFT = ["Pumps are inspected yearly by", "the facility engineering group.", "Spare gaskets are kept in the"];
+
 /** A link box over the line whose baseline is `y`, `w` points wide. */
 const over = (y: number, w = 420) => [X - 2, y - 10, w, 14] as const;
 
@@ -59,5 +62,19 @@ export const links: Case[] = [
       "",
       ...prose(3).flatMap((l) => [l, ""]),
     ].join("\n"),
+  },
+  {
+    name: "links-elsewhere-on-the-page",
+    about:
+      "A link marks only the lines under its box: a line apart from it on both axes -- the left column, below the link's baseline -- is not, however far apart.",
+    pages: [
+      (pen) => {
+        pen.lines(X, TOP, LEFT, { leading: PARAGRAPH });
+        pen.text(X + 258, TOP, "See the pump guide online.");
+        pen.link(X + 258 - 2, TOP - 10, 140, 14, GUIDE);
+      },
+    ],
+    blocks: [...LEFT.map((l) => `p ${l}`), "p See the pump guide online."],
+    markdown: [...LEFT.flatMap((l) => [l, ""]), `[See the pump guide online.](${GUIDE})`, ""].join("\n"),
   },
 ];

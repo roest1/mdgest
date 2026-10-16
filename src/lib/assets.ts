@@ -10,18 +10,42 @@ import { engine } from "./engine";
 
 const urls = new Map<string, string>();
 const pending = new Map<string, Promise<string | null>>();
+/** How much of each document's figures `seedAsset` is holding. */
+const seeded = new Map<string, number>();
+/** How many times each document has been let go. A read that lands after
+ *  its document left the editor belongs to nothing, so what it carries is
+ *  dropped rather than held: `releaseAssets` has already been past, and
+ *  whatever it put in `urls` would be a blob nothing can show again. */
+const era = new Map<string, number>();
+
+/** How much of one document's figures are kept from its read. The seed
+ *  only saves a round trip -- `assetUrl` reads any figure back out of the
+ *  workspace -- so past this the copies stop and the page reads what it
+ *  comes to show. A scanned document carries a full-page figure on every
+ *  page, and holding all of them is hundreds of megabytes of what is
+ *  already on disk, for the few that are on screen. */
+const SEED_BUDGET = 64 * 1024 * 1024;
 
 const key = (docId: string, name: string) => `${docId}\n${name}`;
 
 function keep(docId: string, name: string, bytes: BlobPart): string {
   const url = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
-  urls.set(key(docId, name), url);
+  const k = key(docId, name);
+  // Whatever stood at this key is let go first. Two URLs on one figure is
+  // a blob held for the life of the page with nothing left to show it.
+  const had = urls.get(k);
+  if (had) URL.revokeObjectURL(had);
+  urls.set(k, url);
   return url;
 }
 
 /** Hold a figure the page has just made, before its bytes are handed to
- *  the engine: a copy, so the hand-over can empty the buffer. */
+ *  the engine: a copy, so the hand-over can empty the buffer. Up to
+ *  `SEED_BUDGET` a document; what is not held is read back when shown. */
 export function seedAsset(docId: string, name: string, bytes: ArrayBuffer): void {
+  const held = seeded.get(docId) ?? 0;
+  if (held + bytes.byteLength > SEED_BUDGET) return;
+  seeded.set(docId, held + bytes.byteLength);
   keep(docId, name, bytes.slice(0));
 }
 
@@ -30,6 +54,8 @@ export function seedAsset(docId: string, name: string, bytes: ArrayBuffer): void
  *  walkthrough over -- not when one pane unmounts, since the other may
  *  still be showing them. A figure asked for again is read out again. */
 export function releaseAssets(docId: string): void {
+  seeded.delete(docId);
+  era.set(docId, (era.get(docId) ?? 0) + 1);
   const prefix = `${docId}\n`;
   for (const [k, url] of urls) {
     if (k.startsWith(prefix)) {
@@ -37,6 +63,10 @@ export function releaseAssets(docId: string): void {
       urls.delete(k);
     }
   }
+  // Reads still out are let go too. Each one lands in a past era and keeps
+  // nothing; dropping them here means a document opened again reads afresh
+  // rather than waiting on a read it will not keep.
+  for (const k of [...pending.keys()]) if (k.startsWith(prefix)) pending.delete(k);
 }
 
 /** The URL of `name` under `docId`'s assets, or null when the workspace
@@ -48,10 +78,18 @@ export function assetUrl(docId: string, name: string): Promise<string | null> {
   if (held) return Promise.resolve(held);
   let p = pending.get(k);
   if (!p) {
-    p = engine
+    const started = era.get(docId) ?? 0;
+    const mine: Promise<string | null> = engine
       .asset(docId, name)
-      .then((bytes) => (bytes ? keep(docId, name, bytes) : null))
-      .finally(() => pending.delete(k));
+      .then((bytes) =>
+        bytes && (era.get(docId) ?? 0) === started ? keep(docId, name, bytes) : null,
+      )
+      // Only if this read is still the one outstanding: `releaseAssets` may
+      // have dropped it and a later read taken its place.
+      .finally(() => {
+        if (pending.get(k) === mine) pending.delete(k);
+      });
+    p = mine;
     pending.set(k, p);
   }
   return p;

@@ -125,6 +125,13 @@ describe("new lines divide", () => {
     expect(edits.blocks.p1b2).toMatchObject({ role: "heading", level: 2 });
   });
 
+  test("a later piece divides at its own words: the marker it opens with counts, as the cuts count it", () => {
+    const edits = ok(write(blankEdits(), "p1b2", "Costs exclude underfunded\n- Scans cost on average"));
+    const next = ok(write(edits, "p1b2c3", "- Scans cost\n- on average"));
+    expect(next.cuts).toEqual({ p1b2: [3, 6] });
+    expect(emit(read, "a/", next).text).toContain("Costs exclude underfunded\n\n- Scans cost\n- on average");
+  });
+
   test("dividing and rewording at once is refused", () => {
     expect(write(blankEdits(), "p1b2", "Costs exclude\nScans cost a lot")).toHaveProperty("problem");
   });

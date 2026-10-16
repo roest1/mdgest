@@ -103,3 +103,79 @@ export function diffLines(a: readonly string[], b: readonly string[]): Hunk[] {
   if (open) hunks.push(open);
   return hunks;
 }
+
+/** The edit distance between two short strings: the fewest single
+ *  characters put in, taken out or changed to make one the other.
+ *
+ * Myers's bit-parallel algorithm in Hyyrö's blocked form (the one edlib
+ * has): the shorter string runs down the rows in blocks of 32, and each
+ * character of the other advances every block with a handful of word
+ * operations -- a column of the usual table at a time, not a cell. The
+ * horizontal difference at the bottom of each block carries into the
+ * next (`hin`); the last block's bottom row is kept as `score`, and the
+ * rows past the pattern's end are backed out by their vertical
+ * differences at the end. */
+export function editDistance(x: string, y: string): number {
+  if (x.length > y.length) [x, y] = [y, x];
+  return distanceFrom(pattern(x), y);
+}
+
+/** A string set up as the rows: for each character, the rows it matches,
+ *  one word per block of 32. Made once for a string compared with many. */
+export interface Pattern {
+  length: number;
+  blocks: number;
+  peq: Map<number, Int32Array>;
+}
+
+export function pattern(x: string): Pattern {
+  const blocks = Math.ceil(x.length / 32);
+  const peq = new Map<number, Int32Array>();
+  for (let i = 0; i < x.length; i++) {
+    const c = x.charCodeAt(i);
+    let bits = peq.get(c);
+    if (!bits) peq.set(c, (bits = new Int32Array(blocks)));
+    bits[i >> 5] |= 1 << (i & 31);
+  }
+  return { length: x.length, blocks, peq };
+}
+
+/** The edit distance from `p`'s string to `y`. Cheapest with the shorter
+ *  string as `p`: the cost is `y`'s length times `p`'s blocks. */
+export function distanceFrom(p: Pattern, y: string): number {
+  const { length: m, blocks, peq } = p;
+  if (m === 0) return y.length;
+  const none = new Int32Array(blocks);
+  const pv = new Int32Array(blocks).fill(-1);
+  const mv = new Int32Array(blocks);
+  let score = blocks * 32;
+  for (let j = 0; j < y.length; j++) {
+    const eqs = peq.get(y.charCodeAt(j)) ?? none;
+    let hin = 1;
+    for (let b = 0; b < blocks; b++) {
+      let eq = eqs[b];
+      const Pv = pv[b];
+      const Mv = mv[b];
+      const xv = eq | Mv;
+      if (hin < 0) eq |= 1;
+      const xh = ((((eq & Pv) >>> 0) + (Pv >>> 0)) ^ Pv) | eq;
+      let ph = Mv | ~(xh | Pv);
+      let mh = Pv & xh;
+      const hout = (ph >>> 31) - (mh >>> 31);
+      ph = (ph << 1) | (hin > 0 ? 1 : 0);
+      mh = (mh << 1) | (hin < 0 ? 1 : 0);
+      pv[b] = mh | ~(xv | ph);
+      mv[b] = ph & xv;
+      hin = hout;
+    }
+    score += hin;
+  }
+  const lastPv = pv[blocks - 1];
+  const lastMv = mv[blocks - 1];
+  for (let i = m; i < blocks * 32; i++) {
+    const bit = 1 << (i & 31);
+    if (lastPv & bit) score--;
+    else if (lastMv & bit) score++;
+  }
+  return score;
+}

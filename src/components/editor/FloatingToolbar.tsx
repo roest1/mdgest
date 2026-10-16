@@ -101,6 +101,9 @@ export function FloatingToolbar({ docId }: { docId: string }) {
   const italic = !heading && all((b) => b.italic);
   const quote = all((b) => b.quote);
   const groupHeads = new Set(Object.values(edits.joins));
+  // A correction on a joined block is the group's wording, and comes off
+  // with the join (`unjoin` in edits.ts): no restoring first, as before a
+  // block is divided.
   const unjoin = blocks.length === 1 && groupHeads.has(blocks[0].id);
   // Divide is for one block, join for several: one button, which a single
   // block of two words or more, or a joined one, turns into divide.
@@ -230,7 +233,7 @@ export function FloatingToolbar({ docId }: { docId: string }) {
                 onClick={() =>
                   unjoin
                     ? unjoinBlocks(docId, [blocks[0].id])
-                    : setDividing({ docId, id: blocks[0].id })
+                    : setDividing({ docId, id: blocks[0].id, cuts: [] })
                 }
               >
                 <Scissors className="h-3.5 w-3.5" />

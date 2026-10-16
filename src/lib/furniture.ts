@@ -42,10 +42,26 @@ function printed(block: Block): string {
 
 // ---- page numbers ---------------------------------------------------------
 
-/** A roman numeral, properly formed. The tempting `[ivxlcdm]+` also matches
- *  ordinary words -- `civil`, `mill`, `did` -- which is how a margin line
- *  of real text would become a page number and disappear. */
-const ROMAN = "(?=[ivxlcdm])m{0,3}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})";
+/** A roman numeral, properly formed, and under 90 -- `i` to `lxxxix`,
+ *  which is the range front matter is numbered in.
+ *
+ * Properly formed is not enough on its own. The tempting `[ivxlcdm]+`
+ *  matches ordinary words -- `civil`, `mill`, `did` -- and even a correct
+ *  numeral of the full range matches `MIX`, `DIV`, `CIV`, `MI` and `D.`,
+ *  which is how a margin line of real text becomes a page number and,
+ *  with the setting at `delete`, disappears. Those are 1009, 504, 104,
+ *  1001 and 500: numbers no page bears. Leaving out the hundreds and
+ *  thousands leaves the letters that spell no word, and costs only the
+ *  front matter that runs past page lxxxix.
+ *
+ * A letter standing alone is still a numeral: `i`, `v`, `x` and `l` read
+ *  as 1, 5, 10 and 50, so an initial in a margin -- `V.` in a running
+ *  head, `I` under a plate -- is still taken for a page number. Asking
+ *  for two numerals would rule those out and lose pages `i`, `v`, `x`
+ *  and `l` with them, which are page numbers a front matter page prints.
+ *  Position is what keeps the rest of such a line: the band test, and
+ *  for a header or footer the count across pages. */
+const ROMAN = "(?=[ivxl])(?:xl|l?x{0,3})(?:ix|iv|v?i{0,3})";
 
 /** What a page prints where a page number goes. Bounded on purpose: enough
  *  for `12`, `iv`, `Page 12`, `12 of 40`, `- 12 -`, and not enough for a

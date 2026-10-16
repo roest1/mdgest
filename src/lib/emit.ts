@@ -190,12 +190,33 @@ export function emit(read: Analysis, assets: string, edits?: Edits): Markdown {
   /** A `---`, set off by blank lines so it reads as a rule and not as the
    *  underline of the line above. One rule where two would meet -- a break
    *  after one block and before the next, or beside the rule between
-   *  pages. */
+   *  pages.
+   *
+   * The blank before a rule closes what came before it and is that page's;
+   * the rule and the blank after it are the page's the rule opens. So a
+   * `---` whose page is not the line's before it is the rule between two
+   * pages, which draft.ts tells from a break inside one. A `---` a person
+   * typed into inserted text is that text's line, not a rule: it is left
+   * as written and the rule goes after it. */
   const rule = (page: number) => {
-    blank(page);
+    blank(last()?.page ?? page);
+    if (lines.length === 0) return;
     const before = lines[lines.length - 2];
-    if (lines.length === 0 || before?.text === "---") return;
+    if (before?.text === "---" && before.block === null) {
+      before.page = page;
+      last().page = page;
+      return;
+    }
     put("---", null, page);
+    put("", null, page);
+  };
+
+  /** Text a person inserted, written as it was typed, on `page`. */
+  const putInsert = (ins: Insert, page: number) => {
+    blank(page);
+    const from = lines.length + 1;
+    for (const text of ins.text.replace(/\s+$/, "").split("\n")) put(text, ins.id, page);
+    blocks[ins.id] = { id: ins.id, page, n: 0, from, to: lines.length, hidden: false, deleted: false, inserted: true };
     put("", null, page);
   };
 
@@ -365,12 +386,9 @@ export function emit(read: Analysis, assets: string, edits?: Edits): Markdown {
     // after the block it follows, or -- when that block no longer stands
     // here, joined away or made whole -- at the page's end.
     const mine = (edits?.inserts ?? []).filter((ins) => ins.page === page.n);
+    /** Inserted text ends any list it falls in, like a rule. */
     const put1 = (ins: Insert) => {
-      blank(page.n);
-      const from = lines.length + 1;
-      for (const text of ins.text.replace(/\s+$/, "").split("\n")) put(text, ins.id, page.n);
-      blocks[ins.id] = { id: ins.id, page: page.n, n: 0, from, to: lines.length, hidden: false, deleted: false, inserted: true };
-      put("", null, page.n);
+      putInsert(ins, page.n);
       counters = new Counters();
       inList = false;
       inQuote = false;
@@ -392,13 +410,7 @@ export function emit(read: Analysis, assets: string, edits?: Edits): Markdown {
   // another reading of it -- is written at the end rather than lost.
   const end = analysis.pages[analysis.pages.length - 1]?.n ?? 1;
   const stray = (edits?.inserts ?? []).filter((ins) => !analysis.pages.some((p) => p.n === ins.page));
-  for (const ins of stray) {
-    blank(end);
-    const from = lines.length + 1;
-    for (const text of ins.text.replace(/\s+$/, "").split("\n")) put(text, ins.id, end);
-    blocks[ins.id] = { id: ins.id, page: end, n: 0, from, to: lines.length, hidden: false, deleted: false, inserted: true };
-    put("", null, end);
-  }
+  for (const ins of stray) putInsert(ins, end);
 
   // A child is wherever its head went -- or nowhere, with a head that
   // wrote nothing.

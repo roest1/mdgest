@@ -15,6 +15,13 @@ export function human(bytes: number): string {
   return `${i > 0 && n < 10 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
 }
 
+/** A few of `names` and a count of the rest -- "a, b, c and 4 more" -- so
+ *  a folder of them is one sentence rather than a page. */
+export function few(names: readonly string[], most = 3): string {
+  const shown = names.slice(0, most).join(", ");
+  return names.length > most ? `${shown} and ${names.length - most} more` : shown;
+}
+
 /** `n` of `word`, with the plural `s` an English noun takes. */
 export function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;

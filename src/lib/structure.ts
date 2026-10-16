@@ -242,9 +242,19 @@ function groupLines(
         } else if (!heading && !prevHeading) {
           // A wrapped paragraph or list item: a continuation starts at or
           // right of the previous text's left edge (a hanging indent).
-          const first = lines[groups[groups.length - 1][0]];
-          if (prevMarker) startNew = false;
-          else {
+          const group = groups[groups.length - 1];
+          const first = lines[group[0]];
+          if (prevMarker) {
+            // Inside a list item, whose first line is the marker's. Its
+            // wrapped lines line up with one another, past the marker; a
+            // line that steps back left of them stands where the marker
+            // did and is not more of the item but what follows the list,
+            // which would otherwise be read as part of the last item.
+            // Until a second line sets that edge there is nothing to tell
+            // one from the other, and the line is the item's.
+            const wrapped = group.length > 1 ? lines[group[1]] : null;
+            startNew = wrapped !== null && line.box.x < wrapped.box.x - 0.9 * unit;
+          } else {
             startNew =
               Math.abs(line.box.x - first.box.x) > 0.9 * unit && line.box.x < first.box.x;
           }

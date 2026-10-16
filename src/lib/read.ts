@@ -365,6 +365,10 @@ interface Run {
   lead: boolean;
   trail: boolean;
   box: Box;
+  /** Where the run sits, as against where its ink reaches: the y its
+   *  glyphs stand on. Two runs of one line share it however tall either
+   *  one's ink is. */
+  base: number;
   size: number;
   bold: boolean;
   italic: boolean;
@@ -374,6 +378,11 @@ interface Run {
 /** Runs whose vertical middles fall in one another's span, with at least
  *  this much of a run's height in the overlap, share a baseline. */
 const BASELINE_OVERLAP = 0.5;
+/** How far off a band's baseline a run may stand and still be of its line
+ *  (× the smaller of the two sizes): enough for a superscript or a
+ *  subscript, which is set small and shifted by a third of the body's
+ *  size, and not enough for the line above or below. */
+const BASELINE_SHIFT = 0.8;
 /** Runs closer than this (× the taller one's height) are one line... */
 const JOIN_GAP_RATIO = 0.6;
 /** ...and after a list marker, this much: the gap behind a bullet is wide. */
@@ -480,27 +489,55 @@ async function readRuns(page: PDFPageProxy): Promise<Run[]> {
     const raw = item.str.replace(/\s+/g, " ");
     if (!raw.trim()) continue;
     const [a, b, c, d, e, f] = item.transform as Matrix;
-    const size = item.height;
-    if (!(size > 0)) continue;
     const style = content.styles[item.fontName];
+    // pdf.js reports a vertical font's two fields the other way round:
+    // `width` is the size the glyphs are set at and `height` is how far
+    // the run runs, which for these is down the page. Read the wrong way
+    // round, a column of tategaki comes out as one run a fraction of a
+    // point wide and as tall as the column, and that length -- taken for
+    // a font size -- is the size most of the page's characters are set
+    // in, so nothing on the page is a heading and every column is a
+    // sliver. Read the right way round the page is still read across
+    // rather than down, which is wrong, but it is wrong in a way a person
+    // can see and work with.
+    const vertical = !!style?.vertical;
+    const size = vertical ? item.width : item.height;
+    if (!(size > 0)) continue;
     const ascent = style?.ascent > 0 ? style.ascent : 0.9;
     const descent = style?.descent < 0 ? style.descent : -0.21;
     const face = styleOf(item.fontName);
     const text = glyphOf(raw.trim(), face.font);
-    const [bottom, top] = inkOf(text, face.font, size, ascent, descent);
-    // The run in its own frame: `width` along the text's x-axis, its ink
-    // along its y-axis, both axes as `transform` lays them, and its length
-    // is the font size.
+    // The run in its own frame, on the two axes `transform` lays down,
+    // each divided by its own length to take a step along it.
+    //
+    // The two are the same length only while the type is set at its
+    // natural width. `Tz` -- condensed or stretched type, which a word
+    // processor sets to justify a line and a designer to fit a heading --
+    // makes the x axis shorter or longer than the y. `item.width` is
+    // already in terms of the x axis, so dividing it by the y axis's
+    // length would count `Tz` twice and draw every run of such a line at
+    // the wrong width.
+    const tall = Math.hypot(c, d) || size;
+    const wide = Math.hypot(a, b) || tall;
     const at = (t: number, y: number): [number, number] => {
       const [vx, vy] = viewport.convertToViewportPoint(
-        e + (t * a) / size + (y * c) / size,
-        f + (t * b) / size + (y * d) / size,
+        e + (t * a) / wide + (y * c) / tall,
+        f + (t * b) / wide + (y * d) / tall,
       ) as [number, number];
       return [vx, vy];
     };
-    const w = item.width;
-    const box = around([at(0, bottom), at(w, bottom), at(0, top), at(w, top)]);
-    runs.push({ text, lead: raw.startsWith(" "), trail: raw.endsWith(" "), box, size, ...face });
+    // Along the x axis for a horizontal run, as far as its ink reaches up
+    // and down; along the y axis for a vertical one, which advances the
+    // way y falls, across the em the glyphs are centered on.
+    const box = vertical
+      ? around([at(-size / 2, 0), at(size / 2, 0), at(-size / 2, -item.height), at(size / 2, -item.height)])
+      : (() => {
+          const [bottom, top] = inkOf(text, face.font, size, ascent, descent);
+          const w = item.width;
+          return around([at(0, bottom), at(w, bottom), at(0, top), at(w, top)]);
+        })();
+    const base = at(0, 0)[1];
+    runs.push({ text, lead: raw.startsWith(" "), trail: raw.endsWith(" "), box, base, size, ...face });
   }
   return runs;
 }
@@ -519,18 +556,33 @@ function oneBaseline(span: [number, number], box: Box): boolean {
   return inside(span, run) || inside(run, span);
 }
 
-/** Runs on one baseline, top to bottom. */
+/** Runs on one baseline, top to bottom.
+ *
+ * Ink alone does not say which line a run is of: a drop cap, a tall
+ * bracket or a big integral reaches over the lines beside it, and its
+ * middle falls among them, so by ink it shares a baseline with two lines
+ * at once and would draw them into one -- their words interleaved, since
+ * `neighbors` then sorts both lines' runs by x together. Where it stands
+ * does say: whatever its ink does, a run of a line stands on that line.
+ * So the ink test decides, and the baseline has a veto. */
 function baselines(runs: Run[]): Run[][] {
   const bands: Run[][] = [];
   let span: [number, number] = [0, 0];
+  let base = 0;
+  let size = 0;
   for (const run of [...runs].sort((p, q) => p.box.y - q.box.y || p.box.x - q.box.x)) {
     const { y, h } = run.box;
-    if (bands.length && oneBaseline(span, run.box)) {
+    const stands = Math.abs(run.base - base) <= BASELINE_SHIFT * Math.min(run.size, size);
+    if (bands.length && stands && oneBaseline(span, run.box)) {
       bands[bands.length - 1].push(run);
       span = [Math.min(span[0], y), Math.max(span[1], y + h)];
+      // The band stands where its plainest run does: a superscript joins
+      // the line, and the line does not move up to meet the next one.
+      if (run.size > size) [base, size] = [run.base, run.size];
     } else {
       bands.push([run]);
       span = [y, y + h];
+      [base, size] = [run.base, run.size];
     }
   }
   return bands;
@@ -633,14 +685,17 @@ async function readLinks(page: PDFPageProxy): Promise<{ box: Box; url: string }[
 
 /** Mark each line a link covers with where it points. The first link that
  *  covers a line wins -- two links on one line is a line this reader does
- *  not split. */
+ *  not split. Each overlap is clamped at zero before they are multiplied:
+ *  two boxes apart on both axes have two negative overlaps, whose product
+ *  would pass for an area. */
 function markLinks(lines: Line[], links: { box: Box; url: string }[]): void {
   if (links.length === 0) return;
   for (const line of lines) {
     const area = line.box.w * line.box.h;
     if (area <= 0) continue;
     for (const { box, url } of links) {
-      if (overlapX(box, line.box) * overlapY(box, line.box) >= LINK_COVER * area) {
+      const shared = Math.max(0, overlapX(box, line.box)) * Math.max(0, overlapY(box, line.box));
+      if (shared >= LINK_COVER * area) {
         line.href = url;
         break;
       }

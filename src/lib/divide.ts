@@ -38,8 +38,11 @@ export function wordsOf(block: Block, page: Page): Word[] {
     const line = page.lines[li];
     if (!line) return;
     const text = line.text;
-    // Where the words start: after the marker, on the first line.
-    let at = k === 0 ? Math.max(0, text.indexOf(markerOf(text).rest)) : 0;
+    // Where the words start: after the marker, on the first line. The
+    // marker is a prefix of the line, so its length is where the rest
+    // begins -- not where the rest is first found, which for `1. 1 cup`
+    // is the marker itself.
+    let at = k === 0 ? markerOf(text).marker.length : 0;
     const per = text.length ? line.box.w / text.length : 0;
     for (const word of text.slice(at).split(/\s+/).filter(Boolean)) {
       const start = text.indexOf(word, at);

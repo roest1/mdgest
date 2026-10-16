@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isJunk, isManifest, isPdf, isZip } from "src/lib/upload";
-import { messageOf } from "src/lib/words";
+import { few, messageOf } from "src/lib/words";
 
 /** What a drop keeps, by the policy in src/lib/upload.ts. Everything else in
  * a drop is dropped. The `<input accept>` string names the same types so the
@@ -41,9 +41,7 @@ const EMPTY: Record<Source, string | null> = {
 
 /** What a drop could not read, said briefly: a few paths and a count. */
 function unreadable(paths: string[]): string {
-  const shown = paths.slice(0, 3).join(", ");
-  const more = paths.length > 3 ? ` and ${paths.length - 3} more` : "";
-  return `Could not read ${shown}${more}.`;
+  return `Could not read ${few(paths)}.`;
 }
 
 interface DropZoneState {

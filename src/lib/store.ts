@@ -9,6 +9,19 @@ import type { Analysis } from "./analysis";
 import type { Edits } from "./edits";
 import type { Markdown } from "./emit";
 
+/** Anything the editor keys by document id, made without a prototype the
+ *  way a manifest is (`workspace.ts`, `Manifest`). An id is a file name and
+ *  `__proto__` is a legal one: on a plain object, writing that key replaces
+ *  the object's prototype instead of adding an entry, and reading
+ *  `constructor` finds what every object inherits. With no prototype every
+ *  id is an ordinary key, for reads, writes and `in`. */
+export type ById<T> = Record<string, T>;
+
+/** A copy of `from` keyed by document id, or an empty one. */
+export function byId<T>(from?: ById<T>): ById<T> {
+  return Object.assign(Object.create(null) as ById<T>, from);
+}
+
 /** How the markdown pane shows its document: typeset, or as source. */
 export type View = "rendered" | "raw";
 
@@ -58,6 +71,15 @@ export interface Selection {
   from: Side;
 }
 
+/** A block being divided, and where its cuts stand: `cuts` holds the
+ *  word each one goes before, in order, as `divide.ts` counts the
+ *  block's words. */
+export interface Dividing {
+  docId: string;
+  id: string;
+  cuts: number[];
+}
+
 /** The keys held while clicking: shift extends a range from the anchor,
  *  ctrl or cmd toggles the one block. */
 export interface Modifiers {
@@ -101,31 +123,40 @@ interface Editor {
   tour: number | null;
   setTour: (step: number | null) => void;
 
-  readings: Record<string, Reading>;
+  readings: ById<Reading>;
   /** Set, or with undefined forget, a document's reading. */
   setReading: (docId: string, reading: Reading | undefined) => void;
   /** How many times each document has been sent back to be read again --
    *  by a revert -- since the page loaded. The page pane reads it once
    *  more whenever this moves. */
-  rereads: Record<string, number>;
+  rereads: ById<number>;
   reread: (docId: string) => void;
 
   /** Which documents are done, for the explorer. A document's own reading
    *  carries the same in its edits; this is the workspace's list. */
-  done: Record<string, boolean>;
+  done: ById<boolean>;
   setDone: (docId: string, done: boolean) => void;
 
   selection: Selection | null;
-  /** The block being divided on the page: the one selected, while its cut
-   *  cursor is out. Any change of selection puts the cursor away. */
-  dividing: { docId: string; id: string } | null;
-  setDividing: (dividing: { docId: string; id: string } | null) => void;
+  /** The block being divided on the page -- the one selected, while its
+   *  cut cursor is out -- and the cuts placed in it so far. Any change of
+   *  selection puts the cursor away.
+   *
+   * The cuts are held here rather than in the cursor because the pages
+   * pane draws only what is near the view: scrolling the block a screen
+   * away takes the cursor down, and what a person has placed in it has to
+   * outlive that and be there when they scroll back. */
+  dividing: Dividing | null;
+  setDividing: (dividing: Dividing | null) => void;
+  /** A cut placed before word `k` of the block being divided, or taken
+   *  away again when one is already there. */
+  toggleCut: (k: number) => void;
   /** Each document whose markdown is open as a draft: the text written so
    *  far and the source it was opened on. Kept here, not in the pane, so a
    *  draft outlives a switch to another document. Until it is applied or
    *  cancelled nothing else edits that document: the draft is applied to
    *  the edits it was made from. */
-  drafts: Record<string, Draft>;
+  drafts: ById<Draft>;
   setDraft: (docId: string, draft: Draft | null) => void;
   /** Click on block `id` of `docId` in the pane `from`. */
   pick: (docId: string, id: string, modifiers: Modifiers, from: Side) => void;
@@ -142,27 +173,44 @@ export const useEditor = create<Editor>((set, get) => ({
   tour: null,
   setTour: (tour) => set({ tour }),
 
-  readings: {},
+  readings: byId(),
   setReading: (docId, reading) =>
     set((s) => {
-      const readings = { ...s.readings };
+      const readings = byId(s.readings);
       if (reading) readings[docId] = reading;
       else delete readings[docId];
       return { readings };
     }),
-  rereads: {},
-  reread: (docId) => set((s) => ({ rereads: { ...s.rereads, [docId]: (s.rereads[docId] ?? 0) + 1 } })),
+  rereads: byId(),
+  reread: (docId) =>
+    set((s) => {
+      const rereads = byId(s.rereads);
+      rereads[docId] = (rereads[docId] ?? 0) + 1;
+      return { rereads };
+    }),
 
-  done: {},
-  setDone: (docId, done) => set((s) => ({ done: { ...s.done, [docId]: done } })),
+  done: byId(),
+  setDone: (docId, done) =>
+    set((s) => {
+      const marks = byId(s.done);
+      marks[docId] = done;
+      return { done: marks };
+    }),
 
   selection: null,
   dividing: null,
   setDividing: (dividing) => set({ dividing }),
-  drafts: {},
+  toggleCut: (k) =>
+    set((s) => {
+      if (!s.dividing) return {};
+      const had = s.dividing.cuts;
+      const cuts = had.includes(k) ? had.filter((x) => x !== k) : [...had, k].sort((a, b) => a - b);
+      return { dividing: { ...s.dividing, cuts } };
+    }),
+  drafts: byId(),
   setDraft: (docId, draft) =>
     set((s) => {
-      const drafts = { ...s.drafts };
+      const drafts = byId(s.drafts);
       if (draft) drafts[docId] = draft;
       else delete drafts[docId];
       return { drafts };

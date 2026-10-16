@@ -16,7 +16,7 @@ import { redoEdit, undoEdit } from "src/lib/editing";
 import { engine } from "src/lib/engine";
 // For its listener alone: it is what keeps every glint on one clock.
 import "src/lib/glint";
-import { useEditor } from "src/lib/store";
+import { byId, useEditor } from "src/lib/store";
 import { TOUR_DOC } from "src/lib/tour-doc";
 import type { Entry } from "src/lib/tree";
 import { messageOf } from "src/lib/words";
@@ -66,9 +66,11 @@ function Explorer({ docId }: { docId: string }) {
       (ids) => {
         if (!live || ids.length === 0) return;
         // One update for the lot, not a re-render per checked document.
-        useEditor.setState((s) => ({
-          done: { ...s.done, ...Object.fromEntries(ids.map((id) => [id, true])) },
-        }));
+        useEditor.setState((s) => {
+          const done = byId(s.done);
+          for (const id of ids) done[id] = true;
+          return { done };
+        });
       },
       () => {},
     );

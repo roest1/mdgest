@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from "vitest";
 import { ANALYSIS_FORMAT, READER, type Analysis, type Block, type Line } from "src/lib/analysis";
-import { diffLines } from "src/lib/diff";
+import { diffLines, editDistance } from "src/lib/diff";
 import { applyDraft } from "src/lib/draft";
 import { addInsert, blankEdits, setFurniture, undo, type Edits } from "src/lib/edits";
 import { emit } from "src/lib/emit";
@@ -55,6 +55,38 @@ function ok(r: ReturnType<typeof edit>) {
   return r;
 }
 const text = (edits: Edits) => emit(read, "a/", edits).text;
+
+describe("editDistance", () => {
+  /** The plain table, a cell at a time: what the bit-parallel count must equal. */
+  function slow(x: string, y: string): number {
+    let row = Array.from({ length: y.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= x.length; i++) {
+      const next = [i];
+      for (let j = 1; j <= y.length; j++) {
+        next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (x[i - 1] === y[j - 1] ? 0 : 1));
+      }
+      row = next;
+    }
+    return row[y.length];
+  }
+
+  test("counts the same edits as the plain table, across block boundaries", () => {
+    let seed = 7;
+    const rnd = (n: number) => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed % n;
+    };
+    const str = (len: number, alpha: number) => Array.from({ length: len }, () => String.fromCharCode(97 + rnd(alpha))).join("");
+    for (let t = 0; t < 600; t++) {
+      const len = [0, 1, 31, 32, 33, 63, 64, 65, 100, 300][rnd(10)];
+      const x = str(rnd(len + 1), 1 + rnd(4));
+      const y = rnd(2) ? str(rnd(len + 1), 1 + rnd(4)) : x.slice(0, rnd(x.length + 1)) + str(rnd(5), 3) + x.slice(rnd(x.length + 1));
+      expect(editDistance(x, y), `${JSON.stringify(x)} vs ${JSON.stringify(y)}`).toBe(slow(x, y));
+    }
+    expect(editDistance("kitten", "sitting")).toBe(3);
+    expect(editDistance("", "abc")).toBe(3);
+  });
+});
 
 describe("diffLines", () => {
   test("finds each changed run between matched lines", () => {
@@ -243,6 +275,75 @@ describe("what the review found", () => {
     expect(r.inserted).toEqual([]);
   });
 
+  test("text added on both sides of the rule between pages is two inserts, each on its page", () => {
+    const a = doc();
+    const two: Analysis = {
+      ...a,
+      pages: [a.pages[0], { ...a.pages[0], n: 2, blocks: a.pages[0].blocks.map((b) => ({ ...b, id: b.id.replace("p1", "p2"), page: 2 })) }],
+    };
+    const r = on(two, blankEdits(), (s) =>
+      s.replace("Third one.\n\n---\n\n# Title", "Third one.\nNEW ON ONE\n\n---\n\nNEW ON TWO\n# Title"),
+    );
+    expect(r.edits.inserts).toEqual([
+      { id: expect.any(String), page: 1, after: "p1b3", text: "NEW ON ONE" },
+      { id: expect.any(String), page: 2, after: null, text: "NEW ON TWO" },
+    ]);
+    expect(emit(two, "a/", r.edits).text).toContain("Third one.\n\nNEW ON ONE\n\n---\n\nNEW ON TWO\n\n# Title");
+  });
+
+  test("text added after the rule, past a block rewritten before it, is on the later page", () => {
+    const a = doc();
+    const two: Analysis = {
+      ...a,
+      pages: [a.pages[0], { ...a.pages[0], n: 2, blocks: a.pages[0].blocks.map((b) => ({ ...b, id: b.id.replace("p1", "p2"), page: 2 })) }],
+    };
+    const r = on(two, blankEdits(), (s) => s.replace("Third one.\n\n---\n\n# Title", "Third one, edited.\n\n---\n\nNEW ON TWO\n# Title"));
+    expect(r.edits.blocks.p1b3?.text).toBe("Third one, edited.");
+    expect(r.edits.inserts).toEqual([{ id: expect.any(String), page: 2, after: null, text: "NEW ON TWO" }]);
+  });
+
+  test("inserted text ending in `---` is not taken for the rule between pages", () => {
+    const a = doc();
+    const two: Analysis = {
+      ...a,
+      pages: [a.pages[0], { ...a.pages[0], n: 2, blocks: a.pages[0].blocks.map((b) => ({ ...b, id: b.id.replace("p1", "p2"), page: 2 })) }],
+    };
+    const withInsert = addInsert(blankEdits(), 1, "p1b3", "Note\n\n---");
+    const md = emit(two, "a/", withInsert);
+    expect(md.text).toContain("Third one.\n\nNote\n\n---\n\n---\n\n# Title");
+    expect(md.lines.filter((l) => l.block === "i1").map((l) => l.page)).toEqual([1, 1, 1]);
+    const r = ok(applyDraft(two, withInsert, md, md.text.replace("---\n\n---\n\n# Title", "---\n\n---\n\nNEW\n# Title")));
+    expect(r.edits.inserts).toEqual([
+      { id: "i1", page: 1, after: "p1b3", text: "Note\n\n---" },
+      { id: expect.any(String), page: 2, after: null, text: "NEW" },
+    ]);
+    expect(emit(two, "a/", r.edits).text).toContain("Note\n\n---\n\n---\n\nNEW\n\n# Title");
+  });
+
+  test("paragraphs written on both sides of an unchanged blank line are one insert", () => {
+    const r = on(read, blankEdits(), (s) =>
+      s.replace("First paragraph here.\n\nSecond", "First paragraph here.\nA.\n\nB.\nSecond"),
+    );
+    expect(r.edits.inserts).toEqual([{ id: "i1", page: 1, after: "p1b1", text: "A.\n\nB." }]);
+    expect(r.inserted).toEqual(["A.\n\nB."]);
+  });
+
+  test("a break inside a page is not the rule between pages", () => {
+    const r = on(read, { ...blankEdits(), blocks: { p1b2: { break_after: "page" } } }, (s) =>
+      s.replace("Second paragraph here.\n\n---\n\nThird one.", "Second paragraph here.\n\n---\n\nNEW\nThird one."),
+    );
+    expect(r.edits.inserts).toEqual([{ id: expect.any(String), page: 1, after: "p1b2", text: "NEW" }]);
+  });
+
+  test("every block of a long run reworded is every block corrected", () => {
+    const texts = Array.from({ length: 300 }, (_, i) => `Paragraph ${i} says a few words about pump ${i % 7} and gasket ${i % 5}.`);
+    const long = page(texts.map((t) => [t, "para"]));
+    const r = on(long, blankEdits(), (s) => s.replaceAll(".\n", ", revised.\n"));
+    expect(r.corrected).toHaveLength(300);
+    expect(r.inserted).toEqual([]);
+    expect(r.deleted).toEqual([]);
+  });
+
   test("a corrected block is not joined: its words would be lost", () => {
     const corrected = { ...blankEdits(), blocks: { p1b2: { text: "Second paragraph, here." } } };
     const r = on(read, corrected, (s) => s.replace("First paragraph here.\n\nSecond paragraph, here.", "First paragraph here. Second paragraph, here."));
@@ -261,6 +362,28 @@ describe("what the review found", () => {
     const withInsert = addInsert(blankEdits(), 1, "p1b1", "line one\nline two");
     const r = on(read, withInsert, (s) => s.replace("line one\nline two", "line one\nMIDDLE\nline two"));
     expect(r.edits.inserts).toEqual([{ id: "i1", page: 1, after: "p1b1", text: "line one\nMIDDLE\nline two" }]);
+  });
+
+  test("text written above inserted text comes back above it", () => {
+    const withInsert = addInsert(blankEdits(), 1, "p1b1", "EXISTING");
+    const r = on(read, withInsert, (s) => s.replace("EXISTING", "BRAND NEW\n\nEXISTING"));
+    expect(r.edits.inserts?.map((i) => i.text)).toEqual(["BRAND NEW", "EXISTING"]);
+    const out = emit(read, "a/", r.edits).text;
+    expect(out).toContain("BRAND NEW\n\nEXISTING");
+  });
+
+  test("text written below inserted text comes back below it", () => {
+    const withInsert = addInsert(blankEdits(), 1, "p1b1", "EXISTING");
+    const r = on(read, withInsert, (s) => s.replace("EXISTING", "EXISTING\n\nBRAND NEW"));
+    expect(r.edits.inserts?.map((i) => i.text)).toEqual(["EXISTING", "BRAND NEW"]);
+    expect(emit(read, "a/", r.edits).text).toContain("EXISTING\n\nBRAND NEW");
+  });
+
+  test("text written around inserted text keeps the order it was written in", () => {
+    const withInsert = addInsert(blankEdits(), 1, "p1b1", "MIDDLE");
+    const r = on(read, withInsert, (s) => s.replace("MIDDLE", "TOP\n\nMIDDLE\n\nBOTTOM"));
+    expect(r.edits.inserts?.map((i) => i.text)).toEqual(["TOP", "MIDDLE", "BOTTOM"]);
+    expect(emit(read, "a/", r.edits).text).toContain("TOP\n\nMIDDLE\n\nBOTTOM");
   });
 
   test("a page number hidden by the setting is left alone, and its line refused", () => {

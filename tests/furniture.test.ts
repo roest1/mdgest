@@ -53,9 +53,32 @@ describe("label", () => {
     ["p. 7", "7"],
   ])("%s prints %s", (text, n) => expect(label(text)).toBe(n));
 
-  test.each(["civil", "did", "mill", "Chapter 3", "12 apples"])("%s is not one", (text) =>
-    expect(label(text)).toBeNull(),
-  );
+  test.each([
+    ["xii", "xii"],
+    ["xl", "xl"],
+    ["lxxxix", "lxxxix"],
+    ["iv of xx", "iv"],
+  ])("%s prints %s", (text, n) => expect(label(text)).toBe(n));
+
+  // Each of these is a well-formed numeral of the full range, and none is
+  // a number a page bears: a margin line printing one is a word.
+  test.each([
+    "civil",
+    "did",
+    "mill",
+    "Chapter 3",
+    "12 apples",
+    "MIX",
+    "DIV",
+    "CIV",
+    "MI",
+    "DI",
+    "CI",
+    "D.",
+    "M",
+    "C",
+    "D",
+  ])("%s is not one", (text) => expect(label(text)).toBeNull());
 });
 
 describe("page numbers", () => {

@@ -26,6 +26,9 @@ const FONTS: Record<Face, StandardFonts> = {
 export interface Style {
   size?: number;
   face?: Face;
+  /** Points above the baseline the run is set on, as `Ts` raises a
+   *  superscript. Negative for a subscript. */
+  rise?: number;
 }
 
 type Op =
@@ -48,7 +51,7 @@ export class Pen {
 
   /** One run of text, baseline at `y`. Returns `y`, for chaining. */
   text(x: number, y: number, text: string, style: Style = {}): number {
-    this.ops.push({ kind: "text", x, y, text, size: style.size ?? BODY, face: style.face ?? "regular" });
+    this.ops.push({ kind: "text", x, y: y - (style.rise ?? 0), text, size: style.size ?? BODY, face: style.face ?? "regular" });
     return y;
   }
 
@@ -57,7 +60,14 @@ export class Pen {
   then(gap: number, text: string, style: Style = {}): void {
     const last = this.ops.findLast((op) => op.kind === "text");
     if (!last) throw new Error("`then` needs a run before it");
-    this.ops.push({ kind: "text", x: { gap }, y: last.y, text, size: style.size ?? BODY, face: style.face ?? "regular" });
+    this.ops.push({
+      kind: "text",
+      x: { gap },
+      y: last.y - (style.rise ?? 0),
+      text,
+      size: style.size ?? BODY,
+      face: style.face ?? "regular",
+    });
   }
 
   /** Lines stacked `leading` apart, the first baseline at `y`. Returns the

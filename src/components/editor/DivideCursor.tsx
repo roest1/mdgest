@@ -8,6 +8,9 @@ import { useEditor } from "src/lib/store";
 /** Around the block, as the page draws its box. */
 const INSET = { x: 3, y: 2 };
 
+/** No cuts placed: one array, so reading them never makes a new one. */
+const NO_CUTS: number[] = [];
+
 /** A place a cut can go: before word `k`, drawn as a caret at `x` down the
  *  height of the line that word is on. */
 interface Gap {
@@ -42,6 +45,10 @@ function gapsOf(words: Word[], from: number, to: number, lineBox: (line: number)
 export function DivideCursor({ docId, block, scale }: { docId: string; block: Block; scale: number }) {
   const reading = useEditor((s) => s.readings[docId]);
   const setDividing = useEditor((s) => s.setDividing);
+  const toggleCut = useEditor((s) => s.toggleCut);
+  // Held in the store, so scrolling the block out of the pages pane --
+  // which takes this cursor down with it -- does not lose what was placed.
+  const cuts = useEditor((s) => s.dividing?.cuts) ?? NO_CUTS;
   const ready = reading?.status === "ready" ? reading : null;
 
   // The whole block as the reader made it, and which of its words this
@@ -58,7 +65,6 @@ export function DivideCursor({ docId, block, scale }: { docId: string; block: Bl
     [words, from, to, page],
   );
 
-  const [cuts, setCuts] = useState<Set<number>>(() => new Set());
   const [hover, setHover] = useState<Gap | null>(null);
 
   const cancel = () => setDividing(null);
@@ -66,14 +72,17 @@ export function DivideCursor({ docId, block, scale }: { docId: string; block: Bl
     // The block's cuts outside this piece stay; inside it, the ones placed.
     const keep = had.filter((k) => k <= from || k >= to);
     setDividing(null);
-    if (cuts.size) divideBlock(docId, source, cleanCuts([...keep, ...cuts], words.length));
+    if (cuts.length) divideBlock(docId, source, cleanCuts([...keep, ...cuts], words.length));
   };
 
   // Enter and Escape are the cursor's while it is out: Escape here cancels
-  // the divide and not the selection under it.
+  // the divide and not the selection under it. Not a field's, though --
+  // the page number's input keeps its own Enter and Escape.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Enter" && e.key !== "Escape") return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
       e.preventDefault();
       e.stopImmediatePropagation();
       if (e.key === "Enter") ok();
@@ -90,7 +99,7 @@ export function DivideCursor({ docId, block, scale }: { docId: string; block: Bl
   const top = box.y * scale - INSET.y;
   const toLocal = (e: MouseEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
-    return { x: (e.clientX - r.left + INSET.x) / scale + box.x, y: (e.clientY - r.top + INSET.y) / scale + box.y };
+    return { x: (e.clientX - r.left - INSET.x) / scale + box.x, y: (e.clientY - r.top - INSET.y) / scale + box.y };
   };
   // The gap nearest the pointer: on the line under it first, then across.
   const nearest = (p: { x: number; y: number }) => {
@@ -127,16 +136,11 @@ export function DivideCursor({ docId, block, scale }: { docId: string; block: Bl
           e.stopPropagation();
           const g = nearest(toLocal(e));
           if (!g) return;
-          setCuts((was) => {
-            const next = new Set(was);
-            if (next.has(g.k)) next.delete(g.k);
-            else next.add(g.k);
-            return next;
-          });
+          toggleCut(g.k);
         }}
       >
-        {gaps.filter((g) => cuts.has(g.k)).map((g) => caret(g, true))}
-        {hover && !cuts.has(hover.k) && caret(hover, false)}
+        {gaps.filter((g) => cuts.includes(g.k)).map((g) => caret(g, true))}
+        {hover && !cuts.includes(hover.k) && caret(hover, false)}
       </div>
       {/* Above the box's top right, where the eye ends a line of cuts. */}
       <div
@@ -146,7 +150,7 @@ export function DivideCursor({ docId, block, scale }: { docId: string; block: Bl
       >
         <span className="mr-1 flex items-center gap-1 rounded bg-chrome/90 px-1.5 py-0.5 font-mono text-[11px] text-muted">
           <Scissors className="h-3 w-3" />
-          {cuts.size === 0 ? "click between words" : `${cuts.size + 1} pieces`}
+          {cuts.length === 0 ? "click between words" : `${cuts.length + 1} pieces`}
         </span>
         <button
           type="button"
@@ -159,7 +163,7 @@ export function DivideCursor({ docId, block, scale }: { docId: string; block: Bl
         <button
           type="button"
           title="Divide at these cuts (Enter)"
-          disabled={cuts.size === 0}
+          disabled={cuts.length === 0}
           onClick={ok}
           className="flex cursor-pointer items-center gap-1 rounded bg-brand px-2 py-0.5 text-xs font-medium text-white
             disabled:cursor-default disabled:opacity-40"

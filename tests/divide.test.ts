@@ -68,6 +68,15 @@ describe("words", () => {
     expect(words[0].x0).toBe(100);
     expect(words[1].x0).toBeGreaterThan(words[0].x1);
   });
+
+  test("the marker is not a word, even when the words after it begin like it", () => {
+    // A dashed rule reads as a bullet and the dashes after it: found by
+    // their text, those start at the line's start, marker and all.
+    const printed = line("- - - - -", 100);
+    const page = { n: 1, width: 600, height: 800, lines: [printed], pictures: [], blocks: [] };
+    const item: Block = { ...nav, id: "p1b9", lines: [0], text: "- - - -", role: "bullet", marker: "-" };
+    expect(wordsOf(item, page).map((w) => w.text)).toEqual(["-", "-", "-", "-"]);
+  });
 });
 
 describe("pieces", () => {

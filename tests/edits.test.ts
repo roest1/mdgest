@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from "vitest";
 import { ANALYSIS_FORMAT, READER, type Analysis, type Block, type Role } from "src/lib/analysis";
-import { apply, blankEdits, checkEdits, type BlockEdit, type Edits } from "src/lib/edits";
+import { apply, blankEdits, checkEdits, join, undo, unjoin, type BlockEdit, type Edits } from "src/lib/edits";
 import { emit } from "src/lib/emit";
 import { assess, entryFor } from "src/lib/exchange";
 
@@ -132,5 +132,39 @@ describe("version 1", () => {
     expect(entry.edits).toMatchObject({ version: 2 });
     const { edits } = await assess(entry);
     expect(edits?.blocks.p1b1).toEqual({ hidden: true });
+  });
+});
+
+describe("unjoin", () => {
+  test("a correction written over a joined block comes off with the join", () => {
+    const read = analysis([block("p1b0", "A words"), block("p1b1", "B words")]);
+    const joined = join(blankEdits(), ["p1b0", "p1b1"]);
+    // Corrected after the join, as a correction on a head can only be: the
+    // group's words, reworded.
+    const corrected: Edits = { ...joined, blocks: { p1b0: { text: "A words B words-fixed" } } };
+    expect(emit(read, "a/", corrected).text).toBe("A words B words-fixed\n");
+    const apart = unjoin(corrected, ["p1b0"]);
+    expect(apart.joins).toEqual({});
+    expect(apart.blocks.p1b0).toBeUndefined();
+    expect(emit(read, "a/", apart).text).toBe("A words\n\nB words\n");
+    expect(undo(apart).blocks.p1b0?.text).toBe("A words B words-fixed");
+  });
+});
+
+describe("checkEdits", () => {
+  test("an undo or redo step that cannot be put back is left out", () => {
+    const edits = checkEdits(
+      {
+        version: 2,
+        blocks: {},
+        joins: {},
+        undo: [{}, { blocks: { p1b1: { bold: true } } }, { blocks: { p1b1: { role: "nope" } } }, "step"],
+        redo: [null, { blocks: { p1b2: { deleted: true } }, cuts: { p1b2: [0] } }],
+      },
+      "its edits.json",
+    );
+    expect(edits.undo).toEqual([{ blocks: { p1b1: { bold: true } } }]);
+    expect(edits.redo).toEqual([]);
+    expect(undo(edits).blocks).toEqual({ p1b1: { bold: true } });
   });
 });

@@ -362,4 +362,20 @@ export const lists: Case[] = [
     ],
     markdown: [...md(2, true), "", prose(1)[0], "", ...md(2, true, 2), ""].join("\n"),
   },
+  {
+    name: "lists-paragraph-set-tight-under-an-item",
+    about:
+      "A paragraph set tight under an item, at the marker's own left edge, is its own block: the item's wrapped lines line up past the marker, and this one steps back to it.",
+    pages: [
+      (pen) => {
+        pen.text(X, TOP, `• ${ITEMS[0]} with enough words to`);
+        pen.text(X + 14, TOP + LEADING, "wrap onto a second line");
+        pen.text(X, TOP + 2 * LEADING, prose(1)[0]);
+      },
+    ],
+    blocks: [
+      `bullet • ${ITEMS[0]} with enough words to wrap onto a second line`,
+      `p ${prose(1)[0]}`,
+    ],
+  },
 ];

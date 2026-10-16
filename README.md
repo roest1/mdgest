@@ -31,9 +31,10 @@ Upload any collection of pdfs:
 
 - all text from the pdf makes it into the markdown
 - every picture large enough to be a figure is written beside the markdown and
-  linked from it. Images below the figure thresholds — hairline rules, bullet
-  glyphs drawn as bitmaps, stretched one-pixel shims — are decoration, and are
-  left out on purpose (`src/lib/read.ts`).
+  linked from it.
+  - Images below the figure thresholds (hairline rules, bullet
+    glyphs drawn as bitmaps, stretched one-pixel shims) are decoration, and are
+    left out on purpose (`src/lib/read.ts`).
 
 Nothing is summarized, rewritten or dropped for being hard to place: a block the
 engine cannot make sense of comes out as a paragraph, where you can see it and
@@ -42,7 +43,7 @@ fix it.
 **Working today**
 
 - the conversion: pdf.js reads every line and picture, `structure.ts` makes
-  blocks in reading order and gives each a role, `emit.ts` writes the markdown.
+  blocks in reading order and gives each a role (heading, paragraph, bullet, etc.), `emit.ts` writes the markdown.
   The result is cached as `analysis.json` and written to `markdown/<doc>.md`
   with its figures beside it
 - review: every block boxed and numbered on the page, the same numbers beside
@@ -51,24 +52,24 @@ fix it.
 - editing: select blocks and set what they are from the floating toolbar —
   heading level or paragraph, list kind and depth, bold, italic, quote, a page
   break before or after, hide, delete, join, divide. Each edit is written to
-  `edits.json` as it is made, and the editor says *Autosaved in this browser ·
-  export to keep it* where a save button would be. Undo with `ctrl`+`z`, redo with
+  `edits.json` as it is made, and the editor says _Autosaved in this browser ·
+  export to keep it_ where a save button would be. Undo with `ctrl`+`z`, redo with
   `ctrl`+`shift`+`z` or `ctrl`+`y`, or revert to original to drop every edit
   and read the PDF again
 - mark done, which locks a document until it is reopened, and export, as a zip
-  or into a folder (*Exporting*, below)
+  or into a folder (_Exporting_, below)
 - a guided tour on a bundled two-page example, so none of this has to be learned
   on your own document
 
 **Not built yet** — in the order they matter
 
-|                              |                                                                                                                   |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| the rest of the editor       | drag to reorder                                                                                                   |
-| `rules.json`                 | what the engine learns from a folder's documents                                                                  |
-| tables                       | read as the lines they are printed as, not as a table                                                             |
-| math                         | read as the glyphs it is set in, not as `$…$`                                                                     |
-| rotate                       | a page's own rotation is applied, but a block cannot be turned by hand                                            |
+|                        |                                                                        |
+| ---------------------- | ---------------------------------------------------------------------- |
+| the rest of the editor | drag to reorder                                                        |
+| `rules.json`           | what the engine learns from a folder's documents                       |
+| tables                 | read as the lines they are printed as, not as a table                  |
+| math                   | read as the glyphs it is set in, not as `$…$`                          |
+| rotate                 | a page's own rotation is applied, but a block cannot be turned by hand |
 
 ### Review and edit
 
@@ -92,12 +93,12 @@ come:
   has no lettered or roman lists; the rendered view letters and numerals the
   levels back
 - **quote**: a block written as a blockquote, whatever it is
-- insert a paragraph of your own: write it in the markdown (*Editing the
-  markdown*, below). Indentation is a list's depth, and the indent buttons
+- insert a paragraph of your own: write it in the markdown (_Editing the
+  markdown_, below). Indentation is a list's depth, and the indent buttons
   show only for list items; space between blocks is a page break
 - `---` page breaks (before/after line). Today one is written between every page
 - **page numbers** and **repeated headers and footers**, each from the ⋮
-  beside *mark done*: keep them as text (the default), hide them as comments
+  beside _mark done_: keep them as text (the default), hide them as comments
   — a page number as `<!-- page 12 -->` — or delete them. Both are looked for
   only in the top and bottom 12% of the page. A page number is a line there
   that prints only a number: `12`, `iv`, `Page 12`, `12 of 40`. A header or
@@ -126,9 +127,9 @@ again on the spot. A document marked done is locked, so it is reopened first.
 The reader that turns a PDF into blocks is versioned, and every reading
 records the version that made it. A reading is kept once made, so a document
 read by an earlier version keeps that version's reading after mdgest's reader
-improves (*When the reader changes*, below).
-Reverting is how it gets the current one: it is not *back to the reading first
-made*, but a new reading by the current reader version. The button names both
+improves (_When the reader changes_, below).
+Reverting is how it gets the current one: it is not _back to the reading first
+made_, but a new reading by the current reader version. The button names both
 versions before it acts:
 
 - **edits to drop**: it asks first, and says which reader version made the
@@ -138,13 +139,13 @@ versions before it acts:
 - **no edits, read by the current reader version**: it is disabled. A new
   reading would be the same as the one there is
 
-**Editing the markdown.** *edit*, in the markdown pane's bar, opens the whole
+**Editing the markdown.** _edit_, in the markdown pane's bar, opens the whole
 markdown as text. Write in it as in any editor — across blocks, several
-changes at once — then *apply*, or *cancel* to leave it as it was. While it
+changes at once — then _apply_, or _cancel_ to leave it as it was. While it
 is open the rest of the editor waits, so what you wrote is applied to the
 document as it was when you opened it.
 
-On *apply* the text is matched to what it was, line by line, and every run
+On _apply_ the text is matched to what it was, line by line, and every run
 that changed is read through the blocks whose lines it covers — mdgest
 knows which block wrote each line, so no line is guessed at. Lines are
 paired with blocks by the words they share, not by where they sit:
@@ -159,21 +160,21 @@ paired with blocks by the words they share, not by where they sit:
 - a block's words changed — a typo, a broken `ﬁ` — are a **correction**:
   kept on the block beside the page's own words, which stay in the
   analysis. A corrected block is underlined in the raw view and edged on
-  the page, and *wording* in the toolbar puts the page's words back
+  the page, and _wording_ in the toolbar puts the page's words back
 - lines that are no block's — new paragraphs, or a block rewritten past
   recognition — are **inserted text**: written where you put them, tinted
   in the raw view, and marked as yours
 - a line a page-number or header/footer setting hides is that setting's:
-  changing it is refused, and the ⋮ beside *mark done* is where it changes
+  changing it is refused, and the ⋮ beside _mark done_ is where it changes
 
 Anything that changes what the page says — a correction, a deleted block,
-inserted text — is shown before it is made: *apply* lists each one, a
+inserted text — is shown before it is made: _apply_ lists each one, a
 correction word by word, and asks. A draft that only reshapes, joins or
 divides changes no word and applies at once. A draft is kept per document
 while you look at another, and closing the tab with one changed asks
 first.
 
-Everything one *apply* changes is one undo step. In an export, corrections
+Everything one _apply_ changes is one undo step. In an export, corrections
 are each block's `text` and inserted text is the document's `inserts`, so a
 person's words are always told apart from the page's.
 
@@ -334,8 +335,8 @@ reader is not wrong — its edits still apply — only not getting the newer
 reading, and the editor does not say so. The reader will still change —
 tables, math, and diagram edges each move blocks — but all of that lands
 before anyone else has work in mdgest, and once its thresholds are chosen it
-is meant to stop. A person who wants the newer reading has *Revert to
-original* (*Review and edit*, above), the one way to refresh a document's
+is meant to stop. A person who wants the newer reading has _Revert to
+original_ (_Review and edit_, above), the one way to refresh a document's
 reading as well as its edits. If the reader does change after people have work
 in it, their kept documents keep the old reading without being told — the
 case to revisit this for.
@@ -387,14 +388,14 @@ bun run dev          # http://127.0.0.1:2048, or set WEB_PORT
 no account, and no request to any other origin: what it fetches after the page
 loads — the editor, pdf.js's worker and data, the tour — is its own.
 
-|          |                                                                                                                                                   |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| build    | `vite` 8 (rolldown), `typescript` 7, `oxlint`                                                                                                     |
-| ui       | `react` 19, `react-router` 8, `tailwind` 4, `lucide-react` icons                                                                                  |
-| state    | `zustand` — one store for what both editor panes read                                                                                             |
-| pdf      | `pdfjs-dist` 6, with cmaps, standard fonts and the wasm fallback emitted as assets by a plugin in `vite.config.ts`                                |
-| markdown | `react-markdown` + `remark-gfm` for the rendered view                                                                                             |
-| archives | `fflate` — unzip on the way in, zip on the way out                                                                                                |
+|          |                                                                                                                                                |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| build    | `vite` 8 (rolldown), `typescript` 7, `oxlint`                                                                                                  |
+| ui       | `react` 19, `react-router` 8, `tailwind` 4, `lucide-react` icons                                                                               |
+| state    | `zustand` — one store for what both editor panes read                                                                                          |
+| pdf      | `pdfjs-dist` 6, with cmaps, standard fonts and the wasm fallback emitted as assets by a plugin in `vite.config.ts`                             |
+| markdown | `react-markdown` + `remark-gfm` for the rendered view                                                                                          |
+| archives | `fflate` — unzip on the way in, zip on the way out                                                                                             |
 | fonts    | Literata (serif), Geist Sans (ui), JetBrains Mono (code), Caveat (the tour's hand) — self-hosted via `@fontsource`, never a request off-origin |
 
 **pdf.js reads the PDF.** Every line with its box, size and weight, and every

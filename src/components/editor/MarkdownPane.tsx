@@ -131,7 +131,7 @@ export function MarkdownPane({ docId }: { docId: string }) {
   const root = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
-  useScrollSync(docId, markdown !== null, view, root, scroller, content);
+  useScrollSync(docId, markdown !== null, view, drafting, root, scroller, content);
 
   return (
     <div ref={root} className="flex h-full flex-col">
@@ -295,6 +295,7 @@ function useScrollSync(
   docId: string,
   ready: boolean,
   view: View,
+  drafting: boolean,
   root: React.RefObject<HTMLDivElement | null>,
   scroller: React.RefObject<HTMLDivElement | null>,
   content: React.RefObject<HTMLDivElement | null>,
@@ -323,7 +324,10 @@ function useScrollSync(
       ro.disconnect();
       detach();
     };
-  }, [docId, ready, view, root, scroller, content]);
+    // `drafting` is not read here: it is a dep because opening and
+    // closing a draft swaps the element `content` points at, and the
+    // observer below has to be put on the one standing now.
+  }, [docId, ready, view, drafting, root, scroller, content]);
 }
 
 /** What the revert button says it will do, naming reader versions: the

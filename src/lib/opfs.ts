@@ -106,16 +106,55 @@ async function fileAt(path: string[], create = false): Promise<FileSystemFileHan
  * `truncate(0)` before writing, not after: a sync handle writes at an offset
  * into whatever is already there, so overwriting a long file with a short one
  * would leave the tail of the old one behind and produce JSON that parses.
+ *
+ * Which is also why a write that fails partway would leave nothing at all.
+ * With `keep`, what was there is read first and put back when the write
+ * fails: an empty `edits.json` is not a document whose save failed but one
+ * whose decisions are gone, and an empty `mdgest.json` is a workspace that
+ * refuses every action and offers to discard itself. Off by default, for
+ * the sources: they are written once, they are far the largest thing here
+ * to hold a second copy of, and they are the one file still on the disk a
+ * person dropped them from.
  */
-export async function writeFile(path: string[], data: ArrayBuffer | Uint8Array): Promise<void> {
+export async function writeFile(
+  path: string[],
+  data: ArrayBuffer | Uint8Array,
+  { keep = false }: { keep?: boolean } = {},
+): Promise<void> {
   const handle = await fileAt(path, true);
   if (!handle) throw new Error(`cannot create ${path.join("/")}`);
   const access = await handle.createSyncAccessHandle();
+  let had: Uint8Array | null = null;
+  let emptied = false;
   try {
+    if (keep) {
+      const size = access.getSize();
+      if (size > 0) {
+        // Assigned only once the read is through: a `read` that throws
+        // leaves a buffer that is zeroes where it did not reach, and
+        // putting that back is the loss this is here to prevent.
+        const was = new Uint8Array(size);
+        access.read(was, { at: 0 });
+        had = was;
+      }
+    }
+    emptied = true;
     access.truncate(0);
     access.write(data instanceof Uint8Array ? data : new Uint8Array(data), { at: 0 });
     access.flush();
   } catch (cause) {
+    // What was there, back where it was. Best effort, on the handle already
+    // open: if this fails too the file is lost either way, and the error
+    // thrown below is still the one that says what happened.
+    if (had && emptied) {
+      try {
+        access.truncate(0);
+        access.write(had, { at: 0 });
+        access.flush();
+      } catch {
+        // Nothing further to try.
+      }
+    }
     // A full disk arrives as a bare DOMException carrying the browser's own
     // wording, and the drop zone renders a message verbatim to whoever is
     // standing there. Say what failed and what to do about it instead.
@@ -169,7 +208,7 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 export async function writeText(path: string[], text: string): Promise<void> {
-  await writeFile(path, enc.encode(text));
+  await writeFile(path, enc.encode(text), { keep: true });
 }
 
 export async function readText(path: string[]): Promise<string | null> {

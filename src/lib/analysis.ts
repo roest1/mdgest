@@ -19,7 +19,7 @@ export const ANALYSIS_FORMAT = 1;
  *  keyed to block positions, so edits made on one reader's blocks mean
  *  nothing on another's. An export carries each document's, and an import
  *  from another reader starts that document over. */
-export const READER = 2;
+export const READER = 3;
 
 /** The pdf.js `READER` was made with. pdf.js is part of the reader: an
  *  upgrade can change the text runs `read.ts` is given. A test fails when
