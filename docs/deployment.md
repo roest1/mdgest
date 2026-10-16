@@ -8,14 +8,16 @@ boundary the app has is inside one tab.
 ---
 config:
   look: neo
+  themeVariables:
+    fontSize: 24px
 ---
 flowchart LR
-    CF[("<b>Cloudflare Pages</b><br/>static files, no server<br/>every path &rarr; index.html")]
+    CF[("<b>Cloudflare Pages</b><br/><i>static files, no server</i>")]
 
-    subgraph TAB ["the visitor's browser &mdash; one tab, one origin, nothing leaves it"]
+    subgraph TAB ["the visitor's browser &mdash; nothing leaves it"]
         direction LR
 
-        subgraph MAIN ["main thread &mdash; paints, reads PDFs, never touches storage"]
+        subgraph MAIN ["main thread &mdash; never touches storage"]
             direction TB
             UI["<b>the app</b><br/>landing &middot; editor &middot; selection"]
             RD["<b>the reader</b><br/>read &rarr; structure &rarr; emit<br/><i>geometry and roles</i>"]
@@ -24,31 +26,28 @@ flowchart LR
 
         PW(["<b>pdf.js's worker</b><br/><i>parses and decodes</i>"])
 
-        subgraph EW ["engine worker &mdash; the only code that touches storage"]
+        subgraph EW ["engine worker &mdash; all storage"]
             direction TB
-            DISP["<b>dispatch</b><br/><i>exhaustive over the protocol</i>"]
-            SYNC["<b>sync access handles</b><br/><i>the one place they exist</i>"]
+            DISP["<b>dispatch</b><br/><i>every method</i>"]
+            SYNC["<b>sync access handles</b><br/><i>nowhere else</i>"]
             DISP --- SYNC
         end
 
-        DB[("<b>OPFS</b> &mdash; workspaces/default/<br/>sources/ &middot; markdown/ &middot; .mdgest/<br/><i>origin private, evictable</i>")]
+        DB[("<b>OPFS</b><br/>sources/ &middot; markdown/<br/>.mdgest/<br/><i>evictable</i>")]
 
-        RD <-->|"a page's operators and text runs"| PW
-        UI <==>|"<b>protocol.ts</b><br/>Call {id, method} &rarr;<br/>&larr; Reply {id, ok}<br/><i>big payloads transferred, not copied</i>"| DISP
+        RD <-->|"operators &middot; text runs"| PW
+        UI <==>|"<b>protocol.ts</b>"| DISP
         SYNC ==> DB
     end
 
-    DISK[("<b>an export on your disk</b><br/>mdgest.json &middot; sources/ &middot; markdown/<br/><i>the only real durability</i>")]
-
-    CF ==>|"GET /edit/&lt;doc&gt;"| UI
-    DB <-.->|"export &middot; continue from an export"| DISK
+    CF ==> UI
 
     classDef worker stroke:#10b981,stroke-width:2.5px
     classDef store stroke:#d97706,stroke-width:2.5px
     classDef outside stroke:#6366f1,stroke-width:2.5px
 
     class PW,DISP,SYNC worker
-    class DB,DISK store
+    class DB store
     class CF outside
 ```
 
