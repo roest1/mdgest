@@ -107,7 +107,8 @@ export function offBlocks(e: {
   metaKey: boolean;
 }): boolean {
   if (e.shiftKey || e.ctrlKey || e.metaKey) return false;
-  if (!(e.target instanceof Element) || e.target.closest("[data-block]")) return false;
+  if (!(e.target instanceof Element) || e.target.closest("[data-block]"))
+    return false;
   return window.getSelection()?.isCollapsed ?? true;
 }
 
@@ -154,7 +155,7 @@ interface Editor {
   /** Each document whose markdown is open as a draft: the text written so
    *  far and the source it was opened on. Kept here, not in the pane, so a
    *  draft outlives a switch to another document. Until it is applied or
-   *  cancelled nothing else edits that document: the draft is applied to
+   *  canceled nothing else edits that document: the draft is applied to
    *  the edits it was made from. */
   drafts: ById<Draft>;
   setDraft: (docId: string, draft: Draft | null) => void;
@@ -204,7 +205,9 @@ export const useEditor = create<Editor>((set, get) => ({
     set((s) => {
       if (!s.dividing) return {};
       const had = s.dividing.cuts;
-      const cuts = had.includes(k) ? had.filter((x) => x !== k) : [...had, k].sort((a, b) => a - b);
+      const cuts = had.includes(k)
+        ? had.filter((x) => x !== k)
+        : [...had, k].sort((a, b) => a - b);
       return { dividing: { ...s.dividing, cuts } };
     }),
   drafts: byId(),
@@ -221,7 +224,10 @@ export const useEditor = create<Editor>((set, get) => ({
     const reading = readings[docId];
     const order = reading?.status === "ready" ? reading.markdown.order : [];
     // A block joined onto another is picked as the block it is now part of.
-    const id = (reading?.status === "ready" && reading.markdown.blocks[picked]?.joined) || picked;
+    const id =
+      (reading?.status === "ready" &&
+        reading.markdown.blocks[picked]?.joined) ||
+      picked;
     const same = selection?.docId === docId ? selection : null;
 
     if (range && same) {
@@ -231,7 +237,9 @@ export const useEditor = create<Editor>((set, get) => ({
       const b = order.indexOf(id);
       if (a >= 0 && b >= 0) {
         const ids = order.slice(Math.min(a, b), Math.max(a, b) + 1);
-        return set({ selection: { docId, ids, focus: id, anchor: same.anchor, from } });
+        return set({
+          selection: { docId, ids, focus: id, anchor: same.anchor, from },
+        });
       }
     }
     if (toggle && same) {
