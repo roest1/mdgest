@@ -112,7 +112,9 @@ bun run dev          # http://127.0.0.1:2048, or set WEB_PORT
 
 `bun run lint` (oxlint), `bun run typecheck` (`tsc -b`), `bun run test`
 (vitest in headless Chromium, [docs/testing.md](docs/testing.md)) and
-`bun run build` (`tsc -b` then vite) are what CI runs, in that order.
+`bun run build` (`tsc -b` then vite) are what CI runs, in that order, after
+`bun install --frozen-lockfile`, on every push to `main` and every pull
+request.
 
 ## Tech stack
 
@@ -125,24 +127,166 @@ loads — the editor, pdf.js's worker and data, the tour — is its own.
 | build    | `vite` 8 (rolldown), `typescript` 7, `oxlint`                                                                                                  |
 | ui       | `react` 19, `react-router` 8, `tailwind` 4, `lucide-react` icons                                                                               |
 | state    | `zustand` — one store for what both editor panes read                                                                                          |
-| pdf      | `pdfjs-dist` 6, with cmaps, standard fonts and the wasm fallback emitted as assets by a plugin in `vite.config.ts`                             |
+| pdf      | `pdfjs-dist` 6, with its cmaps, standard fonts and wasm fallback shipped as assets                                              |
 | markdown | `react-markdown` + `remark-gfm` for the rendered view                                                                                          |
 | archives | `fflate` — unzip on the way in, zip on the way out                                                                                             |
 | fonts    | Literata (serif), Geist Sans (ui), JetBrains Mono (code), Caveat (the tour's hand) — self-hosted via `@fontsource`, never a request off-origin |
 
 **pdf.js reads the PDF.** Every line with its box, size and weight, and every
 picture with the bounds it was drawn to. It was chosen over pdfium by
-measurement, not preference — see [docs/pipeline.md](docs/pipeline.md). Its own
-parsing worker does the decoding; `src/lib/read.ts` does the geometry.
+measurement, not preference — see [docs/pipeline.md](docs/pipeline.md).
 
 **OPFS is the workspace.** The origin-private file system is the only storage
 every browser has, and its synchronous access handle reads or writes a whole
 file in one call. The workspace runs in a worker, because that handle is not
-exposed on the main thread.
-That worker is a module worker, which is what actually sets the floor on
-Firefox: 114, not the 111 that OPFS alone would ask for. Web Locks, which keep
-two tabs from writing one workspace at once, set Safari's: 15.4. The whole
-table is in [docs/deployment.md](docs/deployment.md).
+exposed on the main thread (*Where it runs*, below).
+
+## Where it runs
+
+Where everything goes once the bundle reaches a browser. Every boundary the app
+has is inside one tab.
+
+```mermaid
+---
+config:
+  look: neo
+  themeVariables:
+    fontSize: 24px
+---
+flowchart LR
+    CF[("<b>Cloudflare Pages</b><br/><span style="font-size:0.68em;line-height:1.25;display:inline-block"><i>static files, no server</i></span>")]
+
+    subgraph TAB ["the visitor's browser &mdash; nothing leaves it"]
+        direction LR
+
+        subgraph MAIN ["main thread &mdash; never touches storage"]
+            direction TB
+            UI["<b>the app</b><br/>landing &middot; editor &middot; selection"]
+            RD["<b>the reader</b><br/>read &rarr; structure &rarr; emit<br/><span style="font-size:0.68em;line-height:1.25;display:inline-block"><i>geometry and roles</i></span>"]
+            UI --- RD
+        end
+
+        PW(["<b>pdf.js's worker</b><br/><span style="font-size:0.68em;line-height:1.25;display:inline-block"><i>parses and decodes</i></span>"])
+
+        subgraph EW ["engine worker &mdash; all storage"]
+            direction TB
+            DISP["<b>dispatch</b><br/><span style="font-size:0.68em;line-height:1.25;display:inline-block"><i>every method</i></span>"]
+            SYNC["<b>sync access handles</b><br/><span style="font-size:0.68em;line-height:1.25;display:inline-block"><i>nowhere else</i></span>"]
+            DISP --- SYNC
+        end
+
+        DB[("<b>OPFS</b><br/>sources/ &middot; markdown/<br/>.mdgest/<br/><span style="font-size:0.68em;line-height:1.25;display:inline-block"><i>evictable</i></span>")]
+
+        RD <-->|"operators &middot; text runs"| PW
+        UI <==>|"<b>protocol.ts</b>"| DISP
+        SYNC ==> DB
+    end
+
+    CF ==> UI
+
+    classDef worker stroke:#10b981,stroke-width:2.5px
+    classDef store stroke:#d97706,stroke-width:2.5px
+    classDef outside stroke:#6366f1,stroke-width:2.5px
+
+    class PW,DISP,SYNC worker
+    class DB store
+    class CF outside
+```
+
+The build that puts those files on the edge is a gate, not a deploy: the checks
+under *Getting Started* run on every push to `main` and every pull request, and
+stop there. Cloudflare Pages is expected to build the same way from the repo,
+with `bun run build` as the command and `dist` as the output directory; that
+connection is configured on the Cloudflare side and is not in this repo.
+
+### What the boundaries are
+
+**Edge to browser.** `dist/` is plain files. Two of them are hosting
+configuration. `_redirects` answers a deep link like `/edit/manuals/valves`
+with `index.html` and a 200 rather than a 404, which the router needs and the
+dev server does on its own — so deleting it breaks nothing until it is
+deployed. `_headers` carries the CSP, and nothing honors it in dev or preview
+either, for the same reason and with the same trap; the file documents itself.
+
+**Main thread to engine worker.** OPFS's synchronous access handle is not
+exposed on the main thread, so everything that touches storage runs in
+`engine.worker.ts`, and `protocol.ts` is the contract: a map of method to
+`{params, result}` that both sides are typechecked against. Adding a method
+without a handler fails `tsc -b`, and therefore fails the gate. Large payloads
+cross by transfer, not copy — a document's bytes, a figure's, and an export's
+zip — so a hundred-megabyte PDF is never held twice. `engine.ts` starts the
+worker lazily, on the first call rather than on load — the landing's
+`stageView()` is usually it — waits for the `READY` the worker sends once it has
+made `sources/`, `markdown/` and `.mdgest/`, and sequences every call after
+that by id against a pending map.
+
+**Main thread to pdf.js worker.** The second boundary, and pdf.js's code on the
+other side of it: `pdf.ts` starts pdf.js's worker on the first document opened,
+as a module worker from a same-origin file, and pdf.js parses and decodes
+there. That is why reading a document runs
+on the page's thread rather than in the engine worker — pdf.js has the document
+open there, a canvas exists there to draw a figure into, and the expensive part
+is already off-thread. `read.ts` does geometry on what comes back; the engine
+worker never sees a PDF as anything but bytes.
+
+**The pdf.js assets** — character maps, the standard fourteen fonts, and the
+no-wasm fallback decoders — are files pdf.js fetches on demand rather than code
+it bundles. A plugin in `vite.config.ts` copies them out of the package into
+`dist/pdfjs/` and serves them in dev from memory, so there is one list of them
+and it is not a `public/` copy anyone has to remember to refresh.
+
+**Worker to OPFS.** Resolving a handle is async everywhere; only read and write
+on an already-resolved sync handle are synchronous. Every write truncates first,
+because a sync handle writes at an offset into whatever is already there, and
+every handle is closed in a `finally`, because an open one holds an exclusive
+lock that the next open would reject on. Web Locks keep two tabs from writing
+one workspace at once: a commit takes that lock and writes the manifest, then
+each row's source, then the manifest again. The first write carries every
+decision but leaves out the hash of each source it is about to write, and a
+document with no hash is one whose bytes are hashed on the next look — so a
+commit that stops partway, on a full disk or a file since moved, leaves a
+manifest wrong about nothing. The second adds the hashes once the bytes are
+down.
+
+**OPFS to disk.** `persist` asks the browser not to evict, and a `true` there
+is advisory — which is why an export, not the workspace, is the durable copy
+(*Workspaces*, below). Export writes a zip or a folder, and dropping an export
+back in continues from it.
+
+`emit.ts` runs on both sides of the engine-worker boundary and is pure, which
+is the point: the file in the workspace and the text on screen come from one
+function over one analysis, so they cannot drift.
+
+
+### Browser floor
+
+| Requirement                      | Chrome / Edge | Firefox | Safari   |
+| -------------------------------- | ------------- | ------- | -------- |
+| OPFS with sync access handle     | **102**       | 111     | 15.2     |
+| module worker (`type: "module"`) | 80            | **114** | 15       |
+| Web Locks (`navigator.locks`)    | 69            | 96      | **15.4** |
+
+The floor is the highest number in each column: the sync access handle sets
+Chrome's (`getDirectory` alone is 86, the handle is not), the module worker
+sets Firefox's, and Web Locks set Safari's. Dropping to a classic worker would need a bundled script
+and would lower Firefox to 111.
+
+These are the storage APIs the workspace is built on. `pdfjs-dist` 6 declares
+no browser floor of its own — only a Node one, for its build — so this table is
+the app's, and it is worth re-measuring on a browser near the bottom of it
+rather than trusting that the reader comes along for free. `OffscreenCanvas` is
+not used: figures are drawn on the main thread, into an ordinary canvas.
+
+### What to check after changing the CSP
+
+`_headers` is enforced only on the deployed site, so the check is: deploy,
+open a document, and read the console for "Refused to …". The two things most
+likely to trip it are figures and the worker. Figures are shown from
+`URL.createObjectURL`, which is a `blob:` URL, so `img-src` has to allow
+`blob:`; the engine worker is a same-origin file rather than a blob, so
+`worker-src 'self'` is enough. Neither is a reason to relax `object-src`,
+`frame-src` or `base-uri`, which stay at `'none'` so that a PDF reaching an
+`<embed>` fails loudly rather than quietly.
 
 ## Documentation
 
@@ -150,7 +294,6 @@ table is in [docs/deployment.md](docs/deployment.md).
 | -------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | [docs/pipeline.md](docs/pipeline.md)         | how a page becomes markdown: read → structure → emit, and every threshold either one leans on |
 | [docs/testing.md](docs/testing.md)           | running the tests, what they cover, and adding a reader case                                  |
-| [docs/deployment.md](docs/deployment.md)     | commit to edge to browser, the worker boundary, the browser floor                             |
 | [docs/brand/README.md](docs/brand/README.md) | the mark, and why there are two drawings of it                                                |
 
 ---

@@ -134,8 +134,8 @@ const WORKSPACE_LOCK = `mdgest-workspace:${WORKSPACE_ID}`;
  * `exclusive` orders this worker's calls, but a second tab has a worker, and
  * a stage, of its own. Web Locks are the one lock tabs share. They are what
  * sets Safari's floor at 15.4, past the 15.2 the synchronous handle asks for
- * -- see docs/deployment.md. Not reentrant: nothing called inside `fn` may
- * take it. */
+ * -- see the README, under "Where it runs". Not reentrant: nothing called
+ * inside `fn` may take it. */
 function locked<T>(fn: () => Promise<T>): Promise<T> {
   return navigator.locks.request(WORKSPACE_LOCK, fn);
 }
