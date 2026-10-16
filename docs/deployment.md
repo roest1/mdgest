@@ -5,105 +5,62 @@ runs once it is there. There is no server: the build is static files, and every
 boundary the app has is inside one tab.
 
 ```mermaid
-flowchart TB
-    subgraph REPO ["1 &nbsp; SOURCE &nbsp;&mdash;&nbsp; git, one app at the repo root"]
-        direction TB
-        SRC["<b>src/</b><br/>main.tsx &middot; routes/ &middot; components/<br/>lib/ engine.ts &middot; protocol.ts &middot; engine.worker.ts<br/>opfs.ts &middot; workspace.ts &middot; stage.ts<br/>read.ts &middot; structure.ts &middot; emit.ts &middot; convert.ts"]
-        PUB["<b>public/</b><br/>mark.svg &middot; mark-small.svg &middot; icons.svg &middot; cursors/<br/><b>_redirects</b> &nbsp; <code>/* /index.html 200</code><br/><b>_headers</b> &nbsp; the CSP"]
-        CFG["vite.config.ts &mdash; react, tailwind,<br/>and the pdf.js asset plugin<br/>tsconfig.*.json &middot; .oxlintrc.json<br/>vitest.config.ts &middot; tests/<br/>package.json &middot; bun.lock"]
-    end
+---
+config:
+  look: neo
+---
+flowchart LR
+    CF[("<b>Cloudflare Pages</b><br/>static files, no server<br/>every path &rarr; index.html")]
 
-    subgraph CI ["2 &nbsp; GATE &nbsp;&mdash;&nbsp; GitHub Actions, .github/workflows/ci.yml"]
+    subgraph TAB ["the visitor's browser &mdash; one tab, one origin, nothing leaves it"]
         direction LR
-        I["bun install<br/>--frozen-lockfile"] --> L["oxlint"] --> T["tsc -b"] --> X["vitest<br/>headless Chromium"] --> B["bun run build<br/>tsc -b &amp;&amp; vite build (rolldown)"]
-    end
 
-    subgraph DIST ["3 &nbsp; ARTIFACT &nbsp;&mdash;&nbsp; dist/, static files only"]
-        direction TB
-        HTML["index.html"]
-        MAIN["assets/index-*.js<br/>react &middot; react-router<br/>Landing &middot; engine client"]
-        EDIT["assets/Editor-*.js<br/>lazy route chunk<br/>the pdf.js API &middot; read/structure/emit"]
-        PWK["assets/pdf.worker.min-*.mjs<br/>pdf.js's own worker"]
-        WORK["assets/engine.worker-*.js<br/>module worker chunk<br/>opfs.ts &middot; stage.ts live here"]
-        PJS["pdfjs/ cmaps &middot; standard_fonts &middot; wasm/*_nowasm_fallback.js<br/><i>emitted by the plugin, fetched on demand</i>"]
-        CSS["assets/index-*.css<br/>+ self-hosted fonts<br/>assets/caveat-*.css, the tour's, loaded lazily"]
-        EX["assets/example-*.pdf<br/>the tour's document"]
-        RED["_redirects &middot; _headers"]
-    end
-
-    CF[("4 &nbsp; <b>Cloudflare Pages</b><br/>serves dist/ from the edge<br/>every path &rarr; index.html, status 200")]
-
-    subgraph BROWSER ["5 &nbsp; RUNTIME &nbsp;&mdash;&nbsp; the visitor's browser, one origin, nothing leaves it"]
-        direction TB
-        subgraph MAINT ["main thread &mdash; paints, reads PDFs, never touches storage"]
+        subgraph MAIN ["main thread &mdash; paints, reads PDFs, never touches storage"]
             direction TB
-            RT["<b>BrowserRouter</b> &nbsp;<i>index-*.js</i><br/><code>/</code> &rarr; Landing<br/><code>/edit/*</code> &rarr; Editor, <i>Editor-*.js</i> on first visit<br/>splat, because an id has slashes"]
-            LAND["<b>Landing &middot; DropZone &middot; Staging</b><br/>walks a dropped folder, keeps .pdf, .zip and mdgest.json,<br/>renames each File to its relative path"]
-            ED["<b>Editor</b> &mdash; PdfPane &middot; MarkdownPane<br/>read.ts &rarr; structure.ts &rarr; emit.ts<br/>canvas renders &middot; figures to PNG<br/>selection &middot; scroll sync"]
-            ENG["<b>engine.ts</b> &mdash; the client<br/>new Worker(&hellip;, {type: module}) lazily, on first call<br/>waits for READY, then id-sequenced calls<br/>pending Map&lt;id, resolve/reject&gt;"]
-            RT --> LAND
-            RT --> ED
-            LAND -->|"onFiles(File[])"| ENG
-            LAND -->|"stageView on mount &middot; commit"| ENG
-            ED -->|"docs &middot; doneDocs &middot; source &middot; analysis &middot; convert<br/>edits &middot; saveEdits &middot; revert &middot; asset<br/>exportZip &middot; exportToFolder"| ENG
+            UI["<b>the app</b><br/>landing &middot; editor &middot; selection"]
+            RD["<b>the reader</b><br/>read &rarr; structure &rarr; emit<br/><i>geometry and roles</i>"]
+            UI --- RD
         end
 
-        PW["<b>pdf.js worker</b> &mdash; parsing and decoding<br/>started by pdf.ts on the first open, type: module"]
-        ED <-->|"getTextContent &middot; getOperatorList<br/>render &middot; objs"| PW
+        PW(["<b>pdf.js's worker</b><br/><i>parses and decodes</i>"])
 
-        subgraph WT ["engine worker &mdash; engine.worker-*.js, type: module"]
+        subgraph EW ["engine worker &mdash; the only code that touches storage"]
             direction TB
-            DISP["<b>dispatch table</b> exhaustive over Engine<br/>stage &middot; unstage &middot; keep &middot; renameCandidate<br/>discardWorkspace &middot; stageView &middot; commit<br/>docs &middot; doneDocs &middot; source &middot; analysis &middot; convert<br/>edits &middot; saveEdits &middot; revert &middot; asset<br/>exportZip &middot; exportToFolder"]
-            OPFS["<b>opfs.ts</b><br/>navigator.storage.getDirectory()<br/>getDirectoryHandle / getFileHandle &mdash; async<br/>createSyncAccessHandle() &mdash; sync read/write<br/>truncate(0) &rarr; write &rarr; flush &rarr; close"]
-            DISP --> OPFS
+            DISP["<b>dispatch</b><br/><i>exhaustive over the protocol</i>"]
+            SYNC["<b>sync access handles</b><br/><i>the one place they exist</i>"]
+            DISP --- SYNC
         end
 
-        subgraph STORE ["OPFS &mdash; workspaces/default/, origin private, evictable"]
-            direction TB
-            S0["mdgest.json<br/><i>the manifest</i>"]
-            S1["sources/&lt;folder&hellip;&gt;/&lt;doc&gt;.pdf<br/><i>the only thing that cannot be recomputed</i>"]
-            S2["markdown/&lt;folder&hellip;&gt;/&lt;doc&gt;.md<br/>markdown/&lt;folder&hellip;&gt;/&lt;doc&gt;.assets/*.png"]
-            S3[".mdgest/&lt;folder&hellip;&gt;/&lt;doc&gt;.pdf/<br/>analysis.json &middot; <b>edits.json</b>"]
-        end
+        DB[("<b>OPFS</b> &mdash; workspaces/default/<br/>sources/ &middot; markdown/ &middot; .mdgest/<br/><i>origin private, evictable</i>")]
 
-        ENG <==>|"postMessage<br/>Call {id, method, params}<br/>Reply {id, ok, result | error}"| DISP
-        OPFS ==> STORE
+        RD <-->|"a page's operators and text runs"| PW
+        UI <==>|"<b>protocol.ts</b><br/>Call {id, method} &rarr;<br/>&larr; Reply {id, ok}<br/><i>big payloads transferred, not copied</i>"| DISP
+        SYNC ==> DB
     end
 
-    EXPORT[("export folder on disk<br/>mdgest.json &middot; sources/ &middot; markdown/<br/><i>the only real durability</i>")]
+    DISK[("<b>an export on your disk</b><br/>mdgest.json &middot; sources/ &middot; markdown/<br/><i>the only real durability</i>")]
 
-    REPO -->|"push to main / pull request"| CI
-    CI ==> DIST
-    DIST -.->|"Pages git integration, or upload<br/>build: bun run build &middot; output: dist<br/><i>not wired in this repo yet</i>"| CF
-    CF ==>|"GET / or /edit/&lt;doc&gt; &rarr; index.html<br/>&rarr; assets/index-*.js"| RT
-    STORE <-.->|"export &middot; continue from an export"| EXPORT
+    CF ==>|"GET /edit/&lt;doc&gt;"| UI
+    DB <-.->|"export &middot; continue from an export"| DISK
 
-    classDef source fill:#475569,stroke:#334155,stroke-width:2px,color:#f8fafc
-    classDef step fill:#e0e7ff,stroke:#6366f1,stroke-width:1px,color:#1e1b4b
-    classDef file fill:#94a3b8,stroke:#64748b,stroke-width:1px,color:#0f172a
-    classDef edge fill:#f59e0b,stroke:#b45309,stroke-width:2px,color:#1c1917
-    classDef worker fill:#10b981,stroke:#047857,stroke-width:2px,color:#052e16
-    classDef store fill:#fde68a,stroke:#b45309,stroke-width:1px,color:#1c1917
+    classDef worker stroke:#10b981,stroke-width:2.5px
+    classDef store stroke:#d97706,stroke-width:2.5px
+    classDef outside stroke:#6366f1,stroke-width:2.5px
 
-    class SRC,PUB,CFG source
-    class I,L,T,X,B step
-    class HTML,MAIN,EDIT,PWK,WORK,PJS,CSS,EX,RED file
-    class CF edge
-    class RT,LAND,ED,ENG step
-    class DISP,OPFS,PW worker
-    class S0,S1,S2,S3 store
-    class EXPORT source
+    class PW,DISP,SYNC worker
+    class DB,DISK store
+    class CF outside
 ```
 
-## What the boundaries are
-
-**Build to edge.** The workflow is a gate, not a deploy: it lints, typechecks,
-tests and builds on every push to `main` and every pull request, and stops
-there. The tests run in headless Chromium, installed by Playwright in the
-workflow ([testing.md](testing.md)).
-Cloudflare Pages is expected to build the same way from the repo, with
-`bun run build` as the command and `dist` as the output directory. That
+The build that puts those files on the edge is a gate, not a deploy, and it is
+the one part of this with no diagram: `bun install --frozen-lockfile`, oxlint,
+`tsc -b`, vitest in headless Chromium, `bun run build`, in that order, on every
+push to `main` and every pull request ([testing.md](testing.md)). It stops
+there. Cloudflare Pages is expected to build the same way from the repo, with
+`bun run build` as the command and `dist` as the output directory; that
 connection is configured on the Cloudflare side and is not in this repo.
+
+## What the boundaries are
 
 **Edge to browser.** `dist/` is plain files. Two of them are hosting
 configuration. `_redirects` answers a deep link like `/edit/manuals/valves`
@@ -118,7 +75,11 @@ exposed on the main thread, so everything that touches storage runs in
 `{params, result}` that both sides are typechecked against. Adding a method
 without a handler fails `tsc -b`, and therefore fails the gate. Large payloads
 cross by transfer, not copy — a document's bytes, a figure's, and an export's
-zip — so a hundred-megabyte PDF is never held twice.
+zip — so a hundred-megabyte PDF is never held twice. `engine.ts` starts the
+worker lazily, on the first call rather than on load — the landing's
+`stageView()` is usually it — waits for the `READY` the worker sends once it has
+made `sources/`, `markdown/` and `.mdgest/`, and sequences every call after
+that by id against a pending map.
 
 **Main thread to pdf.js worker.** The second boundary, and pdf.js's code on the
 other side of it: `pdf.ts` starts pdf.js's worker on the first document opened,
@@ -140,99 +101,23 @@ on an already-resolved sync handle are synchronous. Every write truncates first,
 because a sync handle writes at an offset into whatever is already there, and
 every handle is closed in a `finally`, because an open one holds an exclusive
 lock that the next open would reject on. Web Locks keep two tabs from writing
-one workspace at once.
+one workspace at once: a commit takes that lock and writes the manifest, then
+each row's source, then the manifest again. The first write carries every
+decision but leaves out the hash of each source it is about to write, and a
+document with no hash is one whose bytes are hashed on the next look — so a
+commit that stops partway, on a full disk or a file since moved, leaves a
+manifest wrong about nothing. The second adds the hashes once the bytes are
+down.
 
 **OPFS to disk.** Browser storage is evictable and there is no account, so an
 export is what saving means. `persist` asks the browser not to evict, and a
 `true` there is advisory. Export writes a zip or a folder (README,
 *Exporting*), and dropping an export back in continues from it.
 
-## One drop, end to end
+`emit.ts` runs on both sides of the engine-worker boundary and is pure, which
+is the point: the file in the workspace and the text on screen come from one
+function over one analysis, so they cannot drift.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor P as person
-    participant DZ as DropZone / useDropZone
-    participant LD as Landing
-    participant EN as engine.ts
-    participant WK as engine.worker.ts
-    participant FS as opfs.ts
-    participant O as OPFS
-
-    LD->>EN: engine.stageView(), when the landing mounts
-
-    opt the first call since the page loaded
-        EN->>WK: new Worker(engine.worker.ts, type: module)
-        WK->>FS: ensureWorkspace()
-        FS->>O: sources/ markdown/ .mdgest/ (create)
-        WK-->>EN: {id: 0, ready: READY}
-    end
-
-    WK-->>LD: the workspace already here, if any
-    P->>DZ: drop a folder
-    DZ->>DZ: walk entries, keep .pdf/.zip/mdgest.json,<br/>rename to relative path
-    DZ->>LD: onFiles(File[])
-    LD->>EN: engine.stage(files)
-
-    EN->>WK: postMessage Call {id, stage, {files}}
-    WK->>WK: unzip archives, hash each file, classify<br/>against the staged workspace (stage.ts)
-    WK-->>EN: postMessage Reply {id, ok: true, result: {view, rejected}}
-    EN-->>LD: {view, rejected}
-    LD->>LD: setView(view) — the listing
-    LD-->>DZ: resolves → "Added." for 2.5s,<br/>or rejects with what could not be staged
-    P->>LD: Create new workspace / Continue workspace
-    LD->>EN: engine.commit()
-    EN->>WK: postMessage Call {id, commit}
-    WK->>FS: under the workspace lock:<br/>writeManifest · writeSource per row · writeManifest
-    FS->>O: getFileHandle(create) → createSyncAccessHandle()
-    FS->>O: truncate(0) · write · flush · close
-    WK-->>EN: postMessage Reply {id, ok: true, result: {docs}}
-    LD->>LD: navigate to /edit, lazy import Editor chunk
-```
-
-## One conversion, end to end
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor P as person
-    participant PP as PdfPane
-    participant CV as convert.ts
-    participant PJ as pdf.js worker
-    participant EN as engine.ts
-    participant WK as engine.worker.ts
-    participant ST as store (zustand)
-
-    P->>PP: open a document
-    PP->>EN: engine.source(docId)
-    EN->>WK: Call {source} → bytes, transferred
-    PP->>PJ: getDocument(bytes) → pages
-    PP->>CV: ensureRead(docId, pages)
-    CV->>EN: engine.analysis(docId)
-    alt cached
-        EN-->>CV: Analysis
-    else first time
-        loop each page
-            CV->>ST: {status: reading, page n of N}
-            CV->>PJ: getOperatorList · getTextContent
-            PJ-->>CV: operators, runs, decoded images
-            CV->>CV: read.ts — lines, pictures, figure PNGs
-        end
-        CV->>CV: structure.ts — blocks, roles, order
-        CV->>EN: engine.convert(docId, analysis, figures)
-        EN->>WK: Call {convert}, figure buffers transferred
-        WK->>WK: emit.ts → markdown/<doc>.md<br/>analysis.json · <doc>.assets/*.png
-    end
-    CV->>CV: emit.ts — the same markdown, for the pane
-    CV->>ST: {status: ready, analysis, markdown}
-    ST-->>PP: boxes and numbers
-    ST-->>P: the markdown, beside the pages
-```
-
-`emit.ts` runs on both sides of that boundary and is pure, which is the point:
-the file in the workspace and the text on screen come from one function over
-one analysis, so they cannot drift.
 
 ## Browser floor
 
