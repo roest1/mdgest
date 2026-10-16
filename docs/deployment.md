@@ -12,7 +12,7 @@ config:
     fontSize: 24px
 ---
 flowchart LR
-    CF[("<b>Cloudflare Pages</b><br/><i>static files, no server</i>")]
+    CF[("<b>Cloudflare Pages</b><br/><span style="font-size:0.68em"><i>static files, no server</i></span>")]
 
     subgraph TAB ["the visitor's browser &mdash; nothing leaves it"]
         direction LR
@@ -20,20 +20,20 @@ flowchart LR
         subgraph MAIN ["main thread &mdash; never touches storage"]
             direction TB
             UI["<b>the app</b><br/>landing &middot; editor &middot; selection"]
-            RD["<b>the reader</b><br/>read &rarr; structure &rarr; emit<br/><i>geometry and roles</i>"]
+            RD["<b>the reader</b><br/>read &rarr; structure &rarr; emit<br/><span style="font-size:0.68em"><i>geometry and roles</i></span>"]
             UI --- RD
         end
 
-        PW(["<b>pdf.js's worker</b><br/><i>parses and decodes</i>"])
+        PW(["<b>pdf.js's worker</b><br/><span style="font-size:0.68em"><i>parses and decodes</i></span>"])
 
         subgraph EW ["engine worker &mdash; all storage"]
             direction TB
-            DISP["<b>dispatch</b><br/><i>every method</i>"]
-            SYNC["<b>sync access handles</b><br/><i>nowhere else</i>"]
+            DISP["<b>dispatch</b><br/><span style="font-size:0.68em"><i>every method</i></span>"]
+            SYNC["<b>sync access handles</b><br/><span style="font-size:0.68em"><i>nowhere else</i></span>"]
             DISP --- SYNC
         end
 
-        DB[("<b>OPFS</b><br/>sources/ &middot; markdown/<br/>.mdgest/<br/><i>evictable</i>")]
+        DB[("<b>OPFS</b><br/>sources/ &middot; markdown/<br/>.mdgest/<br/><span style="font-size:0.68em"><i>evictable</i></span>")]
 
         RD <-->|"operators &middot; text runs"| PW
         UI <==>|"<b>protocol.ts</b>"| DISP
