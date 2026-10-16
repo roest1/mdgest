@@ -10,7 +10,7 @@ const KEPT = [
   "Folder structure is kept.",
 ];
 
-const NOT_YET = ["Math equations", "Tables", "Hyperlinks", "Rotated pages"];
+const NOT_YET = ["Math equations", "Tables", "Mermaid diagrams", "Code blocks"];
 
 export function Guarantees() {
   return (
