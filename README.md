@@ -12,7 +12,14 @@ PDF to Markdown. The one missing feature to [pdf.net](https://pdf.net).
 
 **Why would you need this?** Maybe to use pdf content in LLM prompts or RAG-based pipelines for downstream image and/or text models.
 
-**Contents** — [How it works](#how-it-works) · [Getting Started](#getting-started) · [Workspaces and exporting](#workspaces-and-exporting) · [How a page becomes markdown](#how-a-page-becomes-markdown) · [Architecture](#architecture) · [Development](#development)
+| **Contents**                                                |
+| ----------------------------------------------------------- |
+| [How it works](#how-it-works)                               |
+| [Getting Started](#getting-started)                         |
+| [Workspaces and exporting](#workspaces-and-exporting)       |
+| [How a page becomes markdown](#how-a-page-becomes-markdown) |
+| [Architecture](#architecture)                               |
+| [Development](#development)                                 |
 
 ---
 
