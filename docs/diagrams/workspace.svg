@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 344" width="960" height="344" role="img" aria-label="Files dropped from your disk are held in the stage, committed to the workspace in browser storage, and exported back to disk as a folder or zip. The workspace is seeded into the stage on every visit, and an export dropped back in is continued.">
+    <style>
+        :root { --ink:#1A1714; --muted:#6B645D; --line:#3A3531; --panel:#FFFFFF; --tab:#F1EEEA; --red:#B01221;
+        --new:#1F7A45; --revised:#A15C07; }
+        @media (prefers-color-scheme: dark) {
+        :root { --ink:#ECE8E3; --muted:#9C958E; --line:#CFC9C2; --panel:#1B1917; --tab:#262320; --red:#F0522A;
+        --new:#4CC47F; --revised:#E0A43C; }
+        }
+        text { fill:var(--ink); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+        .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; font-size:12px; white-space:pre; }
+        .tabtext { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; font-size:11px; fill:var(--muted); }
+        .title { font-size:14px; font-weight:700; }
+        .cap { font-size:11.5px; fill:var(--muted); }
+        .label { font-size:12px; fill:var(--muted); }
+        .g { fill:var(--muted); }
+        .dir { font-weight:700; }
+        .key { fill:var(--red); }
+        .s-new { fill:var(--new); }
+        .s-same { fill:var(--muted); }
+        .s-rev { fill:var(--revised); }
+        .s-bad { fill:var(--red); }
+        .panel { fill:var(--panel); stroke:var(--line); stroke-width:1.25; }
+        .tab { fill:var(--tab); stroke:var(--line); stroke-width:1.25; }
+        .todo .panel, .todo .tab { stroke:var(--red); stroke-dasharray:5 4; }
+        .red { fill:var(--red); }
+        .wire { fill:none; stroke:var(--line); stroke-width:1.5; }
+        .wire.dash { stroke-dasharray:3 4; }
+        .wire.redw { stroke:var(--red); stroke-dasharray:5 4; }
+        .head { fill:var(--line); }
+        .head.redh { fill:var(--red); }
+    </style>
+    <defs>
+        <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+            <path class="head" d="M0 0 L10 5 L0 10 Z"/>
+        </marker>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+            <path class="head redh" d="M0 0 L10 5 L0 10 Z"/>
+        </marker>
+    </defs>
+    <!-- seed loop: workspace -> stage, over the top -->
+    <text class="label" x="535" y="22" text-anchor="middle">on every visit, the workspace already in this browser is seeded back into the stage</text>
+    <path class="wire" d="M658 64 V34 H412 V61" marker-end="url(#a)"/>
+    <!-- 1 your disk -->
+    <g>
+        <rect class="tab" x="16" y="46" width="94" height="26" rx="6"/>
+        <rect class="panel" x="16" y="64" width="190" height="218" rx="8"/>
+        <text class="tabtext" x="26" y="59">~/Downloads</text>
+        <text class="title" x="30" y="92">Your disk</text>
+        <text class="mono" xml:space="preserve" x="30" y="118"><tspan class="g">├─ </tspan>report.pdf</text>
+        <text class="mono" xml:space="preserve" x="30" y="136"><tspan class="g">├─ </tspan>invoices.zip</text>
+        <text class="mono" xml:space="preserve" x="30" y="154"><tspan class="g">├─ </tspan><tspan class="dir">invoices/</tspan></text>
+        <text class="mono" xml:space="preserve" x="30" y="172"><tspan class="g">│  └─ </tspan>march.pdf</text>
+        <text class="mono" xml:space="preserve" x="30" y="190"><tspan class="g">└─ </tspan><tspan class="dir">my-project/</tspan></text>
+        <text class="mono" xml:space="preserve" x="30" y="208"><tspan class="g">   ├─ </tspan><tspan class="key">mdgest.json</tspan></text>
+        <text class="mono" xml:space="preserve" x="30" y="226"><tspan class="g">   └─ </tspan><tspan class="dir">sources/</tspan></text>
+        <text class="cap" x="30" y="252">PDFs, a zip, a folder,</text>
+        <text class="cap" x="30" y="268">or an old export</text>
+    </g>
+    <!-- drop -->
+    <text class="label" x="234" y="152" text-anchor="middle">drop</text>
+    <path class="wire" d="M210 162 H257" marker-end="url(#a)"/>
+    <!-- 2 the stage -->
+    <g>
+        <rect class="tab" x="262" y="46" width="107" height="26" rx="6"/>
+        <rect class="panel" x="262" y="64" width="190" height="218" rx="8"/>
+        <text class="tabtext" x="272" y="59">worker memory</text>
+        <text class="title" x="276" y="92">The stage</text>
+        <text class="mono" xml:space="preserve" x="276" y="118"><tspan class="s-new">new       </tspan>march.pdf</text>
+        <text class="mono" xml:space="preserve" x="276" y="138"><tspan class="s-same">unchanged </tspan>report.pdf</text>
+        <text class="mono" xml:space="preserve" x="276" y="158"><tspan class="s-rev">revised   </tspan>pumps.pdf</text>
+        <text class="mono" xml:space="preserve" x="276" y="178"><tspan class="s-bad">conflict  </tspan>spec.pdf ×2</text>
+        <text class="mono" xml:space="preserve" x="276" y="208"><tspan class="g">[ commit ]</tspan></text>
+        <text class="mono" xml:space="preserve" x="276" y="226"><tspan class="g">off until one is kept</tspan></text>
+        <text class="cap" x="276" y="252">hashed and listed,</text>
+        <text class="cap" x="276" y="268">nothing written yet</text>
+    </g>
+    <!-- commit -->
+    <text class="label" x="480" y="152" text-anchor="middle">commit</text>
+    <path class="wire" d="M456 162 H503" marker-end="url(#a)"/>
+    <!-- 3 the workspace -->
+    <g>
+        <rect class="tab" x="508" y="46" width="60" height="26" rx="6"/>
+        <rect class="panel" x="508" y="64" width="190" height="218" rx="8"/>
+        <text class="tabtext" x="518" y="59">opfs:/</text>
+        <text class="title" x="522" y="92">The workspace</text>
+        <text class="mono" xml:space="preserve" x="522" y="118"><tspan class="g">├─ </tspan><tspan class="key">mdgest.json</tspan></text>
+        <text class="mono" xml:space="preserve" x="522" y="136"><tspan class="g">└─ </tspan><tspan class="dir">sources/</tspan></text>
+        <text class="mono" xml:space="preserve" x="522" y="154"><tspan class="g">   ├─ </tspan>report.pdf</text>
+        <text class="mono" xml:space="preserve" x="522" y="172"><tspan class="g">   ├─ </tspan>pumps.pdf</text>
+        <text class="mono" xml:space="preserve" x="522" y="190"><tspan class="g">   ├─ </tspan>spec.pdf</text>
+        <text class="mono" xml:space="preserve" x="522" y="208"><tspan class="g">   └─ </tspan><tspan class="dir">invoices/</tspan></text>
+        <text class="mono" xml:space="preserve" x="522" y="226"><tspan class="g">      └─ </tspan>march.pdf</text>
+        <text class="cap" x="522" y="252">browser storage (OPFS),</text>
+        <text class="cap" x="522" y="268">evictable, never uploaded</text>
+    </g>
+    <!-- export -->
+    <text class="label red" x="726" y="152" text-anchor="middle">export</text>
+    <path class="wire redw" d="M702 162 H749" marker-end="url(#ar)"/>
+    <!-- 4 an export (not built) -->
+    <g class="todo">
+        <rect class="tab" x="754" y="46" width="100" height="26" rx="6"/>
+        <rect class="panel" x="754" y="64" width="190" height="218" rx="8"/>
+        <text class="tabtext" x="764" y="59">~/my-project</text>
+        <text class="title" x="768" y="92">An export</text>
+        <text class="red" x="930" y="92" text-anchor="end" font-size="11">not built</text>
+        <text class="mono" xml:space="preserve" x="768" y="118"><tspan class="g">├─ </tspan><tspan class="key">mdgest.json</tspan></text>
+        <text class="mono" xml:space="preserve" x="768" y="136"><tspan class="g">├─ </tspan><tspan class="dir">sources/</tspan></text>
+        <text class="mono" xml:space="preserve" x="768" y="154"><tspan class="g">└─ </tspan><tspan class="dir">markdown/</tspan></text>
+        <text class="cap" x="768" y="252">a folder or zip you keep:</text>
+        <text class="cap" x="768" y="268">exporting is saving</text>
+    </g>
+    <!-- return loop: export -> disk, underneath -->
+    <path class="wire dash" d="M849 282 V306 H111 V286" marker-end="url(#a)"/>
+    <text class="label" x="480" y="330" text-anchor="middle">an export dropped back in is recognized by its mdgest.json and continued</text>
+</svg>
