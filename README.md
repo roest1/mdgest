@@ -8,33 +8,18 @@
 
 # mdgest
 
-PDF to Markdown. The one missing feature to [pdf.net](https://pdf.net).
+Instead of one function that takes a `.pdf` and returns a `.md`, mdgest is an
+offline pdf→md editor with a human in the loop: it reads every page in your
+browser, shows each block it found beside the markdown it wrote, and lets you
+fix the ones it got wrong. Nothing is uploaded anywhere — the conversion runs
+in your browser, and the workspace lives in the browser's own storage. Drop in
+a single pdf, a zip of pdfs, or a folder with pdfs in it.
 
-**Why would you need this?** Maybe to use pdf content in LLM prompts or RAG-based pipelines for downstream image and/or text models.
+<!-- TODO after deploying: a "Try it" link right here. -->
 
-| **Contents**                                                |
-| ----------------------------------------------------------- |
-| [How it works](#how-it-works)                               |
-| [Getting Started](#getting-started)                         |
-| [Workspaces and exporting](#workspaces-and-exporting)       |
-| [How a page becomes markdown](#how-a-page-becomes-markdown) |
-| [Architecture](#architecture)                               |
-| [Development](#development)                                 |
-
----
-
-## How it works
-
-Instead of one function that takes a `.pdf` and returns a `.md`, `mdgest` is an
-offline pdf→md tool where a human in the loop can verify the markdown is right,
-page by page. Nothing is uploaded anywhere: the conversion runs in your browser,
-and the workspace lives in your browser's own storage.
-
-Upload any collection of pdfs:
-
-- a single pdf
-- a zip of pdfs
-- a folder with pdfs in it
+<p align="center">
+  <img src="docs/screenshots/editor.png" alt="The editor: the PDF page on the left with every block boxed and numbered, the markdown it became on the right, the same block selected in both panes" width="100%">
+</p>
 
 **What every conversion guarantees:**
 
@@ -45,6 +30,23 @@ Upload any collection of pdfs:
 Nothing is summarized, rewritten or dropped for being hard to place: a block the
 engine cannot make sense of comes out as a paragraph, where you can see it and
 fix it.
+
+**Why would you need this?** To use pdf content in LLM prompts or RAG pipelines
+for downstream text and image models — without a conversion you can't inspect,
+and without handing your documents to someone else's server.
+
+| **Contents**                                                 |
+| ------------------------------------------------------------ |
+| [How it works](#how-it-works)                                |
+| [Getting Started](#getting-started)                          |
+| [Workspaces and exporting](#workspaces-and-exporting)        |
+| [How a page becomes markdown](#how-a-page-becomes-markdown)  |
+| [Architecture](#architecture)                                |
+| [Development](#development)                                  |
+
+---
+
+## How it works
 
 <p align="center">
   <img src="docs/diagrams/workspace.svg" alt="Drop files from your disk into the stage, commit them to the workspace in browser storage, export the workspace back to disk" width="100%">
@@ -274,8 +276,8 @@ loads — the editor, pdf.js's worker and data, the tour — is its own.
 
 |          |                                                                                                                    |
 | -------- | ------------------------------------------------------------------------------------------------------------------ |
-| build    | `vite` 8 (rolldown), `typescript` 7, `oxlint`                                                                      |
-| ui       | `react` 19, `react-router` 8, `tailwind` 4, `lucide-react` icons                                                   |
+| build    | `vite` (rolldown), `typescript`, `oxlint`                                                                          |
+| ui       | `react`, `react-router`, `tailwind`, `lucide-react` icons                                                          |
 | state    | `zustand` — one store for what both editor panes read                                                              |
 | pdf      | `pdfjs-dist` 6 — its assets shipped same-origin (_What the boundaries are_, below)                                 |
 | markdown | `react-markdown` + `remark-gfm` for the rendered view                                                              |
@@ -507,3 +509,7 @@ To change the type you need the fonts again — pin `Nunito[wght].ttf` at 900 an
 `Literata[opsz,wght].ttf` at 600/12, and re-outline. Do not pin Literata's
 `opsz` to 72; that is the display cut, and it has hairline serifs that fight
 the mark.
+
+---
+
+MIT — see [LICENSE](LICENSE).

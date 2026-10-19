@@ -50,6 +50,16 @@ with a capital and a descender, so every ink box is the same height), and
 and `stage.worker.ts` run `opfs.ts` and `stage.ts` where they run in the app,
 since a synchronous file handle exists only in a worker.
 
+## The corpus
+
+`corpus/` holds real PDFs; nothing asserts on them yet. The drawn cases are
+the suite — a real PDF is for developing against.
+`godel-incompleteness-hirzel-translation.pdf` (22 pages, LaTeX-set in Computer
+Modern, math as printed glyphs, colored text) is the fixture the math and
+colored-text work needs; the fidelity gate on the backlog is what will run
+over these without goldens. The translation permits reproduction as long as
+its notice is included, and the intact PDF carries its own.
+
 ## Adding a reader case
 
 A case is pages drawn with exact positions, sizes and faces (`fixtures/pdf.ts`),
