@@ -16,25 +16,17 @@
         .dir { font-weight:700; }
         .key { fill:var(--red); }
         .s-new { fill:var(--new); }
-        .s-same { fill:var(--muted); }
         .s-rev { fill:var(--revised); }
         .s-bad { fill:var(--red); }
         .panel { fill:var(--panel); stroke:var(--line); stroke-width:1.25; }
         .tab { fill:var(--tab); stroke:var(--line); stroke-width:1.25; }
-        .todo .panel, .todo .tab { stroke:var(--red); stroke-dasharray:5 4; }
-        .red { fill:var(--red); }
         .wire { fill:none; stroke:var(--line); stroke-width:1.5; }
         .wire.dash { stroke-dasharray:3 4; }
-        .wire.redw { stroke:var(--red); stroke-dasharray:5 4; }
         .head { fill:var(--line); }
-        .head.redh { fill:var(--red); }
     </style>
     <defs>
         <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
             <path class="head" d="M0 0 L10 5 L0 10 Z"/>
-        </marker>
-        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-            <path class="head redh" d="M0 0 L10 5 L0 10 Z"/>
         </marker>
     </defs>
     <!-- seed loop: workspace -> stage, over the top -->
@@ -66,7 +58,7 @@
         <text class="tabtext" x="272" y="59">worker memory</text>
         <text class="title" x="276" y="92">The stage</text>
         <text class="mono" xml:space="preserve" x="276" y="118"><tspan class="s-new">new       </tspan>march.pdf</text>
-        <text class="mono" xml:space="preserve" x="276" y="138"><tspan class="s-same">unchanged </tspan>report.pdf</text>
+        <text class="mono" xml:space="preserve" x="276" y="138">          report.pdf</text>
         <text class="mono" xml:space="preserve" x="276" y="158"><tspan class="s-rev">revised   </tspan>pumps.pdf</text>
         <text class="mono" xml:space="preserve" x="276" y="178"><tspan class="s-bad">conflict  </tspan>spec.pdf ×2</text>
         <text class="mono" xml:space="preserve" x="276" y="208"><tspan class="g">[ commit ]</tspan></text>
@@ -94,15 +86,14 @@
         <text class="cap" x="522" y="268">evictable, never uploaded</text>
     </g>
     <!-- export -->
-    <text class="label red" x="726" y="152" text-anchor="middle">export</text>
-    <path class="wire redw" d="M702 162 H749" marker-end="url(#ar)"/>
-    <!-- 4 an export (not built) -->
-    <g class="todo">
+    <text class="label" x="726" y="152" text-anchor="middle">export</text>
+    <path class="wire" d="M702 162 H749" marker-end="url(#a)"/>
+    <!-- 4 an export -->
+    <g>
         <rect class="tab" x="754" y="46" width="100" height="26" rx="6"/>
         <rect class="panel" x="754" y="64" width="190" height="218" rx="8"/>
         <text class="tabtext" x="764" y="59">~/my-project</text>
         <text class="title" x="768" y="92">An export</text>
-        <text class="red" x="930" y="92" text-anchor="end" font-size="11">not built</text>
         <text class="mono" xml:space="preserve" x="768" y="118"><tspan class="g">├─ </tspan><tspan class="key">mdgest.json</tspan></text>
         <text class="mono" xml:space="preserve" x="768" y="136"><tspan class="g">├─ </tspan><tspan class="dir">sources/</tspan></text>
         <text class="mono" xml:space="preserve" x="768" y="154"><tspan class="g">└─ </tspan><tspan class="dir">markdown/</tspan></text>

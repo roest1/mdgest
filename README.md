@@ -46,6 +46,28 @@ Nothing is summarized, rewritten or dropped for being hard to place: a block the
 engine cannot make sense of comes out as a paragraph, where you can see it and
 fix it.
 
+<p align="center">
+  <img src="docs/diagrams/workspace.svg" alt="Drop files from your disk into the stage, commit them to the workspace in browser storage, export the workspace back to disk" width="100%">
+</p>
+
+Browser storage is evictable and there is no account, so **exporting is what
+saving means**. A workspace is a tree in your browser's own storage (at
+`workspaces/default/`), and an export of it is a folder on your disk that you
+hand back later to carry on where you left off. Nothing in it is hidden.
+Folders are yours to organize however you like — mdgest mirrors them. Say you
+upload an `invoices` folder to mdgest with `invoice1.pdf` inside it.
+
+    <workspace>/
+      mdgest.json                              the manifest: each document's SHA-256 and every decision
+      sources/invoices/invoice1.pdf            the source PDF, untouched
+      markdown/invoices/invoice1.md            the output, same tree
+      markdown/invoices/invoice1.assets/       its figures, as PNGs
+      .mdgest/invoices/invoice1.pdf/
+        analysis.json                          the engine's read of the PDF (blocks, fonts, roles) — regenerable until it has edits
+        edits.json                             your corrections, whether it is done, and its undo history
+
+Every edit is written to `edits.json` as it is made; there is no save button.
+
 **Formatting and Edit features:**
 
 - pdf -> md - `pdf.js` reads every line and picture, `structure.ts` determines reading order and formatting, `emit.ts` writes the markdown.
@@ -92,22 +114,6 @@ fix it.
 > Note to self: Do we need any tooling for table of contents and configuring those?
 > Maybe [^1] for footnotes?
 
-The reader that turns a PDF into blocks is versioned, and every reading
-records the version that made it. A reading is kept once made, so a document
-read by an earlier version keeps that version's reading after mdgest's reader
-improves (_When the reader changes_, below).
-
-Reverting is how a document gets the current one: it is not _back to the
-reading first made_, but a new reading by the current reader version. The
-button names both versions before it acts:
-
-- **edits to drop**: it asks first, and says which reader version made the
-  reading and which one will make the new one
-- **no edits, read by an older reader version**: it reads the document again
-  without asking, since nothing is lost
-- **no edits, read by the current reader version**: it is disabled. A new
-  reading would be the same as the one there is
-
 ---
 
 ## Getting Started
@@ -121,34 +127,14 @@ bun run dev          # http://127.0.0.1:2048, or set WEB_PORT
 ```
 
 `bun run lint` (oxlint), `bun run typecheck` (`tsc -b`), `bun run test`
-(vitest in headless Chromium, _Testing_ below) and `bun run build` (`tsc -b`
+(vitest in headless Chromium, [tests/README.md](tests/README.md)) and `bun run build` (`tsc -b`
 then vite) are what CI runs, in that order, after
 `bun install --frozen-lockfile`, on every push to `main` and every pull
 request.
 
+---
+
 ## Workspaces and exporting
-
-<p align="center">
-  <img src="docs/diagrams/workspace.svg" alt="Drop files from your disk into the stage, commit them to the workspace in browser storage, export the workspace back to disk" width="100%">
-</p>
-
-Browser storage is evictable and there is no account, so **exporting is what
-saving means**. A workspace is a tree in your browser's own storage (at
-`workspaces/default/`), and an export of it is a folder on your disk that you
-hand back later to carry on where you left off. Nothing in it is hidden.
-Folders are yours to organize however you like — mdgest mirrors them. Say you
-upload `invoice1.pdf` into an `invoices` folder:
-
-    <workspace>/
-      mdgest.json                              the manifest: each document's SHA-256 and every decision
-      sources/invoices/invoice1.pdf            the source PDF, untouched
-      markdown/invoices/invoice1.md            the output, same tree
-      markdown/invoices/invoice1.assets/       its figures, as PNGs
-      .mdgest/invoices/invoice1.pdf/
-        analysis.json                          the engine's read of the PDF (blocks, fonts, roles) — regenerable until it has edits
-        edits.json                             your corrections, whether it is done, and its undo history
-
-Every edit is written to `edits.json` as it is made; there is no save button.
 
 ### Exporting
 
@@ -165,78 +151,18 @@ documents only, so nothing half-finished goes out looking finished. Into a
 folder, the folder must be empty or one an earlier export wrote; what that
 export wrote is replaced, and nothing else there is touched.
 
-`mdgest.json` is the browser's per-document `edits.json` files gathered into
-one, without their undo history. Each document's entry carries its source's
-SHA-256, the `reader` version its blocks came from, whether it is done, its
-edits with the version of their format, and a `check`: the SHA-256 of the
-rest of the entry. In a zip the file is marked read-only — a hint most unzip
-tools honor, not a lock. What protects it is the check:
-
-- **an entry changed since it was exported** is marked `edited` when the
-  project is dropped back in, and continuing asks first. Its edits come in as
-  they are now
-- **an entry whose edits do not make sense** (a heading level of 9, a role
-  that does not exist) costs that one document its decisions, never the whole
-  import. It is marked `starts over`, with the reason, and is read from scratch
-- **an entry from another reader**, whose block ids would point at different
-  blocks, starts over the same way
-
-Continuing unpacks each entry back into that document's `edits.json`.
+`mdgest.json` gathers each document's `edits.json` into one file, each entry
+checked on its own — `src/lib/exchange.ts` documents the format and what an
+import does with a changed, damaged, or other-reader entry.
 
 ### Adding, continuing, and replacing
 
 Everything you drop — PDFs, folders, zips — is listed before anything is
-written. The list says what the button under it will do to each file, and
-nothing reaches the workspace until you press it.
-
-**A project to continue is recognized by one file.** A folder or zip with
-`mdgest.json` at its root, or one folder down, is an earlier export, and it continues where it left
-off. Anything else is PDFs to add. Loose PDFs join whichever workspace is
-there, whether you just dropped it or it's left over from a previous visit.
-
-**One workspace per browser.** A second project is refused until the first is
-discarded, so an old export is continued into an empty browser, as a whole.
-Documents are never mixed between the two. Discarding the browser's workspace
-asks first, because it holds the only copy of anything you haven't exported.
-
-**A document is its path.** `invoices/invoice1` is the id its edits are keyed
-to. A file's SHA-256 is evidence about it, never its identity. Each
-row in the list gets one of these marks:
-
-| mark        | meaning                                                                                  |
-| ----------- | ---------------------------------------------------------------------------------------- |
-| _(none)_    | already here, byte for byte, and nothing is written — or, creating a workspace, new      |
-| `new`       | not here yet, and added as-is, when continuing a workspace                               |
-| `revised`   | here already, with different bytes under the same name. You're asked again before commit |
-| `missing`   | listed in the manifest with no PDF. The decisions are kept and wait for the file         |
-| `duplicate` | the same bytes as another row, under another name. Both are kept unless you take one out |
-| `conflict`  | two different files for one name. Keep one or rename the other before you can continue   |
-
-Dropping a file the workspace already holds, under the same name, adds no
-row; the drop just says it was already uploaded.
-
-Matching is exact, with no fuzzy "this looks like the same PDF". The case that
-really happens is the same file picked again from the same folder, and exact
-equality catches it without false positives. Two PDFs that are only _similar_
-have different block layouts, so their edits wouldn't transfer anyway.
-
-**Revised is the one to be careful with: a revised PDF starts over.** A
-block's id is its position (`p{page}b{index}`, or `p{page}i{index}` for a
-picture), not its content, so edits made
-to the old file would resolve against the new one to whatever block now sits
-in each position — a heading on a paragraph, a hide on real text. Markdown
-that looks done and is wrong is worse than redoing the work. So committing a
-revised PDF replaces the old one and drops everything made from it: its
-analysis, its markdown and figures, its edits and its done mark. Only one
-version of a document is ever kept, and there is no restoring the old edits;
-an export made beforehand is the only copy. That is why committing one asks a
-second time.
-
-**Before writing**, the list checks there is room: twice the size of what
-arrives, because markdown and analysis come out of it later. It also checks
-that no other tab has changed the workspace since the list was drawn. If one
-has, nothing is written, and you're asked to reload. Committing also asks the
-browser to keep the site's storage; that request can be refused.
+written: an earlier export (recognized by its `mdgest.json`) continues where
+it left off, new PDFs join the one workspace this browser keeps, and a
+revised PDF starts over, because edits are keyed to block positions. The
+marks a row can carry are `src/lib/protocol.ts`'s `Status`; what committing
+each one does, `src/lib/stage.ts`.
 
 ### Rules: what gets learned
 
@@ -295,179 +221,30 @@ page's own frame at scale 1, origin top-left, y down — what
 A box in an analysis is where a person sees the thing, which is what lets the
 page pane draw it by multiplying by the zoom and nothing else.
 
-### Reading the page
-
-#### Text
-
-pdf.js hands over runs: a string in one font on one line, or a piece of one. A
-run is not a line and not a word, so the line has to be rebuilt.
-
-1. **Boxes.** A run's box is where its ink is, not the font's ascent and
-   descent. Those bound every glyph the face has, so they would make each
-   line's box reach the next one's and hide the leading between them — the gap
-   every step below and all of structure tells lines, paragraphs and bands
-   apart by. The characters say most of what the ink would: up to cap
-   height (`0.7 ×` the size) when the run has a capital, digit or ascender,
-   only to x-height (`0.5 ×`) when it has none, and down to `0.22 ×` below the
-   baseline only for a descender. A face of pictures — Wingdings, Webdings,
-   Symbol, Dingbats — or a run with nothing to measure by, no capital, digit,
-   ascender or x-height letter, is given half its em box, centered.
-   These fractions were measured against pdfium's ink boxes, which is what the
-   thresholds in structure were first tuned on.
-2. **Baselines.** Runs whose vertical middles fall inside one another's span,
-   with at least half a run's height in the overlap, share a baseline. That is
-   checked both ways round: a superscript sorts first, being higher, and the
-   line under it has to be able to join it.
-3. **Columns.** Within a band, runs are taken left to right and cut where the
-   horizontal gap is wider than `0.6 ×` the taller run's height — except behind
-   a list marker, where the gap is allowed to be `3 ×` as wide, because the
-   space after a bullet is a wide one and a bullet is not a column of its own.
-   A bullet drawn in Wingdings or Webdings comes out of pdf.js as its code in
-   whatever form — `§`, `¡`, a control character, a private-use one — so a
-   run of one glyph in those faces is read as `•`, as is `U+F0B7`, where Word
-   maps the Symbol face's bullet. That is what lets it join its words and be a
-   list item.
-4. **Spaces.** Between two runs of one line, a gap over `0.15 ×` the height is a
-   space; anything smaller is kerning. A space pdf.js put in the string itself
-   is kept too: the run's width already covers it, so no gap shows it, and
-   `STAR® is` would otherwise come out `STAR®is`.
-5. **Style.** A line's weight and slant are its majority _by character_, not
-   by run: one italic word does not make an italic line. Its size and font are
-   its longest run's. The font is the PDF's own name with the subset prefix
-   stripped, so `ABCDEF+Helvetica-Bold` is `Helvetica-Bold`. Weight and slant
-   are what pdf.js reports for the font, or else what its name says, spelled
-   out or cut short (`-Bd`, `-It`, as in `HelveticaNeueLTW1G-BdIt`).
-
-#### Pictures
-
-A page's operator list is walked with the transform pdf.js's own canvas would
-have at each step — `save`/`restore`, `transform`, form XObjects and
-transparency groups all tracked — so every painted image is caught with the
-matrix it was drawn under. That is what gives a picture its box on the page,
-rather than its intrinsic size.
-
-Not every painted image is a figure:
-
-| threshold        | value              | what it excludes                                                            |
-| ---------------- | ------------------ | --------------------------------------------------------------------------- |
-| `MIN_PICTURE_PT` | 4 pt each way      | hairline rules, bullet glyphs drawn as bitmaps                              |
-| `MIN_PICTURE_PX` | 64 px on each side | bullets drawn as small bitmaps, stretched strips of one-pixel gradient…     |
-| `BIG_ENOUGH_PT`  | 24 pt each way     | …unless drawn this large, where a few pixels blown up really is the picture |
-
-What survives is drawn through its own transform into a canvas, so a rotated or
-mirrored picture comes out the way it is seen, and written as a PNG at least
-`2` pixels per point and at most `4096` per side. A picture that cannot be
-decoded falls back to rendering the page region under its box. Every surviving
-picture is written and has a line in the markdown — there is no such thing as a
-figure in the analysis that is not in the output.
-
-Pictures are read before text on purpose: walking the operator list is what
-loads the page's fonts, which the text's styles are then read from.
-
-**Annotation appearances are disabled** at read time
-(`AnnotationMode.DISABLE`), which keeps form widgets and stamps out of the
-geometry. Link annotations are read separately (`getAnnotations`): a line at
-least half under one carries its URL, a block whose lines all point one way carries it
-too, and the markdown writes that block as `[text](url)`. A link on part of a
-paragraph keeps only its words — a line is the finest grain a link is tied to.
-
-### Structure: blocks, roles, order
-
-Pure functions over what `read.ts` produced. The structure is read off the page
-the way a person reads it in a second: what is larger or bolder is a heading,
-what sits behind a bullet is an item, what sits further right is nested deeper,
-what shares a column is read down before across.
-
-**The body size** is the size most _characters_ are set in, to a tenth of a
-point — characters, not lines, so a document with fifty short headings and ten
-long paragraphs still has the paragraph's size as its body.
-
-**Whether bold means anything** is decided document-wide before anything else:
-if more than 35% of the text is bold, bold is the body face and stops being
-evidence of a heading. Under that, a bold line at body size or larger that does
-not end in `.`, `,` or `;` reads as a heading, as does any line at `1.1 ×` body
-or larger. A line over 90 characters is prose however it is set, and a line that
-starts with a list marker is an item.
-
-**Reading order is an XY-cut.** Recursively: cut on vertical gutters first, then
-on horizontal bands, until neither exists. Columns win over bands, because two
-paragraph breaks that happen to line up across two columns are not a reason to
-read across. A gutter has to be at least `0.6 ×` the page's median line height
-and at least 3 points.
-
-**Lines become blocks** by walking that order and asking whether each line
-continues the one before it: close enough vertically (within `1.1 ×` line
-height), overlapping horizontally, the same size and weight, and not starting
-with a list marker. A wrapped paragraph may hang-indent, so a continuation is
-allowed to start right of the first line's left edge but not meaningfully left
-of it. A list item's own continuation lines may start anywhere under it. Two
-heading lines in a row wrap into one heading.
-
-**List markers** are matched off the front of a block's first line —
-`•`-family glyphs, `-`/`–`/`—`/`·`/`*` followed by a space, `1.`, `(a)`, `iv)` —
-and the marker is taken off the text and kept in `marker`. The dash and star
-forms need the space: `-5 °C` and `*emphasis*` start lines too.
-
-**Depth** comes from indentation, clustered within a column: the distinct left
-edges of that column's list items, anything within 3 points folded together, and
-an item's depth is how many of them sit to its left. A plain line indented under
-an item, in the same column, no bolder and no larger and close below, is that
-item's detail and becomes a nested bullet.
-
-**Heading levels** are assigned document-wide from size alone: larger type is a
-higher level, a size within 8% of the largest size in a level joins that level
-(a 24pt and a 25pt title are the same thing), and nothing goes deeper than
-`####` by default.
-
-**Pictures are placed** among the text rather than appended: before the text
-nearest to it — its label to the right on the same row, or its caption below it
-— and at the end of the page when there is neither.
-
-### Emitting
-
-One pass per page, in block order:
-
-- a heading is `#` × its level, with a blank line either side
-- a list item is indented to where its parent item's text starts — two spaces
-  under `- `, three under `1. ` — then its marker. Ordered markers are
-  **counted, not copied**, and always decimal: CommonMark has no lettered or
-  numeral lists, so `a.` and `iii.` are written as numbers, and the pane letters
-  and numerals the levels back. A paragraph resets the count, coming back up a
-  level resets the deeper ones, and each page counts from `1.` — a list carried
-  onto the next page restarts there
-- a picture is `![page 3 figure 2](<doc>.assets/p3-i1.png)`
-- bold and italic are applied to the whole block when every line of it carried
-  them, and never to a heading
-- characters that would read as markup — `*`, `_`, `` ` ``, `[`, `<`, `&`, `~`,
-  `\`, and a `#`, `>`, `+`, `-` or `1.` opening the line — are escaped, so the
-  pane shows what was printed
-- `---` between pages
-
-What comes back is not only text. `Markdown` also carries, per block, the page
-it was on, its number on that page, and the source line range it became — plus
-`order`, every block written in document order. The editor's selection, the
-line highlighted in the raw view, the range a `shift`-click covers, and scroll
-sync all key off this.
+The decisions themselves — how runs become lines, lines become blocks, blocks
+get roles and an order, and what each one is written as — are documented where
+they are made: the constants and comments of `read.ts`, `structure.ts` and
+`emit.ts`.
 
 ### Where fidelity is still missing
 
-Everything above is a _default_, and every default is a guess a person should be
-able to overrule. That is `edits.json`: the analysis is regenerable from the
-PDF — and kept once made — and the markdown regenerates from the analysis and
-the edits. The roadmap under _How it works_ lists features to build; this is
+Every decision the reader makes is a _default_, and every default is a guess a
+person should be able to overrule. That is `edits.json`: the analysis is
+regenerable from the PDF — and kept once made — and the markdown regenerates
+from the analysis and the edits. The roadmap under _How it works_ lists
+features to build; this is
 what the reader gets wrong today, and what fixing it would take.
 
-**Page furniture** is the clearest case. `furniture.ts` finds what a page prints
-in its margin bands that is not the document — a page number, or a wording
-repeated there on two pages or more and mostly in a margin wherever it appears,
-digits wildcarded so `Page 3 of 40` matches its own kind — and each kind is a
-setting per document: kept as text (the default), hidden as a comment, or
-deleted. Position decides before wording, and the setting is applied where the
-markdown is written, so no block moves and the reader is untouched.
+**Page furniture** is the clearest case. `furniture.ts` finds what a page
+prints in its margins that is not the document: a page number, or a wording
+repeated on two or more pages, digits wildcarded so `Page 3 of 40` matches its
+own kind — position decides before wording. Each kind is a per-document
+setting, kept as text (the default), hidden as a comment, or deleted, applied
+where the markdown is written: no block moves and the reader is untouched.
 
 Beyond that, what a conversion cannot yet get right — a gap with a test case
-named beside it is drawn as an expected failure in the suite (_Testing_,
-below):
+named beside it is drawn as an expected failure in the suite
+([tests/README.md](tests/README.md)):
 
 | gap                                                                      | what comes out today                                                                                                            | what it would take                                                                                                                                              |
 | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -485,35 +262,7 @@ Each of these is a fidelity feature, not a rewrite: they add roles and
 attributes to `Block`, and lines to `emit.ts`. The frame, the ids and the cache
 do not move.
 
-### When the reader changes
-
-The same failure as a revised PDF (_Adding, continuing, and replacing_,
-above), from the other side: the bytes stay the same, and `read.ts` or
-`structure.ts` changes which blocks they become — so edits, keyed to
-positions, would land on the wrong ones.
-
-`READER` in `analysis.ts` is a number bumped by hand whenever a change to the
-reader could move, merge or split a block, and every analysis records the one
-that made it. In the browser, a document's analysis is read once and kept, so
-its edits always apply to the blocks they were made on. An export writes that
-analysis's `reader` into the entry of each document that has edits — not this
-build's, since a kept analysis can be older — and an import from a different
-reader starts that document over, as a revised source does. The analysis
-itself is not exported: with the same reader, reading the PDF again makes the
-same blocks, and its figures with them.
-
-**pdf.js is part of the reader.** It is not pinned, and an upgrade can change
-the text runs `read.ts` is given as surely as a change to `read.ts` can.
-`READ_WITH`, beside `READER`, is the pdf.js version the reader was made with,
-and a test in `tests/reader.test.ts` fails when the installed one differs. The
-fix is to bump `READER` and move `READ_WITH` up together, without checking
-whether any block moved: nothing here can say so for embedded fonts or odd
-encodings, which the drawn test cases (_Testing_, below) do not use. A
-needless bump costs only an older export's edits on import. Once others have
-exports, pin pdf.js and upgrade it on purpose rather than take every release
-as a bump.
-
----
+--
 
 ## Architecture
 
@@ -615,10 +364,9 @@ exposed on the main thread, so everything that touches storage runs in
 without a handler fails `tsc -b`, and therefore fails the gate. Large payloads
 cross by transfer, not copy — a document's bytes, a figure's, and an export's
 zip — so a hundred-megabyte PDF is never held twice. `engine.ts` starts the
-worker lazily, on the first call rather than on load — the landing's
-`stageView()` is usually it — waits for the `READY` the worker sends once it has
-made `sources/`, `markdown/` and `.mdgest/`, and sequences every call after
-that by id against a pending map.
+worker on the first call rather than on load, waits for the `READY` it sends
+once `sources/`, `markdown/` and `.mdgest/` exist, and sequences every call
+after that by id against a pending map.
 
 **Main thread to pdf.js worker.** The second boundary, and pdf.js's code on the
 other side of it: `pdf.ts` starts pdf.js's worker on the first document opened,
@@ -665,11 +413,10 @@ Chrome's (`getDirectory` alone is 86, the handle is not), the module worker
 sets Firefox's, and Web Locks set Safari's. Dropping to a classic worker would
 need a bundled script and would lower Firefox to 111.
 
-These are the APIs the workspace is built on. `pdfjs-dist` 6 declares no
-browser floor of its own — only a Node one, for its build — so this table is
-the app's, and it is worth re-measuring on a browser near the bottom of it
-rather than trusting that the reader comes along for free. `OffscreenCanvas` is
-not used: figures are drawn on the main thread, into an ordinary canvas.
+`pdfjs-dist` 6 declares no browser floor of its own — only a Node one, for its
+build — so this table is the app's, worth re-measuring on a browser near its
+bottom. `OffscreenCanvas` is not used: figures are drawn on the main thread,
+into an ordinary canvas.
 
 ---
 
@@ -677,81 +424,8 @@ not used: figures are drawn on the main thread, into an ordinary canvas.
 
 ### Testing
 
-```sh
-bun run test          # everything, once, in headless Chromium
-bun run test:watch    # re-run on save
-bun run fixtures      # write every reader case to tests/out/ as a PDF
-```
-
-The tests run in a real browser because the reader needs one: `read.ts` draws
-figures into a canvas, pdf.js parses in a worker, and OPFS's file handles exist
-only in a worker. Playwright's Chromium does the running; on a fresh machine or
-in CI, `bunx playwright install --with-deps chromium` first. Nothing under
-`tests/` is imported from `src/`, so none of it reaches a build.
-
-#### What is tested
-
-What this code decides, not what the language or the browser guarantees.
-
-**The reader.** `tests/reader.test.ts` runs every case through the app's own
-path — pdf.js opens the fixture, `readPage` reads each page, `structure` makes
-the blocks, `emit` writes the markdown — and asserts that the installed pdf.js
-is the version `READER` was made with (_When the reader changes_, above).
-
-The reader is almost all decisions — every threshold in _How a page becomes
-markdown_ is a guess about how a page is read — so most cases sit a known
-distance either side of one. The cases live in `tests/cases/`, one file per
-area its name says: headings, lists, blocks, style, links, pictures, pages.
-
-**Editing.** Every edit is a decision about what a person meant.
-`tests/edits.test.ts` covers hide, delete, and the numbering blocks keep or
-give up; `tests/source.test.ts`, one line of raw markdown read back onto its
-block; `tests/draft.test.ts`, a whole-markdown draft paired with blocks by
-their words rather than their place; `tests/divide.test.ts`, cuts, the pieces
-they make, and join putting a divided block back; `tests/furniture.test.ts`,
-the page-number and header/footer settings and their undo. What each file
-asserts in full is its own `it` names.
-
-**The workspace.** `tests/opfs.test.ts` covers the file layer — truncating
-writes, `walk`'s order, `sha256`, what `removeDerived` may touch;
-`tests/stage.test.ts`, staging a dropped folder; `tests/assets.test.ts`,
-figure handles let go on replace and remove; `tests/store.test.ts`, the store
-under a document named `__proto__`; `tests/words.test.ts`, the counting the
-UI phrases with.
-
-**The fixtures under them.** `tests/fixtures/pdf.ts` is the pen: pages drawn
-at exact positions, sizes and faces. `tests/cases/index.ts` registers every
-case file — a new default gets a file and an entry there. `tests/cases/case.ts`
-holds the `Case` type and `summarize`, `tests/cases/text.ts` the shared prose
-and leading (each line with a capital and a descender, so every ink box is the
-same height), and `tests/fixtures/write.ts` writes a case out for
-`bun run fixtures`. `tests/opfs.worker.ts` and `tests/stage.worker.ts` run
-`opfs.ts` and `stage.ts` where they run in the app, since a synchronous file
-handle exists only in a worker.
-
-#### Adding a reader case
-
-A case is pages drawn with exact positions, sizes and faces
-(`tests/fixtures/pdf.ts`), and what they should read as — the blocks in brief,
-and optionally the whole markdown. Document-wide decisions — the body size,
-whether bold means anything, heading levels — are made over the whole PDF,
-which is why each case is its own file rather than one page of a single test
-document.
-
-```ts
-{
-  name: "lists-indent-tolerance",
-  about: "Indents within 3pt are one level (72 and 75); 4pt further in is a level deeper (76).",
-  pages: [(pen) => [X, X + 3, X, X + 4].forEach((x, i) => pen.text(x, TOP + i * LEADING, `• ${ITEMS[i]}`))],
-  blocks: [`bullet • ${ITEMS[0]}`, `bullet • ${ITEMS[1]}`, `bullet • ${ITEMS[2]}`, `  bullet • ${ITEMS[3]}`],
-}
-```
-
-Write the expectation from what a person reading the page would say, not from
-what the reader prints today. Where the two differ, set `known` to why: the
-test is then marked as an expected failure, the suite stays green, and when the
-reader is fixed the test fails until `known` is removed. The known gaps today
-are the rows of _Where fidelity is still missing_ with a case name beside them.
+How to run the tests, what they cover, and how to add a reader case:
+[tests/README.md](tests/README.md).
 
 ### What to check after changing the CSP
 
@@ -775,9 +449,8 @@ hand, never edited downstream.
 uv run scripts/make_brand.py          # PEP 723: cairosvg and pillow come with it
 ```
 
-The script needs no project and no virtualenv of its own; its dependencies are
-declared in its header and `uv` resolves them per run. Nothing in the web build
-depends on it.
+Its dependencies are declared in its header (PEP 723) and resolved by `uv` per
+run; nothing in the web build depends on it.
 
 #### The four drawings
 

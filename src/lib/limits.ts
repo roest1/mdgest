@@ -41,8 +41,8 @@ export const MAX_ENTRIES = 10_000;
  *  memory: the bytes arrive a few at a time and leave again. */
 export const MAX_DROP = 4 * 1024 * 1024 * 1024;
 
-/** An `mdgest.json`. It carries decisions and never bytes -- a sixty-document
- *  corpus is a few hundred kilobytes, see the README, "Exporting" -- so a file near
+/** An `mdgest.json`. It carries decisions and never bytes (`exchange.ts`) --
+ *  a sixty-document corpus is a few hundred kilobytes -- so a file near
  *  this size is not a manifest. Checked before it is read: decoding it to a
  *  string and parsing that string each cost a multiple of its size, and
  *  otherwise the only ceiling on it would be `MAX_FILE`. */

@@ -43,7 +43,7 @@ jobs:
       - name: typecheck
         run: bun run typecheck
 
-      # The tests run in a real browser (README, *Testing*): Playwright's own
+      # The tests run in a real browser (tests/README.md): Playwright's own
       # Chromium, the version the lockfile's playwright expects, with the system
       # libraries it needs.
       - name: test

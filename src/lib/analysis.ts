@@ -24,7 +24,11 @@ export const READER = 3;
 /** The pdf.js `READER` was made with. pdf.js is part of the reader: an
  *  upgrade can change the text runs `read.ts` is given. A test fails when
  *  the installed pdf.js is not this one, and the fix is to bump `READER`
- *  and move this up together -- never this alone. */
+ *  and move this up together -- never this alone: nothing here can say
+ *  whether blocks moved for embedded fonts or odd encodings, which the
+ *  drawn test cases do not use. A needless bump costs only an older
+ *  export's edits on import; once exports circulate, pin pdf.js and
+ *  upgrade it on purpose rather than take every release as a bump. */
 export const READ_WITH = "6.3.289";
 
 export interface Box {
@@ -90,8 +94,8 @@ export const LIST_ROLES: readonly Role[] = ["bullet", "numbered", "alpha", "roma
 
 /** A unit of the markdown: a paragraph, a heading, one list item, a picture.
  *  Its id is its position -- `p{page}b{index}` for text, `p{page}i{index}`
- *  for a picture -- which is what `edits.json` keys to. See the README on
- *  what that means for a revised source. */
+ *  for a picture -- which is what `edits.json` keys to. See `Status` in
+ *  `protocol.ts` for what that means for a revised source. */
 export interface Block {
   id: string;
   kind: "text" | "image";
