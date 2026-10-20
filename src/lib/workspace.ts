@@ -246,7 +246,7 @@ export function renamedId(docId: string, name: string): string {
 /** The visible manifest an exported workspace carries at its root, and the
  *  one file at the root of the OPFS workspace too. Its presence is what makes
  *  a folder or archive a project to continue rather than PDFs to add -- see
- *  the README, "Adding, continuing, and replacing". */
+ *  the README, "How it works". */
 export const MANIFEST = "mdgest.json";
 
 /** What a manifest looks like from the landing's side of it.

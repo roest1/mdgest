@@ -26,6 +26,10 @@ The reader is almost all decisions — every threshold in `read.ts` and
 distance either side of one. The cases live in `cases/`, one file per area its
 name says: headings, lists, blocks, style, links, pictures, pages.
 
+`analysis.test.ts` covers the gate on a stored read: what `parseAnalysis`
+refuses, and that it refuses under the one name that tells the page to read
+the document again rather than leave a person a file they cannot fix.
+
 **Editing.** Every edit is a decision about what a person meant.
 `edits.test.ts` covers hide, delete, and the numbering blocks keep or give up;
 `source.test.ts`, one line of raw markdown read back onto its block;
@@ -81,6 +85,6 @@ Write the expectation from what a person reading the page would say, not from
 what the reader prints today. Where the two differ, set `known` to why: the
 test is then marked as an expected failure, the suite stays green, and when the
 reader is fixed the test fails until `known` is removed. The known gaps today
-are the rows of the README's
-[_Where fidelity is still missing_](../README.md#where-fidelity-is-still-missing)
+are the rows of TODO.md's
+[_Fidelity: where it's still missing_](../TODO.md)
 with a case name beside them.

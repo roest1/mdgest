@@ -5,7 +5,7 @@
  * reading per document at a time: a second pane asking joins the first.
  * The engine keeps what comes out, so the next visit skips the pages. */
 
-import type { Analysis } from "./analysis";
+import { UNUSABLE_ANALYSIS, type Analysis } from "./analysis";
 import { seedAsset } from "./assets";
 import { blankEdits, type Edits } from "./edits";
 import { emit } from "./emit";
@@ -47,6 +47,16 @@ function cancel(docId: string, job: Job): void {
   if (readings[docId]?.status === "reading") setReading(docId, undefined);
 }
 
+/** A stored analysis this build cannot use is no analysis: it holds no
+ *  decisions and is regenerable from the PDF, so the document is read again
+ *  rather than left as a file a person can neither see nor repair. Only
+ *  that: a failure of the engine itself -- OPFS, the worker -- is real and
+ *  stays thrown. */
+function rereadable(cause: unknown): null {
+  if (cause instanceof Error && cause.name === UNUSABLE_ANALYSIS) return null;
+  throw cause;
+}
+
 async function run(docId: string, pages: PDFPageProxy[], job: Job): Promise<void> {
   const publish = (reading: Reading) => {
     if (!job.canceled) useEditor.getState().setReading(docId, reading);
@@ -58,7 +68,9 @@ async function run(docId: string, pages: PDFPageProxy[], job: Job): Promise<void
     publish({ status: "reading", page: 0, pages: pages.length });
     // The walkthrough's example is read every time and kept nowhere: it
     // is not the person's document, and it is two pages.
-    let analysis: Analysis | null = isTourDoc(docId) ? null : await engine.analysis(docId);
+    let analysis: Analysis | null = isTourDoc(docId)
+      ? null
+      : await engine.analysis(docId).catch(rereadable);
     if (job.canceled) return;
 
     // The worker reads the cached edits either way: `convert` answers them

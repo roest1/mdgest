@@ -11,7 +11,33 @@
  * No pdf.js in here: the worker imports this file to write markdown from
  * an analysis, and pdf.js has no business in the engine's worker. */
 
+/** The shape of `analysis.json`: what the types in this file say a stored
+ *  analysis looks like, not how well it was read. Bumped when a field is
+ *  renamed, dropped, or made required, or when a value changes meaning --
+ *  a box turning into `[x, y, w, h]`, a coordinate frame flipping -- so
+ *  that `parseAnalysis` refuses a file it would otherwise half-read.
+ *
+ * The one of this file's three versions with no way back. `READER` resets a
+ * document's edits and reads it again; `EDITS_VERSION` migrates forward
+ * (`checkEdits`). A file in an older format cannot be asked anything,
+ * including which reader made it -- so a bump here throws, and the page
+ * reads the document from its PDF again (`convert.ts`). Edits survive that,
+ * which is right for a shape change and wrong if the same change also
+ * moved blocks: bump `READER` alongside when it did, since the stale file
+ * can no longer be asked.
+ *
+ * Nothing stored is a decision, so this costs reading time and nothing
+ * else -- which is why it may be bumped freely, and why it never has
+ * been. */
 export const ANALYSIS_FORMAT = 1;
+
+/** The `name` on every error `parseAnalysis` throws: the stored analysis
+ *  cannot be used by this build -- wrong format, not JSON, a page that is
+ *  not one. It crosses the worker boundary as data (`protocol.ts`), so the
+ *  page can tell this from a failure of the engine itself and read the
+ *  document again instead of showing a person a file they can neither see
+ *  nor fix. */
+export const UNUSABLE_ANALYSIS = "UnusableAnalysis";
 
 /** Which reader made an analysis. Bumped by hand whenever a change to
  *  `read.ts` or `structure.ts` could move, merge or split a block, and on
@@ -159,7 +185,11 @@ export function blocksById(analysis: Analysis): Map<string, Block> {
  *  checks are the ones the panes and the emitter build on: the format, and
  *  that every page has the arrays they index into. */
 export function parseAnalysis(text: string): Analysis {
-  const problem = (what: string) => new Error(`its analysis.json ${what}.`);
+  const problem = (what: string) => {
+    const error = new Error(`its analysis.json ${what}.`);
+    error.name = UNUSABLE_ANALYSIS;
+    return error;
+  };
   let value: unknown;
   try {
     value = JSON.parse(text);

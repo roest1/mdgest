@@ -174,7 +174,9 @@ export function emit(read: Analysis, assets: string, edits?: Edits): Markdown {
       const head = headOf(b.id);
       if (head === b.id) continue;
       joined.set(b.id, head);
-      children.set(head, [...(children.get(head) ?? []), b]);
+      const kids = children.get(head);
+      if (kids) kids.push(b);
+      else children.set(head, [b]);
     }
   }
 
