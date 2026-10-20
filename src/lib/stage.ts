@@ -169,6 +169,13 @@ async function guarded<T>(write: () => Promise<T>): Promise<T> {
   });
 }
 
+/** Drop what writes cut short by a closed tab left in `.tmp/`. Under the
+ *  lock, because every replacing write is made under it: while this holds
+ *  it, nothing there is a write still under way. */
+export function sweep(): Promise<void> {
+  return locked(opfs.clearTemp);
+}
+
 /** Nothing staged and nothing seen, so the next look seeds again from OPFS. */
 function forget(): void {
   workspace = null;
@@ -876,9 +883,10 @@ async function readEdits(docId: string): Promise<Edits | null> {
 }
 
 /** Write a document's edits where `readEdits` looks: the one spelling of
- *  the file's path and formatting. */
+ *  the file's path and formatting. Replaced, not written in place: it is
+ *  the one file here that holds what a person decided. */
 function writeEdits(docId: string, edits: Edits): Promise<void> {
-  return opfs.writeText([...cacheDir(docId), EDITS], `${JSON.stringify(edits, null, 1)}\n`);
+  return opfs.replaceText([...cacheDir(docId), EDITS], `${JSON.stringify(edits, null, 1)}\n`);
 }
 
 /** One committed document's analysis, or null when it has not been read.

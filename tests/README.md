@@ -40,10 +40,11 @@ header/footer settings and their undo. What each file asserts in full is its
 own `it` names.
 
 **The workspace.** `opfs.test.ts` covers the file layer — truncating writes,
-`walk`'s order, `sha256`, what `removeDerived` may touch; `stage.test.ts`,
-staging a dropped folder; `assets.test.ts`, figure handles let go on replace
-and remove; `store.test.ts`, the store under a document named `__proto__`;
-`words.test.ts`, the counting the UI phrases with.
+replacing ones and what a write cut short leaves, `walk`'s order, `sha256`,
+what `removeDerived` may touch; `stage.test.ts`, staging a dropped folder;
+`assets.test.ts`, figure handles let go on replace and remove; `store.test.ts`,
+the store under a document named `__proto__`; `words.test.ts`, the counting the
+UI phrases with.
 
 **The fixtures under them.** `fixtures/pdf.ts` is the pen: pages drawn at
 exact positions, sizes and faces. `cases/index.ts` registers every case file —

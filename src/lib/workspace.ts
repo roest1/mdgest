@@ -10,6 +10,7 @@
  *     markdown/<folder…>/<doc>.md         what came out
  *     markdown/<folder…>/<doc>.assets/    its figures
  *     .mdgest/<folder…>/<doc>.pdf/        analysis, edits, renders
+ *     .tmp/<uuid>                         a replacing write, not yet moved
  *
  * A document's id is its path under `sources/` without the extension, and
  * `edits.json` is keyed to that. Every path a document has ends in a suffix
@@ -30,6 +31,9 @@ export const MARKDOWN = "markdown";
 /** Working cache. dot-directory here, because here it *is* a cache
  *  the export format is a visible `mdgest.json` and shares none of this. */
 export const CACHE = ".mdgest";
+/** Where `replaceFile` writes before it moves. At the workspace's top and
+ *  not under `.mdgest/`, where a folder named `tmp` would be a document's. */
+export const TEMP = ".tmp";
 
 /** The longest a segment may be, in UTF-8 bytes. A workspace ends up as files
  *  and folders on someone's disk once it is exported, nearly every file

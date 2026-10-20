@@ -95,9 +95,16 @@ self.onmessage = async (event: MessageEvent) => {
 // empty rather than as a directory that is not there. Where it cannot be made,
 // nothing else here can work either, and the page is told why in place of
 // READY -- every call it makes then fails with this, instead of waiting.
+//
+// The sweep follows READY rather than gating it: it waits on the workspace's
+// lock, which a commit in another tab can hold for as long as its sources
+// take to write, and what it removes is in nobody's way meanwhile.
 opfs
   .ensureWorkspace()
-  .then(() => self.postMessage({ id: 0, ready: READY } satisfies Startup))
+  .then(() => {
+    self.postMessage({ id: 0, ready: READY } satisfies Startup);
+    stage.sweep().catch(() => {});
+  })
   .catch((cause: unknown) =>
     self.postMessage({
       id: 0,

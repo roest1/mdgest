@@ -30,6 +30,17 @@ function opfs<K extends keyof Api>(fn: K, ...args: Parameters<Api[K]>): Promise<
   });
 }
 
+/** Call one of the worker's own hooks on `move`: see `opfs.worker.ts`. */
+function harness(fn: "moves"): Promise<number>;
+function harness(fn: "refuseMoves", on: boolean): Promise<void>;
+function harness(fn: string, ...args: unknown[]): Promise<unknown> {
+  const id = next++;
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject });
+    worker.postMessage({ id, fn, args });
+  });
+}
+
 const bytes = (text: string) => new TextEncoder().encode(text);
 
 beforeEach(async () => {
@@ -42,6 +53,57 @@ describe("files", () => {
     await opfs("writeText", ["markdown", "pumps.md"], "{}");
     expect(await opfs("readText", ["markdown", "pumps.md"])).toBe("{}");
     expect(await opfs("size", ["markdown", "pumps.md"])).toBe(2);
+  });
+
+  test("a replacing write moves the new bytes in whole and leaves no temp behind", async () => {
+    const edits = [".mdgest", "pumps.pdf", "edits.json"];
+    const before = await harness("moves");
+    await opfs("replaceText", edits, '{"blocks": {"p1b0": {"role": "heading"}}}');
+    await opfs("replaceText", edits, "{}");
+    // Both by the move, the one way that is never torn, and not the fallback.
+    expect(await harness("moves")).toBe(before + 2);
+    expect(await opfs("readText", edits)).toBe("{}");
+    expect(await opfs("size", edits)).toBe(2);
+    expect(await opfs("walk", [".tmp"])).toEqual([]);
+  });
+
+  test("the manifest is written by a replacing write", async () => {
+    const before = await harness("moves");
+    await opfs("writeManifest", { format: 1, documents: {} } as Parameters<Api["writeManifest"]>[0]);
+    expect(await harness("moves")).toBe(before + 1);
+  });
+
+  test("replacing writes made together each move in whole: none shares another's temp", async () => {
+    const edits = [".mdgest", "pumps.pdf", "edits.json"];
+    const texts = ["{}", '{"done": true}', '{"blocks": {}}', '{"blocks": {"p1b0": {}}}'];
+    const before = await harness("moves");
+    await Promise.all(texts.map((text) => opfs("replaceText", edits, text)));
+    expect(await harness("moves")).toBe(before + texts.length);
+    expect(texts).toContain(await opfs("readText", edits));
+    expect(await opfs("walk", [".tmp"])).toEqual([]);
+  });
+
+  test("where the move is refused, the write still lands, in place, and its temp is dropped", async () => {
+    const edits = [".mdgest", "pumps.pdf", "edits.json"];
+    await opfs("replaceText", edits, '{"blocks": {"p1b0": {"role": "heading"}}}');
+    await harness("refuseMoves", true);
+    try {
+      await opfs("replaceText", edits, "{}");
+    } finally {
+      await harness("refuseMoves", false);
+    }
+    expect(await opfs("readText", edits)).toBe("{}");
+    expect(await opfs("walk", [".tmp"])).toEqual([]);
+  });
+
+  test("a write cut short before its move leaves the target as it was, and clearTemp drops only the temp", async () => {
+    // What a tab closed mid-write leaves: the temp, never moved.
+    await opfs("replaceText", [".mdgest", "pumps.pdf", "edits.json"], '{"done": true}');
+    await opfs("writeText", [".tmp", "0b5f6c1e-orphan"], "{");
+    expect(await opfs("readText", [".mdgest", "pumps.pdf", "edits.json"])).toBe('{"done": true}');
+
+    await opfs("clearTemp");
+    expect(await opfs("walk", [])).toEqual([".mdgest/pumps.pdf/edits.json"]);
   });
 
   test("a file that is not there reads as null, and has no size", async () => {

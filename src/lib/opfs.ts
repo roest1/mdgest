@@ -18,6 +18,7 @@ import {
   MANIFEST,
   MARKDOWN,
   SOURCES,
+  TEMP,
   WORKSPACE_ID,
   WORKSPACES,
   assetsDir,
@@ -35,7 +36,13 @@ import {
  *  and the narrow declaration is the more honest one anyway, since it says
  *  exactly which two calls this module needs a worker for.
  *
- *  Spec: https://fs.spec.whatwg.org/#api-filesystemsyncaccesshandle */
+ *  `move` is missing for another reason: no spec has it yet, only every
+ *  engine (Chrome 102, Firefox 111, Safari 15.2, all under the floor) and
+ *  the platform tests, which hold it to replacing a file already at the
+ *  destination. That replace is what `replaceFile` is built on.
+ *
+ *  Spec: https://fs.spec.whatwg.org/#api-filesystemsyncaccesshandle
+ *  Tests: wpt/fs/script-tests/FileSystemFileHandle-move.js */
 declare global {
   interface FileSystemSyncAccessHandle {
     read(buffer: ArrayBufferView, options?: { at?: number }): number;
@@ -47,6 +54,7 @@ declare global {
   }
   interface FileSystemFileHandle {
     createSyncAccessHandle(): Promise<FileSystemSyncAccessHandle>;
+    move(destination: FileSystemDirectoryHandle, name: string): Promise<void>;
   }
 }
 
@@ -109,12 +117,11 @@ async function fileAt(path: string[], create = false): Promise<FileSystemFileHan
  *
  * Which is also why a write that fails partway would leave nothing at all.
  * With `keep`, what was there is read first and put back when the write
- * fails: an empty `edits.json` is not a document whose save failed but one
- * whose decisions are gone, and an empty `mdgest.json` is a workspace that
- * refuses every action and offers to discard itself. Off by default, for
- * the sources: they are written once, they are far the largest thing here
- * to hold a second copy of, and they are the one file still on the disk a
- * person dropped them from.
+ * fails. That covers a write that throws, not a tab that is closed between
+ * the truncate and the write -- the two files that cannot be lost go through
+ * `replaceFile` for that. Off by default, for the sources: they are written
+ * once, they are far the largest thing here to hold a second copy of, and
+ * they are the one file still on the disk a person dropped them from.
  */
 export async function writeFile(
   path: string[],
@@ -123,6 +130,18 @@ export async function writeFile(
 ): Promise<void> {
   const handle = await fileAt(path, true);
   if (!handle) throw new Error(`cannot create ${path.join("/")}`);
+  await fill(handle, data, keep, path);
+}
+
+/** `writeFile` once the handle is open. `path` is only for the message a
+ *  full disk gets, which names the file a person knows of: for
+ *  `replaceFile`, the one being replaced, not its temp. */
+async function fill(
+  handle: FileSystemFileHandle,
+  data: ArrayBuffer | Uint8Array,
+  keep: boolean,
+  path: string[],
+): Promise<void> {
   const access = await handle.createSyncAccessHandle();
   let had: Uint8Array | null = null;
   let emptied = false;
@@ -171,6 +190,51 @@ export async function writeFile(
   }
 }
 
+/** Replace a file whole or not at all: write a temp file, then move it over.
+ *
+ * For the two files nothing regenerates. `writeFile` truncates and then
+ * writes, so a tab closed between the two leaves the file empty or torn --
+ * and an empty `edits.json` is not a document whose save failed but one
+ * whose decisions are gone, and an empty `mdgest.json` is a workspace that
+ * refuses every action and offers to discard itself. Here the target holds
+ * its old bytes until the move puts the new ones in their place, and a write
+ * cut short leaves only a file in `.tmp/`, for `clearTemp`.
+ *
+ * The temp is named for this write, not for its target, so two writers
+ * never share one. Where the move refuses -- an engine that will not replace
+ * after all, a file someone holds open -- this falls back to `writeFile`
+ * with `keep`, which is how both files were written before, rather than fail
+ * a save that can still be made. A held file fails that too, and says so.
+ */
+export async function replaceFile(path: string[], data: ArrayBuffer | Uint8Array): Promise<void> {
+  const name = path.at(-1);
+  const dir = await dirAt(path.slice(0, -1), true);
+  const temp = [TEMP, crypto.randomUUID()];
+  const handle = await fileAt(temp, true);
+  if (!name || !dir || !handle) throw new Error(`cannot create ${path.join("/")}`);
+  try {
+    await fill(handle, data, false, path);
+  } catch (cause) {
+    await remove(temp).catch(() => {});
+    throw cause;
+  }
+  try {
+    await handle.move(dir, name);
+  } catch {
+    await remove(temp).catch(() => {});
+    await writeFile(path, data, { keep: true });
+  }
+}
+
+/** Remove what replacing writes left behind. Each is a write a closed tab
+ *  cut short, whose target still holds what it held before, so there is
+ *  nothing to finish -- only a file to drop. Safe only while no write can be
+ *  under way, which is the caller's to arrange: `stage.sweep` holds the
+ *  workspace's lock, and every replacing write is made under it. */
+export async function clearTemp(): Promise<void> {
+  await remove([TEMP], true);
+}
+
 export async function readFile(path: string[]): Promise<Uint8Array<ArrayBuffer> | null> {
   const handle = await fileAt(path);
   if (!handle) return null;
@@ -216,8 +280,8 @@ export async function readText(path: string[]): Promise<string | null> {
   return bytes === null ? null : dec.decode(bytes);
 }
 
-export async function writeJson(path: string[], value: unknown): Promise<void> {
-  await writeText(path, `${JSON.stringify(value, null, 1)}\n`);
+export async function replaceText(path: string[], text: string): Promise<void> {
+  await replaceFile(path, enc.encode(text));
 }
 
 export async function remove(path: string[], recursive = false): Promise<void> {
@@ -318,7 +382,7 @@ export async function manifestText(): Promise<string | null> {
 }
 
 export async function writeManifest(manifest: Manifest): Promise<void> {
-  await writeJson([MANIFEST], manifest);
+  await replaceText([MANIFEST], `${JSON.stringify(manifest, null, 1)}\n`);
 }
 
 /** Empty the workspace by removing its folder whole: sources, outputs, cache,

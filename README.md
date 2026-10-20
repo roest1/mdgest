@@ -237,7 +237,9 @@ script and would lower Firefox only to 111.
 `pdfjs-dist` 6 declares no browser floor of its own — only a Node one, for its
 build — so this table is the app's, worth re-measuring on a browser near its
 bottom. `OffscreenCanvas` adds no row: figures are drawn on the main thread,
-into an ordinary canvas.
+into an ordinary canvas. Nor does `FileSystemFileHandle.move()`, which
+`edits.json` and the manifest are written through: Chrome 102, Firefox 111,
+Safari 15.2, per MDN's compatibility data.
 
 ---
 
