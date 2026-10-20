@@ -53,18 +53,19 @@ do not move.
 
 ## To build
 
-|     |                  |                                                                                                        |
-| --- | ---------------- | ------------------------------------------------------------------------------------------------------ |
-| []  | cross out        | ~~strikethrough~~ option in floating toolbar. Needs to click and drag to highlight text.               |
-| []  | task Lists       | Use - [ ] for unchecked boxes and - [x] for checked boxes.                                             |
-| []  | mutable indices  | click-and-drag to reorder or click and edit index                                                      |
-| []  | tables           | convert to markdown table syntax                                                                       |
-| []  | code             | `inline_code()` and ```<language> multi-line code                                                      |
-| []  | math             | Needs research. Markdown supports latex. `$...$`                                                       |
-| []  | images           | drag corners to resize height / width; choose left, center, right placement; rotate                    |
-| []  | mermaid diagrams | https://mermaid.ai/open-source/intro/ for different diagrams. Simple one to start: DAG (detect arrows) |
-| []  | capital lists    | `A.` / `I.` variants of alpha and roman lists. Could show on hover over `a.` / `i.` in the toolbar, like the iPhone keyboard's press-and-hold |
-| []  | tour upkeep      | the guided tour needs to stay up to date with each new feature                                         |
-| []  | `rules.json`     | what the engine learns from a folder's documents (biggest design piece left)                           |
-| []  | toc tooling      | decide: is tooling needed for a table of contents and configuring it?                                  |
-| []  | footnotes        | decide: `[^1]` footnote syntax?                                                                        |
+|     |                                        |                                                                                                                                                                                                                                                     |
+| --- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| []  | cross out                              | ~~strikethrough~~ option in floating toolbar. Needs to click and drag to highlight text.                                                                                                                                                            |
+| []  | task Lists                             | Use - [ ] for unchecked boxes and - [x] for checked boxes.                                                                                                                                                                                          |
+| []  | mutable indices                        | click-and-drag to reorder or click and edit index                                                                                                                                                                                                   |
+| []  | tables                                 | convert to markdown table syntax                                                                                                                                                                                                                    |
+| []  | code                                   | `inline_code()` and ```<language> multi-line code                                                                                                                                                                                                   |
+| []  | math                                   | Needs research. Markdown supports latex. `$...$`                                                                                                                                                                                                    |
+| []  | images                                 | drag corners to resize height / width; choose left, center, right placement; rotate                                                                                                                                                                 |
+| []  | mermaid diagrams                       | https://mermaid.ai/open-source/intro/ for different diagrams. Simple one to start: DAG (detect arrows)                                                                                                                                              |
+| []  | capital lists                          | `A.` / `I.` variants of alpha and roman lists. Could show on hover over `a.` / `i.` in the toolbar, like the iPhone keyboard's press-and-hold                                                                                                       |
+| []  | tour upkeep                            | the guided tour needs to stay up to date with each new feature                                                                                                                                                                                      |
+| []  | `rules.json`                           | what the engine learns from a folder's documents (biggest design piece left)                                                                                                                                                                        |
+| []  | toc tooling                            | decide: is tooling needed for a table of contents and configuring it?                                                                                                                                                                               |
+| []  | footnotes                              | decide: `[^1]` footnote syntax?                                                                                                                                                                                                                     |
+| []  | index the workspace for downstream RAG | **link to sections (he citation contract)**. mdgest owns one half: every emitted heading gets a stable, unique, GitHub-style anchor, and a citable id is the document's folder-relative path minus .md. Those compose into `[[doc:<doc-id>#<anchor> | display]]`. Repairing, validating and resolving tokens against a corpus is the other half and deliberately not here |

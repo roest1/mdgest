@@ -59,47 +59,48 @@ request.
 ## How it works
 
 <p align="center">
-  <img src="docs/diagrams/workspace.svg" alt="Drop files from your disk into the stage, commit them to the workspace in browser storage, export the workspace back to disk" width="100%">
+  <img src="docs/diagrams/workspace.svg" alt="Files dropped from your disk are held in the stage, committed to the workspace in browser storage, and exported back to disk. The workspace is seeded into the stage on every visit, and an export dropped back in is continued." width="100%">
 </p>
 
 Browser storage is evictable and there is no account, so **exporting is what
-saving means**. A workspace is a tree in your browser's own storage (at
-`workspaces/default/`), and an export of it is a folder on your disk that you
-hand back later to carry on where you left off. Nothing in it is hidden.
-Folders are yours to organize however you like — mdgest mirrors them. Say you
-upload an `invoices` folder to mdgest with `invoice1.pdf` inside it.
-
-    <workspace>/
-      mdgest.json                              the manifest: each document's SHA-256 and every decision
-      sources/invoices/invoice1.pdf            the source PDF, untouched
-      markdown/invoices/invoice1.md            the output, same tree (those marked done)
-      markdown/invoices/invoice1.assets/       its figures, as PNGs
-      .mdgest/invoices/invoice1.pdf/
-        analysis.json                          the engine's read of the PDF (blocks, fonts, roles) — regenerable until it has edits
-        edits.json                             your corrections, whether it is done, and its undo history
-
-Every edit is written to `edits.json` as it is made; there is no save button.
-
-A markdown-only export writes `markdown/` alone. Markdown is written for done
-documents only, so nothing half-finished goes out looking finished. Into a
-folder, the folder must be empty or one an earlier export wrote; what that
-export wrote is replaced, and nothing else there is touched.
-
-`mdgest.json` gathers each document's `edits.json` into one file, each entry
-checked on its own — `src/lib/exchange.ts` documents the format and what an
-import does with a changed, damaged, or other-reader entry.
+saving means**: an export is a plain folder or zip on your disk, and dropping
+it back in carries on where you left off. Nothing in it is hidden, and folders
+are yours to organize however you like — mdgest mirrors them.
 
 Everything you drop — PDFs, folders, zips — is listed before anything is
 written: an earlier export (recognized by its `mdgest.json`) continues where
 it left off, new PDFs join the one workspace this browser keeps, and a
-revised PDF starts over, because edits are keyed to block positions. The
-marks a row can carry are `src/lib/protocol.ts`'s `Status`; what committing
-each one does, `src/lib/stage.ts`.
+revised PDF starts over, because edits are keyed to block positions. So does
+a document whose edits were made by another version of the reader; either way
+the landing says so beside the row before anything is written. The marks a
+row can carry are `src/lib/protocol.ts`'s `Status`; what committing each one
+does, `src/lib/stage.ts`.
 
-Markdown conversion involves three files, one direction, no model — and
-`convert.ts` as the conductor: one reading per document at a time, the engine's
-cached `analysis.json` used when there is one, and the result put in the store
-for both panes.
+Say you upload an `invoices` folder with `invoice1.pdf` inside it. An export
+of the workspace is:
+
+    <export>/
+      mdgest.json                              the manifest: each document's SHA-256 and every decision
+      sources/invoices/invoice1.pdf            the source PDF, untouched
+      markdown/invoices/invoice1.md            the output, same tree
+      markdown/invoices/invoice1.assets/       its figures, as PNGs
+
+Markdown goes out for done documents only, so nothing half-finished looks
+finished; a markdown-only export writes `markdown/` alone. Into a folder, the
+folder must be empty or one an earlier export wrote; what that export wrote
+is replaced, and nothing else there is touched. `src/lib/exchange.ts`
+documents the manifest's format and what an import does with a changed,
+damaged, or other-reader entry.
+
+In the browser the same tree also carries `.mdgest/`, the engine's cache: its
+read of each PDF (`analysis.json`, regenerable until it has edits) and your
+corrections, whether the document is done, and its undo history
+(`edits.json`, written as each edit is made — there is no save button).
+`src/lib/workspace.ts` has the layout.
+
+Markdown conversion involves three files, one direction, no model;
+`convert.ts` sequences them, one document at a time, reusing the engine's
+cached `analysis.json` when there is one.
 
 ```mermaid
 flowchart LR
@@ -123,22 +124,19 @@ flowchart LR
     class PDF,WK store
 ```
 
-`read.ts` and `structure.ts` run on the page's thread, because that is where
-pdf.js has the document open and where a canvas exists to draw a figure into
-(_Where it runs_, below). `emit.ts` is pure and runs on both sides: the worker
-calls it to write `markdown/<doc>.md`, and the page calls it to know which
-source lines a block became — so the numbered boxes on a page and the numbered
-lines beside them are one list by construction, not two lists kept in step.
+`emit.ts` is pure and runs on both sides: the worker calls it to write
+`markdown/<doc>.md`, and the page calls it to know which source lines a block
+became — so the numbered boxes on a page and the numbered lines beside them
+are one list by construction, not two lists kept in step. Why `read.ts` and
+`structure.ts` run on the page's thread: _Where it runs_, below.
 
 **Why pdf.js.** It was chosen over pdfium by measurement: over four documents
 it reproduced the reference markdown byte for byte, and where the two
 disagreed — nine lines — pdfium was wrong every time.
 
-**The frame.** Everything downstream of `read.ts` is in PDF points, in each
-page's own frame at scale 1, origin top-left, y down — what
-`getViewport({ scale: 1 })` lays out, with the page's rotation already applied.
-A box in an analysis is where a person sees the thing, which is what lets the
-page pane draw it by multiplying by the zoom and nothing else.
+**The frame.** Everything downstream of `read.ts` is in PDF points in the
+page's displayed frame, so the page pane draws a box by multiplying by the
+zoom and nothing else; `src/lib/analysis.ts` defines it.
 
 The decisions themselves — how runs become lines, lines become blocks, blocks
 get roles and an order, and what each one is written as — are documented where
