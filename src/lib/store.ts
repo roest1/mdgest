@@ -161,6 +161,11 @@ interface Editor {
   setDraft: (docId: string, draft: Draft | null) => void;
   /** Click on block `id` of `docId` in the pane `from`. */
   pick: (docId: string, id: string, modifiers: Modifiers, from: Side) => void;
+  /** A lasso over the blocks `hits` of `docId` in the pane `from`: they
+   *  become the selection, or are added to `base` -- the selection as the
+   *  lasso began, given when the toggle key was held. No hits leaves `base`
+   *  as it was, or nothing selected. */
+  lasso: (docId: string, hits: string[], base: Selection | null, from: Side) => void;
   deselect: () => void;
 }
 
@@ -253,6 +258,21 @@ export const useEditor = create<Editor>((set, get) => ({
     if (!range && !toggle && same?.ids.length === 1 && same.ids[0] === id)
       return set({ selection: null });
     set({ selection: { docId, ids: [id], focus: id, anchor: id, from } });
+  },
+  lasso: (docId, hits, base, from) => {
+    if (get().dividing) set({ dividing: null });
+    const reading = get().readings[docId];
+    if (reading?.status !== "ready") return;
+    const { order, blocks } = reading.markdown;
+    // As `pick` takes them: a joined block is the block it is now part of.
+    const swept = new Set(hits.map((id) => blocks[id]?.joined || id));
+    const kept = base?.docId === docId ? base : null;
+    const ids = order.filter((id) => swept.has(id) || kept?.ids.includes(id));
+    // The first block swept, in the order they were written, is what the
+    // markdown pane brings into view and a shift-click ranges from.
+    const first = order.find((id) => swept.has(id));
+    if (!first) return set({ selection: kept });
+    set({ selection: { docId, ids, focus: first, anchor: first, from } });
   },
   deselect: () => set({ selection: null, dividing: null }),
 }));

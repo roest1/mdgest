@@ -249,6 +249,7 @@ Safari 15.2, per MDN's compatibility data.
 - hyperlinks - links in the PDF survive into the markdown as `[text](url)`
   - no ability to create links yet. For example, link in-text citation to citation link in works-cited which links to a url.
 - toggle - click to select, `shift`-click for a range, `ctrl`/`cmd`-click for distinct blocks, click away or `esc` deselects.
+  - lasso - drag from bare paper to select every block the box touches, like a sidebar or one column of a table; hold `ctrl`/`cmd` to add to the selection, `esc` mid-drag puts it back.
 - format - toggle blocks and set their formatting from the floating toolbar.
   - heading level (**H1**, `#`), (**H2**, `##`), (**H3**, `###`), (**H4**, `####`)
   - ¶ paragraph (plain text)

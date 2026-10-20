@@ -64,3 +64,72 @@ describe("a document nobody has read", () => {
     }
   });
 });
+
+describe("a lasso", () => {
+  // Four blocks written a, b, c, d, with e joined onto c and so not written
+  // on its own.
+  const placed = (id: string, n: number, joined?: string) => ({
+    id, page: 1, n, from: n, to: n, hidden: false, deleted: false, joined,
+  });
+  const ready = {
+    status: "ready",
+    markdown: {
+      text: "",
+      lines: [],
+      order: ["a", "b", "c", "d"],
+      blocks: {
+        a: placed("a", 1), b: placed("b", 2), c: placed("c", 3), d: placed("d", 4),
+        e: placed("e", 3, "c"),
+      },
+    },
+  } as unknown as Reading;
+
+  beforeEach(() => {
+    useEditor.getState().setReading("doc", ready);
+    useEditor.getState().deselect();
+  });
+  const selection = () => useEditor.getState().selection;
+
+  test("selects what it swept, in the order it was written", () => {
+    useEditor.getState().lasso("doc", ["d", "b"], null, "page");
+    expect(selection()).toEqual({ docId: "doc", ids: ["b", "d"], focus: "b", anchor: "b", from: "page" });
+  });
+
+  test("takes a joined block as the block it is part of", () => {
+    useEditor.getState().lasso("doc", ["e"], null, "page");
+    expect(selection()?.ids).toEqual(["c"]);
+  });
+
+  test("replaces the selection, or adds to the one it began with", () => {
+    const { pick, lasso } = useEditor.getState();
+    pick("doc", "a", { range: false, toggle: false }, "page");
+    const base = selection();
+    lasso("doc", ["d"], null, "page");
+    expect(selection()?.ids).toEqual(["d"]);
+    // Grown over c and shrunk back off it, with the toggle key held: what
+    // was selected before the lasso stays, what it left goes.
+    lasso("doc", ["c", "d"], base, "page");
+    expect(selection()?.ids).toEqual(["a", "c", "d"]);
+    lasso("doc", ["d"], base, "page");
+    expect(selection()?.ids).toEqual(["a", "d"]);
+  });
+
+  test("sweeping nothing leaves what it began with", () => {
+    const { pick, lasso } = useEditor.getState();
+    pick("doc", "a", { range: false, toggle: false }, "page");
+    const base = selection();
+    lasso("doc", ["b"], base, "page");
+    // Escape hands back the selection from before, focus and all.
+    lasso("doc", [], base, "page");
+    expect(selection()).toEqual(base);
+    lasso("doc", [], null, "page");
+    expect(selection()).toBeNull();
+  });
+
+  test("puts the cut cursor away", () => {
+    const { setDividing, lasso } = useEditor.getState();
+    setDividing({ docId: "doc", id: "a", cuts: [] });
+    lasso("doc", ["b"], null, "page");
+    expect(useEditor.getState().dividing).toBeNull();
+  });
+});
