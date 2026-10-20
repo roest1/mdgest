@@ -120,15 +120,6 @@ dist-ssr/
 # TernJS port file
 .tern-port
 
-# pdf workspace
-workspace/
-
-# Tauri
-target/
-binaries/
-schemas/
-.pyinstaller/
-
 *.local
 .vscode/*
 ~.vscode/extensions.json
@@ -139,3 +130,7 @@ schemas/
 *.njsproj
 *.sln
 *.sw?
+
+# Test runs: failure screenshots, and the fixture PDFs `bun run fixtures` writes
+.vitest/
+tests/out/

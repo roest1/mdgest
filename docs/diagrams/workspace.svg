@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 250" width="760" height="250" role="img" aria-label="Your disk, the stage, the workspace: drop, open, export">
+    <style>
+        :root { --ink:#1A1714; --muted:#6B645D; --line:#3A3531; --panel:#FFFFFF; }
+        @media (prefers-color-scheme: dark) {
+        :root { --ink:#ECE8E3; --muted:#9C958E; --line:#CFC9C2; --panel:#1B1917; }
+        }
+        text { fill:var(--ink); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+        .title { font-size:19px; font-weight:700; }
+        .cap { font-size:14px; fill:var(--muted); }
+        .label { font-size:15px; fill:var(--muted); }
+        .panel { fill:var(--panel); stroke:var(--line); stroke-width:1.5; }
+        .wire { fill:none; stroke:var(--line); stroke-width:1.75; }
+        .wire.dash { stroke-dasharray:4 5; }
+        .head { fill:var(--line); }
+    </style>
+    <defs>
+        <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+            <path class="head" d="M0 0 L10 5 L0 10 Z"/>
+        </marker>
+    </defs>
+    <!-- seed loop: workspace -> stage, over the top -->
+    <text class="label" x="460" y="26" text-anchor="middle">seeded back on every visit</text>
+    <path class="wire" d="M640 70 V40 H380 V67" marker-end="url(#a)"/>
+    <!-- your disk -->
+    <rect class="panel" x="20" y="70" width="200" height="110" rx="10"/>
+    <text class="title" x="120" y="112" text-anchor="middle">Your disk</text>
+    <text class="cap" x="120" y="138" text-anchor="middle">PDFs, folders, zips,</text>
+    <text class="cap" x="120" y="158" text-anchor="middle">or an earlier export</text>
+    <!-- drop -->
+    <text class="label" x="250" y="116" text-anchor="middle">drop</text>
+    <path class="wire" d="M222 125 H277" marker-end="url(#a)"/>
+    <!-- the stage -->
+    <rect class="panel" x="280" y="70" width="200" height="110" rx="10"/>
+    <text class="title" x="380" y="112" text-anchor="middle">The stage</text>
+    <text class="cap" x="380" y="138" text-anchor="middle">hashed and listed,</text>
+    <text class="cap" x="380" y="158" text-anchor="middle">nothing written yet</text>
+    <!-- open -->
+    <text class="label" x="510" y="116" text-anchor="middle">open</text>
+    <path class="wire" d="M482 125 H537" marker-end="url(#a)"/>
+    <!-- the workspace -->
+    <rect class="panel" x="540" y="70" width="200" height="110" rx="10"/>
+    <text class="title" x="640" y="112" text-anchor="middle">The workspace</text>
+    <text class="cap" x="640" y="138" text-anchor="middle">browser storage: evictable,</text>
+    <text class="cap" x="640" y="158" text-anchor="middle">never uploaded</text>
+    <!-- export: workspace -> disk, underneath -->
+    <path class="wire dash" d="M640 182 V212 H120 V184" marker-end="url(#a)"/>
+    <text class="label" x="380" y="236" text-anchor="middle">export: a folder or zip you keep, and can drop back in to continue</text>
+</svg>
