@@ -17,4 +17,11 @@ export default defineConfig({
       },
     ],
   },
+  server: {
+    // pin IPv4: `localhost` can resolve to ::1 only
+    host: "127.0.0.1",
+    // `||`, not `??`: an exported-but-empty WEB_PORT is Number('') === 0,
+    // which means "pick a random port".
+    port: Number(process.env.WEB_PORT) || 2048,
+  },
 });
