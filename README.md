@@ -54,12 +54,28 @@ then vite) are what CI runs, in that order, after
 `bun install --frozen-lockfile`, on every push to `main` and every pull
 request.
 
+### Tech stack
+
+**the app** — one bundle, hosted as static files on Cloudflare Pages. No server,
+no account, and no request to any other origin: what it fetches after the page
+loads — the editor, pdf.js's worker and data, the tour — is its own.
+
+|          |                                                                                                                    |
+| -------- | ------------------------------------------------------------------------------------------------------------------ |
+| build    | `vite` (rolldown), `typescript`, `oxlint`                                                                          |
+| ui       | `react`, `react-router`, `tailwind`, `lucide-react` icons                                                          |
+| state    | `zustand` — one store for what both editor panes read                                                              |
+| pdf      | `pdfjs-dist` 6 — its assets shipped same-origin (_What the boundaries are_, below)                                 |
+| markdown | `react-markdown` + `remark-gfm` for the rendered view                                                              |
+| archives | `fflate` — unzip on the way in, zip on the way out                                                                 |
+| fonts    | Literata (serif), Geist Sans (ui), JetBrains Mono (code), Caveat (the tour's hand) — self-hosted via `@fontsource` |
+
 ---
 
 ## How it works
 
 <p align="center">
-  <img src="docs/diagrams/workspace.svg" alt="Files dropped from your disk are held in the stage, committed to the workspace in browser storage, and exported back to disk. The workspace is seeded into the stage on every visit, and an export dropped back in is continued." width="100%">
+  <img src="docs/diagrams/workspace.svg" alt="Files dropped from your disk are held in the stage, written to the workspace in browser storage when you open it, and exported back to disk. The workspace is seeded into the stage on every visit, and an export dropped back in is continued." width="100%">
 </p>
 
 Browser storage is evictable and there is no account, so **exporting is what
@@ -72,9 +88,10 @@ written: an earlier export (recognized by its `mdgest.json`) continues where
 it left off, new PDFs join the one workspace this browser keeps, and a
 revised PDF starts over, because edits are keyed to block positions. So does
 a document whose edits were made by another version of the reader; either way
-the landing says so beside the row before anything is written. The marks a
-row can carry are `src/lib/protocol.ts`'s `Status`; what committing each one
-does, `src/lib/stage.ts`.
+the landing says so beside the row before anything is written. A browser
+holds one workspace at a time: a second export is refused until the first is
+discarded. The marks a row can carry are `src/lib/protocol.ts`'s `Status`;
+what opening the workspace does with each one, `src/lib/stage.ts`.
 
 Say you upload an `invoices` folder with `invoice1.pdf` inside it. An export
 of the workspace is:
@@ -104,31 +121,22 @@ cached `analysis.json` when there is one.
 
 ```mermaid
 flowchart LR
-    PDF[("PDF bytes<br/>OPFS, or the bundled example")]
-    subgraph PAGE ["the page's thread — where pdf.js already has the document open"]
-        direction LR
-        READ["<b>read.ts</b><br/>lines · pictures<br/>PNG per figure"]
-        STRUCT["<b>structure.ts</b><br/>blocks · roles · order"]
-        READ -->|"ReadPage[]"| STRUCT
-    end
-    EMIT["<b>emit.ts</b><br/>markdown text<br/>+ where each block went"]
-    STRUCT -->|"Analysis"| EMIT
-    PDF --> READ
-    EMIT -->|"text"| PANE["markdown pane"]
-    EMIT -->|"blocks · order"| BOX["boxes, numbers,<br/>selection, scroll sync"]
-    STRUCT -.->|"engine.convert"| WK["worker: analysis.json<br/>markdown/&lt;doc&gt;.md<br/>&lt;doc&gt;.assets/*.png"]
+    PDF[("PDF")] --> READ["<b>read.ts</b><br/>lines · pictures"]
+    READ --> STRUCT["<b>structure.ts</b><br/>blocks · roles · order"]
+    STRUCT -->|"Analysis"| PAGE["<b>emit.ts</b>, on the page<br/>markdown pane · numbered boxes"]
+    STRUCT -->|"Analysis"| WORKER["<b>emit.ts</b>, in the worker<br/>markdown/&lt;doc&gt;.md · .assets/"]
 
-    classDef step fill:#e0e7ff,stroke:#6366f1,stroke-width:1px,color:#1e1b4b
-    classDef store fill:#fde68a,stroke:#b45309,stroke-width:1px,color:#1c1917
-    class READ,STRUCT,EMIT,PANE,BOX step
-    class PDF,WK store
+    classDef step stroke:#6366f1,stroke-width:2.5px
+    classDef store stroke:#d97706,stroke-width:2.5px
+    class READ,STRUCT,PAGE,WORKER step
+    class PDF store
 ```
 
-`emit.ts` is pure and runs on both sides: the worker calls it to write
-`markdown/<doc>.md`, and the page calls it to know which source lines a block
-became — so the numbered boxes on a page and the numbered lines beside them
-are one list by construction, not two lists kept in step. Why `read.ts` and
-`structure.ts` run on the page's thread: _Where it runs_, below.
+`read.ts` and `structure.ts` run on the page's thread, where pdf.js has the
+document open. `emit.ts` is pure and runs on both sides: the worker calls it
+to write `markdown/<doc>.md`, and the page calls it to know which source lines
+a block became — so the numbered boxes on a page and the numbered lines beside
+them are one list by construction, not two lists kept in step.
 
 **Why pdf.js.** It was chosen over pdfium by measurement: over four documents
 it reproduced the reference markdown byte for byte, and where the two
@@ -143,38 +151,11 @@ get roles and an order, and what each one is written as — are documented where
 they are made: the constants and comments of `read.ts`, `structure.ts` and
 `emit.ts`.
 
----
-
-## Architecture
-
-### Tech stack
-
-**the app** — one bundle, hosted as static files on Cloudflare Pages. No server,
-no account, and no request to any other origin: what it fetches after the page
-loads — the editor, pdf.js's worker and data, the tour — is its own.
-
-|          |                                                                                                                    |
-| -------- | ------------------------------------------------------------------------------------------------------------------ |
-| build    | `vite` (rolldown), `typescript`, `oxlint`                                                                          |
-| ui       | `react`, `react-router`, `tailwind`, `lucide-react` icons                                                          |
-| state    | `zustand` — one store for what both editor panes read                                                              |
-| pdf      | `pdfjs-dist` 6 — its assets shipped same-origin (_What the boundaries are_, below)                                 |
-| markdown | `react-markdown` + `remark-gfm` for the rendered view                                                              |
-| archives | `fflate` — unzip on the way in, zip on the way out                                                                 |
-| fonts    | Literata (serif), Geist Sans (ui), JetBrains Mono (code), Caveat (the tour's hand) — self-hosted via `@fontsource` |
-
-**pdf.js reads the PDF.** Every line with its box, size and weight, and every
-picture with the bounds it was drawn to (chosen over pdfium by measurement —
-_Why pdf.js_, above).
-
-**OPFS is the workspace.** The origin-private file system is the only storage
-every browser has, and its synchronous access handle reads or writes a whole
-file in one call (_Where it runs_, below).
-
 ### Where it runs
 
 Where everything goes once the bundle reaches a browser. Every boundary the app
-has is inside one tab.
+has is inside one tab; what each one is made of — the protocol, the pdf.js
+assets, the write discipline — is under _Architecture_, below.
 
 ```mermaid
 ---
@@ -223,13 +204,20 @@ flowchart LR
     class CF outside
 ```
 
-The build that puts those files on the edge is a gate, not a deploy: the checks
+---
+
+## Architecture
+
+The deployed shape: what sits on which side of each boundary, and what a
+browser needs to run it.
+
+### What the boundaries are
+
+The build that puts the bundle on Cloudflare Pages is a gate, not a deploy: the checks
 under _Development_ run in CI and stop there. Cloudflare Pages is expected to
 build the same way from the repo,
 with `bun run build` as the command and `dist` as the output directory; that
 connection is configured on the Cloudflare side and is not in this repo.
-
-#### What the boundaries are
 
 **Edge to browser.** `dist/` is plain files, two of them hosting
 configuration. `_redirects` answers a deep link like `/edit/manuals/valves`
@@ -265,7 +253,7 @@ and it is not a `public/` copy anyone has to remember to refresh.
 
 **Worker to OPFS.** Resolving a handle is async everywhere; only read and write
 on an already-resolved sync handle are synchronous. Web Locks keep two tabs from
-writing one workspace at once, and a commit writes the manifest in two phases so
+writing one workspace at once, and opening a workspace writes the manifest in two phases so
 that one that stops partway — a full disk, a file since moved — leaves a
 manifest wrong about nothing. The mechanics — truncate-then-write, handles
 closed in a `finally`, what each manifest phase carries — are documented where
@@ -275,7 +263,7 @@ they happen, in `opfs.ts` and `stage.ts`.
 is advisory — which is why an export, not the workspace, is the durable copy
 (_How it works_, above).
 
-#### Browser floor
+### Browser floor
 
 | Requirement                      | Chrome / Edge | Firefox | Safari   |
 | -------------------------------- | ------------- | ------- | -------- |
@@ -293,7 +281,7 @@ build — so this table is the app's, worth re-measuring on a browser near its
 bottom. `OffscreenCanvas` is not used: figures are drawn on the main thread,
 into an ordinary canvas.
 
-#### What to check after changing the CSP
+### What to check after changing the CSP
 
 `_headers` is enforced only on the deployed site, so the check is: deploy,
 open a document, and read the console for "Refused to …". The two things most

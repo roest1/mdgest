@@ -7,7 +7,9 @@
  * keeps the button off until one is kept or renamed. The one prompt is the
  * landing's, at commit, for rows that would write over a listed source. The
  * one write that happens outside that rule is `seed` recording hashes of
- * documents already in OPFS, which changes nothing anybody dropped.
+ * documents already in OPFS, which changes nothing anybody dropped. What
+ * this file calls a commit is the landing's "Create new workspace" or
+ * "Continue workspace" button; the README says "open".
  *
  * One workspace at a time. The slot holds either an upload with a manifest
  * or the workspace already in OPFS from an earlier visit, seeded on the first
@@ -134,7 +136,7 @@ const WORKSPACE_LOCK = `mdgest-workspace:${WORKSPACE_ID}`;
  * `exclusive` orders this worker's calls, but a second tab has a worker, and
  * a stage, of its own. Web Locks are the one lock tabs share. They are what
  * sets Safari's floor at 15.4, past the 15.2 the synchronous handle asks for
- * -- see the README, under "Where it runs". Not reentrant: nothing called
+ * -- see the README, under "Browser floor". Not reentrant: nothing called
  * inside `fn` may take it. */
 function locked<T>(fn: () => Promise<T>): Promise<T> {
   return navigator.locks.request(WORKSPACE_LOCK, fn);

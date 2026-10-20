@@ -40,7 +40,7 @@ function start(): Promise<void> {
   if (ready) return ready;
   // `type: "module"` is what lets the worker use `import`, and it is what sets
   // Firefox's floor: module workers are in Firefox 114. The rest of the floor
-  // is in the README, under "Where it runs".
+  // is in the README, under "Browser floor".
   worker = new Worker(new URL("./engine.worker.ts", import.meta.url), {
     type: "module",
   });
