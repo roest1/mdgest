@@ -42,9 +42,11 @@ import {
   SOURCES,
   assetsDir,
   assetsPrefix,
+  basename,
   byCodePoint,
   cacheDir,
   cleanId,
+  cleanName,
   copyManifest,
   docIdFor,
   emptyManifest,
@@ -383,6 +385,10 @@ async function stageGroup(
       return null;
     });
     if (!manifest) continue;
+    // A workspace with no name of its own takes the one it arrived under:
+    // its folder's, or its zip's. One dropped as bare files has neither.
+    const arrivedAs = cleanName(root ? basename(root) : zipName ? stem(zipName) : "");
+    if (manifest.name === undefined && arrivedAs) manifest.name = arrivedAs;
     arriving = { name, origin: "upload", manifest, assessed: await assessAll(manifest) };
     const sources = root ? `${root}/${SOURCES}` : SOURCES;
     for (const item of inside) {
@@ -805,6 +811,49 @@ export function docs(): Promise<string[]> {
   return locked(opfs.docs);
 }
 
+/** The committed workspace's name, or null when it has none -- or no
+ *  manifest that reads, which the landing is where to say. */
+export function workspaceName(): Promise<string | null> {
+  return locked(async () => {
+    const text = await opfs.manifestText();
+    if (text === null) return null;
+    try {
+      return parseManifest(text).name ?? null;
+    } catch {
+      return null;
+    }
+  });
+}
+
+/** Name the committed workspace, and answer the name as kept.
+ *
+ * The one write to the manifest from the editor's side. It goes through
+ * `exclusive` because the stage may hold a look at the manifest it is about
+ * to change: the landing seeded it, and the person came here without
+ * committing. That look is moved on past this write, since this tab made it
+ * -- left as it was, the stage's next commit would find the manifest changed
+ * and blame another tab. A look that was already stale stays stale. */
+export function renameWorkspace(name: string): Promise<string> {
+  const kept = cleanName(name);
+  if (!kept) return Promise.reject(new Error("A workspace's name cannot be empty."));
+  return exclusive(() =>
+    locked(async () => {
+      const before = await look();
+      if (before.manifest === null && before.docs.length === 0) {
+        throw new Error("There is no workspace in this browser to name.");
+      }
+      const manifest = before.manifest === null ? emptyManifest() : parseManifest(before.manifest);
+      manifest.name = kept;
+      await opfs.writeManifest(manifest);
+      if (same(before, seen)) {
+        seen = await look();
+        if (workspace?.origin === "browser") workspace.manifest.name = kept;
+      }
+      return kept;
+    }),
+  );
+}
+
 /** One committed document's bytes, for the editor to render. Under the lock
  *  for the same reason as `docs`: a commit in another tab writes sources one
  *  at a time, and this should see one either before it or after. */
@@ -960,6 +1009,7 @@ async function gather(markdownOnly: boolean): Promise<Out[]> {
   const sources = await opfs.docs();
   const encoder = new TextEncoder();
   const manifest = emptyManifest();
+  if (stored.name !== undefined) manifest.name = stored.name;
 
   // A document's files, its manifest entry when its source is going out, and
   // whether it is marked done with no analysis to write markdown from: an

@@ -101,7 +101,7 @@ Say you upload an `invoices` folder with `invoice1.pdf` inside it. An export
 of the workspace is:
 
     <export>/
-      mdgest.json                              the manifest: each document's SHA-256 and every decision
+      mdgest.json                              the manifest: the workspace's name, each document's SHA-256, every decision
       sources/invoices/invoice1.pdf            the source PDF, untouched
       markdown/invoices/invoice1.md            the output, same tree
       markdown/invoices/invoice1.assets/       its figures, as PNGs

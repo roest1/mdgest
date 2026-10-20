@@ -111,6 +111,12 @@ export interface Engine {
   commit: { params: void; result: { docs: string[] } };
   /** The committed workspace's documents, by id, for the editor to list. */
   docs: { params: void; result: string[] };
+  /** What the committed workspace is called, as `mdgest.json` keeps it, or
+   *  null when it has no name yet. */
+  workspaceName: { params: void; result: string | null };
+  /** Name the committed workspace. Answers the name as kept -- trimmed and
+   *  cut to length -- and refuses one with nothing left in it. */
+  renameWorkspace: { params: { name: string }; result: string };
   /** One committed document's bytes, for the editor to render. Moved to the
    *  page rather than copied, so a large PDF is not held twice. */
   source: { params: { docId: string }; result: Uint8Array<ArrayBuffer> };

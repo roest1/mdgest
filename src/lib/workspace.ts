@@ -258,6 +258,11 @@ export const MANIFEST = "mdgest.json";
 export type DocEntry = { sha256?: string } & Record<string, unknown>;
 export interface Manifest {
   format: number;
+  /** What the workspace is called: the editor's header shows it and an
+   *  export's file is named after it. Set at commit from the folder or zip it
+   *  arrived as, when it had none; absent for one made of loose PDFs until
+   *  someone names it. Always as `cleanName` leaves it. */
+  name?: string;
   /** Keyed by document id, and made without a prototype -- by `emptyManifest`
    *  and `parseManifest`, the only two places a manifest comes from. An id is
    *  a file name and `__proto__` is a legal one: on a plain object, writing
@@ -269,6 +274,22 @@ export interface Manifest {
 }
 
 export const FORMAT = 1;
+
+/** The longest a workspace's name is kept, in code points. A label for a
+ *  header and the start of a file name, not a place to write. */
+const MAX_NAME = 80;
+
+/** A workspace's name as it is kept: whitespace collapsed, control
+ *  characters out, cut to `MAX_NAME`. Null when nothing is left. Not made
+ *  safe for a path -- the export does that, with `cleanSegment`, so the name
+ *  a person typed is the one they see. */
+export function cleanName(name: string): string | null {
+  const kept = [...name.normalize("NFC").replace(/[\p{Cc}\s]+/gu, " ").trim()]
+    .slice(0, MAX_NAME)
+    .join("")
+    .trim();
+  return kept || null;
+}
 
 /** A manifest with nothing in it, for a workspace created from loose PDFs. */
 export function emptyManifest(): Manifest {
@@ -292,9 +313,9 @@ export function copyManifest(manifest: Manifest): Manifest {
  * will be hashed on the way in. `documents` comes out copied into a map with
  * no prototype, for the reason on `Manifest`.
  *
- * Nothing else is checked, and all of it -- edits, rules, any field at all --
- * is kept and written back as it arrived. That is safe only while nothing
- * here reads it. Whatever comes to read it, the editor first, validates the
+ * The name is cleaned the way `cleanName` keeps it. Nothing else is checked,
+ * and all of it -- edits, rules, any field at all -- is kept and written back
+ * as it arrived. That is safe only while nothing here reads it. Whatever comes to read it, the editor first, validates the
  * shape of what it reads where it reads it, as this does for the landing: a
  * manifest that got through here has proven nothing about those fields.
  *
@@ -329,7 +350,16 @@ export function parseManifest(text: string): Manifest {
       throw problem(`gives ${docId} a sha256 that is not a SHA-256 hex digest`);
     }
   }
-  return { ...value, format, documents: Object.assign(noPrototype(), documents) };
+  // A name is a label no decision hangs on, so one that is not a string is
+  // dropped rather than the workspace refused for it.
+  const { name, ...rest } = value;
+  const kept = typeof name === "string" ? cleanName(name) : null;
+  return {
+    ...rest,
+    format,
+    ...(kept ? { name: kept } : {}),
+    documents: Object.assign(noPrototype(), documents),
+  };
 }
 
 /** What `sha256` in opfs produces: 32 bytes, lowercase hex. */
