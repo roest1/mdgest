@@ -1,26 +1,16 @@
 import { useEffect, useRef } from "react";
-import type { Properties } from "src/lib/pdf";
-import { human } from "src/lib/words";
 
-const when = (d: Date | null) =>
-  d ? d.toLocaleString(undefined, { dateStyle: "short", timeStyle: "medium" }) : null;
+/** Rows of a properties dialog, in groups set off by a rule. A null value
+ *  is one the document does not have, shown as a dash. */
+export type PropertyGroups = [string, string | null][][];
 
-/** Points to inches, which is what a page size is read in where the
- *  documents this is for are printed. */
-function pageSize({ width, height }: Properties["pageSize"]): string {
-  const inches = (pt: number) => (pt / 72).toFixed(2);
-  const shape = width > height ? "landscape" : "portrait";
-  return `${inches(width)} × ${inches(height)} in (${shape})`;
-}
-
-/** The document's own description of itself, as pdf.js reads it. Every value
- *  but the file name, size and page count is whatever the file claims, and is
- *  rendered as text. */
+/** Document properties, for either pane: the PDF's from its three dots, the
+ *  markdown's from its own. */
 export function PropertiesDialog({
-  properties,
+  groups,
   onClose,
 }: {
-  properties: Properties;
+  groups: PropertyGroups;
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -30,30 +20,6 @@ export function PropertiesDialog({
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
-
-  const p = properties;
-  const groups: [string, string | null][][] = [
-    [
-      ["File name", p.fileName],
-      ["File size", human(p.bytes)],
-    ],
-    [
-      ["Title", p.title],
-      ["Author", p.author],
-      ["Subject", p.subject],
-      ["Keywords", p.keywords],
-      ["Created", when(p.created)],
-      ["Modified", when(p.modified)],
-      ["Application", p.application],
-    ],
-    [
-      ["PDF producer", p.producer],
-      ["PDF version", p.version],
-      ["Page count", String(p.pages)],
-      ["Page size", pageSize(p.pageSize)],
-    ],
-    [["Fast web view", p.fastWebView ? "Yes" : "No"]],
-  ];
 
   return (
     <dialog

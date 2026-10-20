@@ -991,6 +991,19 @@ export function asset(docId: string, name: string): Promise<Uint8Array<ArrayBuff
   return locked(() => opfs.readFile([...assetsDir(docId), name]));
 }
 
+/** A document's figures, counted and their lengths summed, without reading
+ *  any of them. */
+export function assetBytes(docId: string): Promise<{ files: number; bytes: number }> {
+  return locked(async () => {
+    const assets = assetsDir(docId);
+    const sizes = await Promise.all(
+      (await opfs.walk(assets)).map((name) => opfs.size([...assets, name])),
+    );
+    const present = sizes.filter((n) => n !== null);
+    return { files: present.length, bytes: present.reduce((sum, n) => sum + n, 0) };
+  });
+}
+
 // ---- export ---------------------------------------------------------------
 
 /** One file of an export: where it goes, and its bytes. */

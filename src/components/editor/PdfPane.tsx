@@ -28,12 +28,12 @@ import {
 import { modifiers, offBlocks, useEditor, type Boxes } from "src/lib/store";
 import { isTourDoc, tourSource } from "src/lib/tour-doc";
 import { attachSync, invalidateSync } from "src/lib/scrollsync";
-import { messageOf } from "src/lib/words";
+import { human, messageOf } from "src/lib/words";
 import { sourcePath } from "src/lib/workspace";
 import { PageCanvas } from "./PageCanvas";
 import { PdfSidebar, THUMB_WIDTH, type SidebarView } from "./PdfSidebar";
 import { DivideCursor } from "./DivideCursor";
-import { PropertiesDialog } from "./PropertiesDialog";
+import { PropertiesDialog, type PropertyGroups } from "./PropertiesDialog";
 import { Snapshots } from "./snapshots";
 
 /** CSS px per PDF point at 100%: a point is 1/72 in, a CSS px 1/96. */
@@ -179,6 +179,45 @@ const NO_PLACED: Record<string, Placed> = {};
 /** What `sizes` is before a document has loaded: one value, so nothing
  *  downstream recomputes for a fresh empty array each render. */
 const NO_SIZES: { w: number; h: number }[] = [];
+
+const when = (d: Date | null) =>
+  d ? d.toLocaleString(undefined, { dateStyle: "short", timeStyle: "medium" }) : null;
+
+/** Points to inches, which is what a page size is read in where the
+ *  documents this is for are printed. */
+function pageSize({ width, height }: Properties["pageSize"]): string {
+  const inches = (pt: number) => (pt / 72).toFixed(2);
+  const shape = width > height ? "landscape" : "portrait";
+  return `${inches(width)} × ${inches(height)} in (${shape})`;
+}
+
+/** The document's own description of itself, as pdf.js reads it. Every value
+ *  but the file name, size and page count is whatever the file claims, and is
+ *  rendered as text. */
+function pdfProperties(p: Properties): PropertyGroups {
+  return [
+    [
+      ["File name", p.fileName],
+      ["File size", human(p.bytes)],
+    ],
+    [
+      ["Title", p.title],
+      ["Author", p.author],
+      ["Subject", p.subject],
+      ["Keywords", p.keywords],
+      ["Created", when(p.created)],
+      ["Modified", when(p.modified)],
+      ["Application", p.application],
+    ],
+    [
+      ["PDF producer", p.producer],
+      ["PDF version", p.version],
+      ["Page count", String(p.pages)],
+      ["Page size", pageSize(p.pageSize)],
+    ],
+    [["Fast web view", p.fastWebView ? "Yes" : "No"]],
+  ];
+}
 
 const iconButton =
   "cursor-pointer rounded p-1 text-muted transition-colors enabled:hover:text-ink disabled:cursor-default disabled:opacity-40";
@@ -490,7 +529,7 @@ export function PdfPane({ docId }: { docId: string }) {
       </div>
 
       {properties && loaded && (
-        <PropertiesDialog properties={loaded.properties} onClose={() => setProperties(false)} />
+        <PropertiesDialog groups={pdfProperties(loaded.properties)} onClose={() => setProperties(false)} />
       )}
     </div>
   );

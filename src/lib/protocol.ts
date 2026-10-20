@@ -160,6 +160,10 @@ export interface Engine {
   /** One of a document's figures, as `convert` wrote it, or null when there
    *  is no such file. Moved to the page, like `source`. */
   asset: { params: { docId: string; name: string }; result: Uint8Array<ArrayBuffer> | null };
+  /** A document's figures as an export writes them: how many, and their
+   *  bytes together. Every file under `markdown/<doc>.assets/`, a figure
+   *  whose block was deleted included, since the export takes them all. */
+  assetBytes: { params: { docId: string }; result: { files: number; bytes: number } };
 }
 
 /** A figure's PNG, named as it sits in `markdown/<doc>.assets/`. */

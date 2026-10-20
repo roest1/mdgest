@@ -69,3 +69,7 @@ do not move.
 | []  | toc tooling                            | decide: is tooling needed for a table of contents and configuring it?                                                                                                                                                                               |
 | []  | footnotes                              | decide: `[^1]` footnote syntax?                                                                                                                                                                                                                     |
 | []  | index the workspace for downstream RAG | **link to sections (he citation contract)**. mdgest owns one half: every emitted heading gets a stable, unique, GitHub-style anchor, and a citable id is the document's folder-relative path minus .md. Those compose into `[[doc:<doc-id>#<anchor> | display]]`. Repairing, validating and resolving tokens against a corpus is the other half and deliberately not here |
+
+---
+
+When done, convert a bunch of different pdfs and see if new rules can become the default.

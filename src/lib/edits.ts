@@ -11,10 +11,7 @@ import type { Block, Role } from "./analysis";
 import { CHOICES, FURNITURE, type Choice, type Furniture } from "./furniture";
 import { isRecord } from "./workspace";
 
-/** 2: `hidden` became a comment in the markdown, and what version 1 called
- *  `hidden` -- out of the markdown -- is `deleted`. Version 1 is still read,
- *  and moved over as it is (`upgrade`). */
-export const EDITS_VERSION = 2;
+export const EDITS_VERSION = 1;
 
 /** How deep undo goes. Older steps fall off the bottom. */
 export const UNDO_DEPTH = 100;
@@ -131,7 +128,15 @@ export function parseEdits(text: string): Edits {
   return checkEdits(value, "its edits.json");
 }
 
-const ROLES = new Set<string>(["heading", "para", "bullet", "numbered", "alpha", "roman", "image"]);
+const ROLES = new Set<string>([
+  "heading",
+  "para",
+  "bullet",
+  "numbered",
+  "alpha",
+  "roman",
+  "image",
+]);
 
 /** Version 1's overrides in version 2's terms: its `hidden` took a block
  *  out of the markdown, which is `deleted` now. */
@@ -153,7 +158,9 @@ function upgrade(value: Record<string, unknown>): Record<string, unknown> {
   if (value.version !== 1) return value;
   const steps = (list: unknown) =>
     Array.isArray(list)
-      ? list.map((s) => (isRecord(s) ? { ...s, blocks: upgradeBlocks(s.blocks) } : s))
+      ? list.map((s) =>
+          isRecord(s) ? { ...s, blocks: upgradeBlocks(s.blocks) } : s,
+        )
       : list;
   return {
     ...value,
@@ -168,24 +175,55 @@ type Problem = (detail: string) => Error;
 
 /** `blocks` as overrides the editor can use, or `problem` thrown for the
  *  first that is not. */
-function checkBlocks(blocks: unknown, problem: Problem): Record<string, BlockEdit> {
+function checkBlocks(
+  blocks: unknown,
+  problem: Problem,
+): Record<string, BlockEdit> {
   if (!isRecord(blocks)) throw problem("has blocks that are not an object");
   for (const [id, edit] of Object.entries(blocks)) {
-    if (!isRecord(edit)) throw problem(`has an override for ${id} that is not an object`);
-    const bad = (field: string) => problem(`gives ${id} a ${field} it cannot have`);
+    if (!isRecord(edit))
+      throw problem(`has an override for ${id} that is not an object`);
+    const bad = (field: string) =>
+      problem(`gives ${id} a ${field} it cannot have`);
     const { role, level, depth, break_before, break_after } = edit;
-    if (role !== undefined && !(typeof role === "string" && ROLES.has(role))) throw bad("role");
-    if (level !== undefined && !(Number.isInteger(level) && (level as number) >= 0 && (level as number) <= 6)) {
+    if (role !== undefined && !(typeof role === "string" && ROLES.has(role)))
+      throw bad("role");
+    if (
+      level !== undefined &&
+      !(
+        Number.isInteger(level) &&
+        (level as number) >= 0 &&
+        (level as number) <= 6
+      )
+    ) {
       throw bad("level");
     }
-    if (depth !== undefined && !(Number.isInteger(depth) && (depth as number) >= 0)) throw bad("depth");
-    for (const flag of ["bold", "italic", "quote", "hidden", "deleted"] as const) {
-      if (edit[flag] !== undefined && typeof edit[flag] !== "boolean") throw bad(flag);
+    if (
+      depth !== undefined &&
+      !(Number.isInteger(depth) && (depth as number) >= 0)
+    )
+      throw bad("depth");
+    for (const flag of [
+      "bold",
+      "italic",
+      "quote",
+      "hidden",
+      "deleted",
+    ] as const) {
+      if (edit[flag] !== undefined && typeof edit[flag] !== "boolean")
+        throw bad(flag);
     }
     // An empty correction would write the block as nothing at all, neither
     // there nor marked deleted.
-    if (edit.text !== undefined && !(typeof edit.text === "string" && edit.text.trim())) throw bad("text");
-    for (const [name, brk] of [["break_before", break_before], ["break_after", break_after]] as const) {
+    if (
+      edit.text !== undefined &&
+      !(typeof edit.text === "string" && edit.text.trim())
+    )
+      throw bad("text");
+    for (const [name, brk] of [
+      ["break_before", break_before],
+      ["break_after", break_after],
+    ] as const) {
       if (brk !== undefined && brk !== "page") throw bad(name);
     }
   }
@@ -195,7 +233,8 @@ function checkBlocks(blocks: unknown, problem: Problem): Record<string, BlockEdi
 function checkJoins(joins: unknown, problem: Problem): Record<string, string> {
   if (!isRecord(joins)) throw problem("has joins that are not an object");
   for (const [child, parent] of Object.entries(joins)) {
-    if (typeof parent !== "string") throw problem(`joins ${child} onto something that is not a block id`);
+    if (typeof parent !== "string")
+      throw problem(`joins ${child} onto something that is not a block id`);
   }
   return joins as Record<string, string>;
 }
@@ -204,7 +243,10 @@ function checkCuts(cuts: unknown, problem: Problem): void {
   if (cuts === undefined) return;
   if (!isRecord(cuts)) throw problem("has cuts that are not an object");
   for (const [id, at] of Object.entries(cuts)) {
-    if (!Array.isArray(at) || !at.every((k) => Number.isInteger(k) && (k as number) > 0)) {
+    if (
+      !Array.isArray(at) ||
+      !at.every((k) => Number.isInteger(k) && (k as number) > 0)
+    ) {
       throw problem(`divides ${id} somewhere that is not a word of it`);
     }
   }
@@ -218,15 +260,23 @@ function checkInserts(inserts: unknown, problem: Problem): void {
     typeof i.text === "string" &&
     Number.isInteger(i.page) &&
     (i.after === null || typeof i.after === "string");
-  if (!Array.isArray(inserts) || !inserts.every(ok)) throw problem("has inserted text it cannot read");
+  if (!Array.isArray(inserts) || !inserts.every(ok))
+    throw problem("has inserted text it cannot read");
   const ids = (inserts as { id: string }[]).map((i) => i.id);
-  if (new Set(ids).size !== ids.length) throw problem("has two inserted texts with one id");
+  if (new Set(ids).size !== ids.length)
+    throw problem("has two inserted texts with one id");
 }
 
-function checkFurniture(value: Record<string, unknown>, problem: Problem): void {
+function checkFurniture(
+  value: Record<string, unknown>,
+  problem: Problem,
+): void {
   for (const kind of FURNITURE) {
     const choice = value[kind];
-    if (choice !== undefined && !(typeof choice === "string" && (CHOICES as string[]).includes(choice))) {
+    if (
+      choice !== undefined &&
+      !(typeof choice === "string" && (CHOICES as string[]).includes(choice))
+    ) {
       throw problem(`has a ${kind} setting it cannot have`);
     }
   }
@@ -260,13 +310,16 @@ export function checkEdits(raw: unknown, what: string): Edits {
   const problem = (detail: string) => new Error(`${what} ${detail}.`);
   if (!isRecord(raw)) throw problem("is not a JSON object");
   const value = upgrade(raw);
-  if (value.version !== EDITS_VERSION) throw problem("is not in a format this version reads");
+  if (value.version !== EDITS_VERSION)
+    throw problem("is not in a format this version reads");
   const { blocks = {}, joins = {}, undo, redo } = value;
   checkCuts(value.cuts, problem);
   checkInserts(value.inserts, problem);
-  if (value.done !== undefined && typeof value.done !== "boolean") throw problem("has a done that is not true or false");
+  if (value.done !== undefined && typeof value.done !== "boolean")
+    throw problem("has a done that is not true or false");
   checkFurniture(value, problem);
-  const steps = (list: unknown): Step[] => (Array.isArray(list) ? list.filter(isStep) : []);
+  const steps = (list: unknown): Step[] =>
+    Array.isArray(list) ? list.filter(isStep) : [];
   return {
     ...value,
     version: EDITS_VERSION,
@@ -339,7 +392,9 @@ export function apply(
     const was = edits.blocks[block.id] ?? {};
     const c = change(shape(block, was));
     const entry: BlockEdit = { ...was };
-    const field = <K extends "role" | "level" | "depth" | "bold" | "italic">(key: K) => {
+    const field = <K extends "role" | "level" | "depth" | "bold" | "italic">(
+      key: K,
+    ) => {
       const v = c[key];
       if (v === undefined) return;
       if (v === block[key]) delete entry[key];
@@ -357,7 +412,10 @@ export function apply(
       if (c[key]) entry[key] = true;
       else delete entry[key];
     }
-    const brk = (on: boolean | undefined, key: "break_before" | "break_after") => {
+    const brk = (
+      on: boolean | undefined,
+      key: "break_before" | "break_after",
+    ) => {
       if (on === undefined) return;
       if (!on) delete entry[key];
       else entry[key] ??= "page";
@@ -398,21 +456,29 @@ function rejoin(edits: Edits, ids: string[]): Edits | null {
   const from = (id: string) => Number(/c(\d+)$/.exec(id)?.[1] ?? 0);
   const block = of(ids[0]);
   const at = edits.cuts?.[block];
-  if (!at || ids.length < 2 || !ids.every((id) => of(id) === block)) return null;
+  if (!at || ids.length < 2 || !ids.every((id) => of(id) === block))
+    return null;
   const starts = ids.map(from);
   const pieces = [0, ...at];
   const first = pieces.indexOf(starts[0]);
   // Next to each other: the ids are pieces `first`, `first + 1`, ... in turn.
-  if (first < 0 || !starts.every((k, i) => pieces[first + i] === k)) return null;
+  if (first < 0 || !starts.every((k, i) => pieces[first + i] === k))
+    return null;
   const gone = new Set(starts.slice(1));
-  return setCuts(edits, block, at.filter((k) => !gone.has(k)));
+  return setCuts(
+    edits,
+    block,
+    at.filter((k) => !gone.has(k)),
+  );
 }
 
 /** The edits with `block` divided at `at` -- word positions -- as one step.
  *  An empty `at` makes it whole. */
 export function setCuts(edits: Edits, block: string, at: number[]): Edits {
   const cuts = { ...edits.cuts };
-  const clean = [...new Set(at)].filter((k) => Number.isInteger(k) && k > 0).sort((a, b) => a - b);
+  const clean = [...new Set(at)]
+    .filter((k) => Number.isInteger(k) && k > 0)
+    .sort((a, b) => a - b);
   if (clean.length) cuts[block] = clean;
   else delete cuts[block];
   return step(edits, { ...decided(edits), cuts });
@@ -428,12 +494,20 @@ export function unjoin(edits: Edits, heads: string[]): Edits {
   const joins = Object.fromEntries(
     Object.entries(edits.joins).filter(([, parent]) => !apart.has(parent)),
   );
-  return step(edits, { ...decided(edits), joins, blocks: withoutText(edits.blocks, heads) });
+  return step(edits, {
+    ...decided(edits),
+    joins,
+    blocks: withoutText(edits.blocks, heads),
+  });
 }
 
 /** The edits with one kind of furniture kept, hidden or deleted, as one
  *  step. */
-export function setFurniture(edits: Edits, kind: Furniture, choice: Choice): Edits {
+export function setFurniture(
+  edits: Edits,
+  kind: Furniture,
+  choice: Choice,
+): Edits {
   return step(edits, { ...decided(edits), [kind]: choice });
 }
 
@@ -452,7 +526,11 @@ function decided(edits: Edits): Required<Step> {
 /** `edits` with `step`'s decisions -- a setting the step does not record
  *  left as it is, and `keep` stored as nothing. */
 function restore(edits: Edits, s: Step): Edits {
-  const next: Edits = { ...edits, blocks: s.blocks, joins: s.joins ?? edits.joins };
+  const next: Edits = {
+    ...edits,
+    blocks: s.blocks,
+    joins: s.joins ?? edits.joins,
+  };
   const cuts = s.cuts ?? edits.cuts;
   if (cuts && Object.keys(cuts).length) next.cuts = cuts;
   else delete next.cuts;
@@ -502,10 +580,15 @@ export function addInsert(
   before: string | null = null,
 ): Edits {
   const had = edits.inserts ?? [];
-  const n = had.reduce((m, i) => Math.max(m, Number(/^i(\d+)$/.exec(i.id)?.[1] ?? 0)), 0) + 1;
+  const n =
+    had.reduce(
+      (m, i) => Math.max(m, Number(/^i(\d+)$/.exec(i.id)?.[1] ?? 0)),
+      0,
+    ) + 1;
   const put = { id: `i${n}`, page, after, text };
   const at = before === null ? -1 : had.findIndex((i) => i.id === before);
-  const inserts = at < 0 ? [...had, put] : [...had.slice(0, at), put, ...had.slice(at)];
+  const inserts =
+    at < 0 ? [...had, put] : [...had.slice(0, at), put, ...had.slice(at)];
   return step(edits, { ...decided(edits), inserts });
 }
 
@@ -522,12 +605,18 @@ export function updateInsert(edits: Edits, id: string, text: string): Edits {
 /** The edits with every correction on `ids` taken off -- the page's own
  *  words back -- as one step. */
 export function restoreText(edits: Edits, ids: string[]): Edits {
-  return step(edits, { ...decided(edits), blocks: withoutText(edits.blocks, ids) });
+  return step(edits, {
+    ...decided(edits),
+    blocks: withoutText(edits.blocks, ids),
+  });
 }
 
 /** `blocks` with the correction taken off each of `ids`, and an entry
  *  left with nothing else dropped. */
-function withoutText(blocks: Record<string, BlockEdit>, ids: string[]): Record<string, BlockEdit> {
+function withoutText(
+  blocks: Record<string, BlockEdit>,
+  ids: string[],
+): Record<string, BlockEdit> {
   const out = { ...blocks };
   for (const id of ids) {
     if (out[id]?.text === undefined) continue;
@@ -542,7 +631,11 @@ function withoutText(blocks: Record<string, BlockEdit>, ids: string[]): Record<s
  *  are to a person: undo takes them back together. */
 export function asOneStep(before: Edits, after: Edits): Edits {
   if (after === before) return before;
-  return { ...after, undo: [...before.undo, decided(before)].slice(-UNDO_DEPTH), redo: [] };
+  return {
+    ...after,
+    undo: [...before.undo, decided(before)].slice(-UNDO_DEPTH),
+    redo: [],
+  };
 }
 
 /** One step back, or the same edits when there is none. */
@@ -571,20 +664,33 @@ export function redo(edits: Edits): Edits {
 function shallowEqual(a: object, b: object): boolean {
   const [x, y] = [a, b] as Record<string, unknown>[];
   const keys = Object.keys(x);
-  return keys.length === Object.keys(y).length && keys.every((k) => x[k] === y[k]);
+  return (
+    keys.length === Object.keys(y).length && keys.every((k) => x[k] === y[k])
+  );
 }
 
-function sameJoins(a: Record<string, string>, b: Record<string, string>): boolean {
+function sameJoins(
+  a: Record<string, string>,
+  b: Record<string, string>,
+): boolean {
   return shallowEqual(a, b);
 }
 
-function sameCuts(a: Record<string, number[]>, b: Record<string, number[]>): boolean {
+function sameCuts(
+  a: Record<string, number[]>,
+  b: Record<string, number[]>,
+): boolean {
   const ids = Object.keys(a);
   if (ids.length !== Object.keys(b).length) return false;
-  return ids.every((id) => b[id] !== undefined && a[id].join() === b[id].join());
+  return ids.every(
+    (id) => b[id] !== undefined && a[id].join() === b[id].join(),
+  );
 }
 
-function sameBlocks(a: Record<string, BlockEdit>, b: Record<string, BlockEdit>): boolean {
+function sameBlocks(
+  a: Record<string, BlockEdit>,
+  b: Record<string, BlockEdit>,
+): boolean {
   const ids = Object.keys(a);
   if (ids.length !== Object.keys(b).length) return false;
   return ids.every((id) => b[id] !== undefined && shallowEqual(a[id], b[id]));

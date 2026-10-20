@@ -26,6 +26,7 @@ import ReactMarkdown, {
 import remarkGfm from "remark-gfm";
 import { DraftEditor, ReviewDialog } from "src/components/editor/DraftEditor";
 import { MarkdownMenu } from "src/components/editor/MarkdownMenu";
+import { MarkdownProperties } from "src/components/editor/MarkdownProperties";
 import { Spinner } from "src/components/shared/Spinner";
 import { READER, type Analysis } from "src/lib/analysis";
 import { useAssetUrl } from "src/lib/assets";
@@ -225,6 +226,7 @@ export function MarkdownPane({ docId }: { docId: string }) {
               </button>
               <DoneButton docId={docId} />
               <MarkdownMenu docId={docId} />
+              <MarkdownProperties docId={docId} />
             </>
           )}
         </div>

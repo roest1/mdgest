@@ -53,6 +53,7 @@ const handlers: Handlers = {
   saveEdits: ({ docId, edits, markdown }) => stage.saveEdits(docId, edits, markdown),
   revert: ({ docId }) => stage.revert(docId),
   asset: ({ docId, name }) => stage.asset(docId, name),
+  assetBytes: ({ docId }) => stage.assetBytes(docId),
 };
 
 /** Which buffers of a method's result are handed over rather than cloned.

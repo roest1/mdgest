@@ -45,7 +45,7 @@ export const UNUSABLE_ANALYSIS = "UnusableAnalysis";
  *  keyed to block positions, so edits made on one reader's blocks mean
  *  nothing on another's. An export carries each document's, and an import
  *  from another reader starts that document over. */
-export const READER = 3;
+export const READER = 1;
 
 /** The pdf.js `READER` was made with. pdf.js is part of the reader: an
  *  upgrade can change the text runs `read.ts` is given. A test fails when
@@ -114,9 +114,15 @@ export interface Picture {
   px: [number, number];
 }
 
-export type Role = "heading" | "para" | "bullet" | "numbered" | "alpha" | "roman" | "image";
+export type Role =
+  "heading" | "para" | "bullet" | "numbered" | "alpha" | "roman" | "image";
 
-export const LIST_ROLES: readonly Role[] = ["bullet", "numbered", "alpha", "roman"];
+export const LIST_ROLES: readonly Role[] = [
+  "bullet",
+  "numbered",
+  "alpha",
+  "roman",
+];
 
 /** A unit of the markdown: a paragraph, a heading, one list item, a picture.
  *  Its id is its position -- `p{page}b{index}` for text, `p{page}i{index}`
@@ -177,7 +183,8 @@ export interface Analysis {
 /** Every block of an analysis by its id, across its pages. */
 export function blocksById(analysis: Analysis): Map<string, Block> {
   const out = new Map<string, Block>();
-  for (const page of analysis.pages) for (const block of page.blocks) out.set(block.id, block);
+  for (const page of analysis.pages)
+    for (const block of page.blocks) out.set(block.id, block);
   return out;
 }
 
@@ -196,9 +203,11 @@ export function parseAnalysis(text: string): Analysis {
   } catch {
     throw problem("is not valid JSON");
   }
-  if (typeof value !== "object" || value === null) throw problem("is not a JSON object");
+  if (typeof value !== "object" || value === null)
+    throw problem("is not a JSON object");
   const { format, reader, pages, bodySize } = value as Record<string, unknown>;
-  if (format !== ANALYSIS_FORMAT) throw problem("is not in a format this version reads");
+  if (format !== ANALYSIS_FORMAT)
+    throw problem("is not in a format this version reads");
   if (!Array.isArray(pages)) throw problem("has no pages");
   for (const page of pages as unknown[]) {
     const p = page as Record<string, unknown> | null;

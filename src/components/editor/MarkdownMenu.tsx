@@ -1,4 +1,4 @@
-import { EllipsisVertical, EyeOff, Lock, Pilcrow, Trash2, type LucideIcon } from "lucide-react";
+import { EyeOff, Lock, Pilcrow, Settings, Trash2, type LucideIcon } from "lucide-react";
 import { type KeyboardEvent, useId, useMemo, useRef, useState } from "react";
 import { useMenuDismiss } from "src/components/shared/useMenuDismiss";
 import { setFurnitureEdit } from "src/lib/editing";
@@ -22,7 +22,7 @@ const CHOICES: { value: Choice; title: string; Icon: LucideIcon; lit: string }[]
   { value: "delete", title: "Delete", Icon: Trash2, lit: "seg-delete" },
 ];
 
-/** The markdown pane's three dots: settings for the whole document, beside
+/** The markdown pane's gear: settings for the whole document, beside
  *  Done. Today, what is done with its page furniture -- printed page
  *  numbers, and headers and footers repeated from page to page, found by
  *  where they sit and what they print (`furniture.ts`).
@@ -45,7 +45,7 @@ export function MarkdownMenu({ docId }: { docId: string }) {
   if (!ready || !found) {
     return (
       <button type="button" title="Document settings" disabled className={iconButton}>
-        <EllipsisVertical className="h-4 w-4" />
+        <Settings className="h-4 w-4" />
       </button>
     );
   }
@@ -61,7 +61,7 @@ export function MarkdownMenu({ docId }: { docId: string }) {
         onClick={() => setOpen((o) => !o)}
         className={`${iconButton} ${open ? "text-ink" : ""}`}
       >
-        <EllipsisVertical className="h-4 w-4" />
+        <Settings className="h-4 w-4" />
       </button>
 
       {open && (

@@ -127,4 +127,5 @@ export const engine = {
     call("saveEdits", { docId, edits, markdown }),
   revert: (docId: string) => call("revert", { docId }),
   asset: (docId: string, name: string) => call("asset", { docId, name }),
+  assetBytes: (docId: string) => call("assetBytes", { docId }),
 };

@@ -8,6 +8,7 @@ import { strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, test } from "vitest";
 import type * as Stage from "src/lib/stage";
 import type { StageView } from "src/lib/protocol";
+import { assetsDir } from "src/lib/workspace";
 
 type Api = typeof Stage;
 
@@ -137,5 +138,15 @@ describe("a workspace's name", () => {
     await stage("stage", [dropped("two.pdf")]);
     await stage("commit");
     expect(await stage("workspaceName")).toBe("Papers");
+  });
+});
+
+describe("a document's figures, measured", () => {
+  test("are every file in its assets folder, counted and summed", async () => {
+    expect(await stage("assetBytes", "one")).toEqual({ files: 0, bytes: 0 });
+    await call("opfs", "writeFile", [[...assetsDir("one"), "p1-i0.png"], new Uint8Array(300)]);
+    await call("opfs", "writeFile", [[...assetsDir("one"), "p2-i0.png"], new Uint8Array(45)]);
+    await call("opfs", "writeFile", [[...assetsDir("two"), "p1-i0.png"], new Uint8Array(9)]);
+    expect(await stage("assetBytes", "one")).toEqual({ files: 2, bytes: 345 });
   });
 });
