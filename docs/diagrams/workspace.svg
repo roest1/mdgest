@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 250" width="760" height="250" role="img" aria-label="Files dropped from your disk are held in the stage, written to the workspace in browser storage when you open it, and exported back to disk. The workspace is seeded into the stage on every visit, and an export dropped back in is continued.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 250" width="760" height="250" role="img" aria-label="Your disk, the stage, the workspace: drop, open, export">
     <style>
         :root { --ink:#1A1714; --muted:#6B645D; --line:#3A3531; --panel:#FFFFFF; }
         @media (prefers-color-scheme: dark) {

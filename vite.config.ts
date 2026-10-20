@@ -4,6 +4,11 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
+/** pdf.js fetches its character maps, the standard fourteen fonts and the
+ *  no-wasm fallback decoders as files rather than bundling them. This copies
+ *  them out of the package into `dist/pdfjs/` and serves them in dev from
+ *  memory, so there is one list of them -- the `take` calls below -- and not
+ *  a `public/` copy anyone has to remember to refresh. */
 function pdfjsAssets(): Plugin {
   const pkg = new URL("./node_modules/pdfjs-dist/", import.meta.url);
   const files = new Map<string, URL>();

@@ -81,17 +81,21 @@ loads — the editor, pdf.js's worker and data, the tour — is its own.
 Browser storage is evictable and there is no account, so **exporting is what
 saving means**: an export is a plain folder or zip on your disk, and dropping
 it back in carries on where you left off. Nothing in it is hidden, and folders
-are yours to organize however you like — mdgest mirrors them.
+are yours to organize however you like — mdgest mirrors them. A name is kept
+as it is unless a character in it would not survive a file system, or a
+folder would share a name with a document (`workspace.ts`); a single document
+or zip over 512 MiB is refused (`limits.ts`). Every file named in this README
+is under `src/lib/` unless its path says otherwise.
 
-Everything you drop — PDFs, folders, zips — is listed before anything is
-written: an earlier export (recognized by its `mdgest.json`) continues where
-it left off, new PDFs join the one workspace this browser keeps, and a
-revised PDF starts over, because edits are keyed to block positions. So does
-a document whose edits were made by another version of the reader; either way
-the landing says so beside the row before anything is written. A browser
-holds one workspace at a time: a second export is refused until the first is
-discarded. The marks a row can carry are `src/lib/protocol.ts`'s `Status`;
-what opening the workspace does with each one, `src/lib/stage.ts`.
+Everything you drop — PDFs, folders, zips — is listed on the landing before
+anything is written, and each row says what opening will do to it: an earlier
+export (recognized by its `mdgest.json`, the manifest) continues where it left
+off, new PDFs join the one workspace this browser keeps, and a revised PDF, or
+one whose edits came from another version of the reader, starts over, because
+edits are keyed to block positions. A browser holds one workspace at a time:
+a second export is refused until the first is discarded. The marks a row can
+carry are `protocol.ts`'s `Status`; what opening does with each one,
+`stage.ts`.
 
 Say you upload an `invoices` folder with `invoice1.pdf` inside it. An export
 of the workspace is:
@@ -105,26 +109,25 @@ of the workspace is:
 Markdown goes out for done documents only, so nothing half-finished looks
 finished; a markdown-only export writes `markdown/` alone. Into a folder, the
 folder must be empty or one an earlier export wrote; what that export wrote
-is replaced, and nothing else there is touched. `src/lib/exchange.ts`
+is replaced, and nothing else there is touched. `exchange.ts`
 documents the manifest's format and what an import does with a changed,
 damaged, or other-reader entry.
 
-In the browser the same tree also carries `.mdgest/`, the engine's cache: its
-read of each PDF (`analysis.json`, regenerable until it has edits) and your
-corrections, whether the document is done, and its undo history
-(`edits.json`, written as each edit is made — there is no save button).
-`src/lib/workspace.ts` has the layout.
+In the browser the same tree also carries `.mdgest/`, the cache of the engine
+(the worker that owns storage): its read of each PDF (`analysis.json`,
+regenerable from the PDF) and your corrections, whether the document is done,
+and its undo history (`edits.json`, written as each edit is made — there is
+no save button). `workspace.ts` has the layout.
 
-Markdown conversion involves three files, one direction, no model;
-`convert.ts` sequences them, one document at a time, reusing the engine's
-cached `analysis.json` when there is one.
+Markdown conversion is three files, one direction, no model; `convert.ts`
+sequences them, one document at a time.
 
 ```mermaid
 flowchart LR
     PDF[("PDF")] --> READ["<b>read.ts</b><br/>lines · pictures"]
     READ --> STRUCT["<b>structure.ts</b><br/>blocks · roles · order"]
     STRUCT -->|"Analysis"| PAGE["<b>emit.ts</b>, on the page<br/>markdown pane · numbered boxes"]
-    STRUCT -->|"Analysis"| WORKER["<b>emit.ts</b>, in the worker<br/>markdown/&lt;doc&gt;.md · .assets/"]
+    STRUCT -->|"Analysis"| WORKER["<b>emit.ts</b>, in the engine worker<br/>markdown/&lt;doc&gt;.md · .assets/"]
 
     classDef step stroke:#6366f1,stroke-width:2.5px
     classDef store stroke:#d97706,stroke-width:2.5px
@@ -132,24 +135,15 @@ flowchart LR
     class PDF store
 ```
 
-`read.ts` and `structure.ts` run on the page's thread, where pdf.js has the
-document open. `emit.ts` is pure and runs on both sides: the worker calls it
-to write `markdown/<doc>.md`, and the page calls it to know which source lines
-a block became — so the numbered boxes on a page and the numbered lines beside
-them are one list by construction, not two lists kept in step.
-
-**Why pdf.js.** It was chosen over pdfium by measurement: over four documents
-it reproduced the reference markdown byte for byte, and where the two
-disagreed — nine lines — pdfium was wrong every time.
-
-**The frame.** Everything downstream of `read.ts` is in PDF points in the
-page's displayed frame, so the page pane draws a box by multiplying by the
-zoom and nothing else; `src/lib/analysis.ts` defines it.
+`emit.ts` is pure and runs on both sides: the engine worker calls it to write
+`markdown/<doc>.md`, and the page calls it to know which source lines a block
+became — so the numbered boxes on a page and the numbered lines beside them
+are one list by construction.
 
 The decisions themselves — how runs become lines, lines become blocks, blocks
 get roles and an order, and what each one is written as — are documented where
 they are made: the constants and comments of `read.ts`, `structure.ts` and
-`emit.ts`.
+`emit.ts`, and the coordinate frame they share in `analysis.ts`.
 
 ### Where it runs
 
@@ -158,50 +152,28 @@ has is inside one tab; what each one is made of — the protocol, the pdf.js
 assets, the write discipline — is under _Architecture_, below.
 
 ```mermaid
----
-config:
-  look: neo
-  themeVariables:
-    fontSize: 24px
----
 flowchart LR
-    CF[("<b>Cloudflare Pages</b><br/><span style="font-size:0.68em;line-height:1.25;display:inline-block"><i>static files, no server</i></span>")]
+    CF[("<b>Cloudflare Pages</b><br/>static files, no server")]
 
     subgraph TAB ["the visitor's browser &mdash; nothing leaves it"]
         direction LR
 
-        subgraph MAIN ["main thread &mdash; never touches storage"]
+        subgraph MAIN ["main thread &mdash; never touches OPFS"]
             direction TB
             UI["<b>the app</b><br/>landing &middot; editor &middot; selection"]
-            RD["<b>the reader</b><br/>read &rarr; structure &rarr; emit<br/><span style="font-size:0.68em;line-height:1.25;display:inline-block"><i>geometry and roles</i></span>"]
-            UI --- RD
+            RD["<b>the reader</b><br/>read &rarr; structure"]
         end
 
-        PW(["<b>pdf.js's worker</b><br/><span style="font-size:0.68em;line-height:1.25;display:inline-block"><i>parses and decodes</i></span>"])
-
-        subgraph EW ["engine worker &mdash; all storage"]
-            direction TB
-            DISP["<b>dispatch</b><br/><span style="font-size:0.68em;line-height:1.25;display:inline-block"><i>every method</i></span>"]
-            SYNC["<b>sync access handles</b><br/><span style="font-size:0.68em;line-height:1.25;display:inline-block"><i>nowhere else</i></span>"]
-            DISP --- SYNC
-        end
-
-        DB[("<b>OPFS</b><br/>sources/ &middot; markdown/<br/>.mdgest/<br/><span style="font-size:0.68em;line-height:1.25;display:inline-block"><i>evictable</i></span>")]
+        PW(["<b>pdf.js's worker</b><br/>parses and decodes"])
+        EW["<b>engine worker</b><br/>all storage"]
+        DB[("<b>OPFS</b><br/>sources/ &middot; markdown/ &middot; .mdgest/")]
 
         RD <-->|"operators &middot; text runs"| PW
-        UI <==>|"<b>protocol.ts</b>"| DISP
-        SYNC ==> DB
+        UI <==>|"<b>protocol.ts</b>"| EW
+        EW ==> DB
     end
 
     CF ==> UI
-
-    classDef worker stroke:#10b981,stroke-width:2.5px
-    classDef store stroke:#d97706,stroke-width:2.5px
-    classDef outside stroke:#6366f1,stroke-width:2.5px
-
-    class PW,DISP,SYNC worker
-    class DB store
-    class CF outside
 ```
 
 ---
@@ -213,51 +185,38 @@ browser needs to run it.
 
 ### What the boundaries are
 
-The build that puts the bundle on Cloudflare Pages is a gate, not a deploy: the checks
-under _Development_ run in CI and stop there. Cloudflare Pages is expected to
-build the same way from the repo,
-with `bun run build` as the command and `dist` as the output directory; that
-connection is configured on the Cloudflare side and is not in this repo.
-
-**Edge to browser.** `dist/` is plain files, two of them hosting
-configuration. `_redirects` answers a deep link like `/edit/manuals/valves`
-with `index.html` and a 200 rather than a 404, which the router needs;
-`_headers` carries the CSP. Nothing enforces either in dev or preview — the
-dev server handles deep links on its own — so breaking one shows up only once
-deployed (_What to check after changing the CSP_, below).
+**Edge to browser.** CI is a gate, not a deploy: the checks under
+_Development_ run and stop there, and Cloudflare Pages builds the same way
+from the repo (`bun run build`, output `dist`), a connection configured on
+the Cloudflare side and not in this repo. `dist/` is plain files, two of them
+configuration: `public/_redirects` is the router's deep-link fallback and
+`public/_headers` the CSP. Each documents itself, and neither is enforced in
+dev or preview, so after changing one: deploy, open a document, and read the
+console for "Refused to …".
 
 **Main thread to engine worker.** OPFS's synchronous access handle is not
 exposed on the main thread, so everything that touches storage runs in
 `engine.worker.ts`, and `protocol.ts` is the contract: a map of method to
 `{params, result}` that both sides are typechecked against. Adding a method
 without a handler fails `tsc -b`, and therefore fails the gate. Large payloads
-cross by transfer, not copy — a document's bytes, a figure's, and an export's
-zip — so a hundred-megabyte PDF is never held twice. `engine.ts` starts the
-worker on the first call rather than on load, waits for the `READY` it sends
-once `sources/`, `markdown/` and `.mdgest/` exist, and sequences every call
-after that by id against a pending map.
+cross by transfer, not copy (declared beside each handler in
+`engine.worker.ts`), so a hundred-megabyte PDF is never held twice. How the
+worker is started and calls are sequenced is in `engine.ts`.
 
 **Main thread to pdf.js worker.** The second boundary, and pdf.js's code on the
 other side of it: `pdf.ts` starts pdf.js's worker on the first document opened,
 as a module worker from a same-origin file, and pdf.js parses and decodes
 there. That is why reading a document runs on the page's thread rather than in
-the engine worker. `read.ts` does
-geometry on what comes back; the engine worker never sees a PDF as anything
-but bytes.
+the engine worker. `read.ts` does geometry on what comes back; the engine
+worker never sees a PDF as anything but bytes. The data files pdf.js fetches
+on demand ship same-origin from `dist/pdfjs/`; `vite.config.ts` says which
+and why.
 
-**The pdf.js assets** — character maps, the standard fourteen fonts, and the
-no-wasm fallback decoders — are files pdf.js fetches on demand rather than code
-it bundles. A plugin in `vite.config.ts` copies them out of the package into
-`dist/pdfjs/` and serves them in dev from memory, so there is one list of them
-and it is not a `public/` copy anyone has to remember to refresh.
-
-**Worker to OPFS.** Resolving a handle is async everywhere; only read and write
-on an already-resolved sync handle are synchronous. Web Locks keep two tabs from
-writing one workspace at once, and opening a workspace writes the manifest in two phases so
-that one that stops partway — a full disk, a file since moved — leaves a
-manifest wrong about nothing. The mechanics — truncate-then-write, handles
-closed in a `finally`, what each manifest phase carries — are documented where
-they happen, in `opfs.ts` and `stage.ts`.
+**Worker to OPFS.** Web Locks keep two tabs from writing one workspace at
+once, and opening a workspace writes the manifest in two phases, so one that
+stops partway leaves a manifest wrong about nothing. The handle discipline and
+the manifest phases are documented where they happen, in `opfs.ts` and
+`stage.ts`.
 
 **OPFS to disk.** `persist` asks the browser not to evict, and a `true` there
 is advisory — which is why an export, not the workspace, is the durable copy
@@ -271,26 +230,14 @@ is advisory — which is why an export, not the workspace, is the durable copy
 | module worker (`type: "module"`) | 80            | **114** | 15       |
 | Web Locks (`navigator.locks`)    | 69            | 96      | **15.4** |
 
-The floor is the highest number in each column: the sync access handle sets
-Chrome's (`getDirectory` alone is 86, the handle is not), the module worker
-sets Firefox's, and Web Locks set Safari's. Dropping to a classic worker would
-need a bundled script and would lower Firefox to 111.
+The floor is the bold number in each column (`getDirectory` alone is Chrome
+86; the handle is not). Dropping to a classic worker would need a bundled
+script and would lower Firefox only to 111.
 
 `pdfjs-dist` 6 declares no browser floor of its own — only a Node one, for its
 build — so this table is the app's, worth re-measuring on a browser near its
-bottom. `OffscreenCanvas` is not used: figures are drawn on the main thread,
+bottom. `OffscreenCanvas` adds no row: figures are drawn on the main thread,
 into an ordinary canvas.
-
-### What to check after changing the CSP
-
-`_headers` is enforced only on the deployed site, so the check is: deploy,
-open a document, and read the console for "Refused to …". The two things most
-likely to trip it are figures and the worker. Figures are shown from
-`URL.createObjectURL`, which is a `blob:` URL, so `img-src` has to allow
-`blob:`; the engine worker is a same-origin file rather than a blob, so
-`worker-src 'self'` is enough. Neither is a reason to relax `object-src`,
-`frame-src` or `base-uri`, which stay at `'none'` so that a PDF reaching an
-`<embed>` fails loudly rather than quietly.
 
 ---
 

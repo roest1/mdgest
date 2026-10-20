@@ -1,8 +1,8 @@
 /** The engine, on the other side of the boundary.
  *
  * Everything that touches storage runs here: OPFS's synchronous handle is not
- * available on the main thread, and the reading and structuring work that will
- * land next has no business on the thread that paints.
+ * available on the main thread. Reading a document is not here: pdf.js has it
+ * open on the page, so `read.ts` and `structure.ts` run there.
  *
  * The dispatch table is exhaustive over `Engine` by construction -- a method
  * added to the protocol without a handler here fails to typecheck.
