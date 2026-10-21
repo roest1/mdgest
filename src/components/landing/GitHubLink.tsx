@@ -24,7 +24,7 @@ export function RepoLink({
   className,
   children,
 }: {
-  /** What follows the repository's URL: `#getting-started`, a file. */
+  /** What follows the repository's URL: `#development`, a file. */
   path?: string;
   className?: string;
   children: ReactNode;

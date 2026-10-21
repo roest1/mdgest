@@ -38,15 +38,27 @@ export function HowItWorks() {
     >
       {/* Equal columns for the three steps, with the arrows as auto-width
           tracks between them, so no step's drawing is sized by how long its
-          caption happens to be. Below `sm` it stacks and the arrows go. */}
+          caption happens to be. Below `sm` it stacks and the arrows go.
+
+          `role="list"` because preflight strips the list style, and WebKit
+          drops a styleless list's semantics with it. The arrows have to be
+          `li` to be valid children of `ol`, so they are `presentation`:
+          `aria-hidden` alone hides their content but still counts them, and
+          the screen reader would announce five items with the steps at one,
+          three and five. */}
       <ol
+        role="list"
         className="flex flex-col items-center gap-10
           sm:grid sm:grid-cols-[1fr_auto_1fr_auto_1fr] sm:items-start sm:gap-x-2"
       >
         {STEPS.map(({ name, body, art: Art }, i) => (
           <Fragment key={name}>
             {i > 0 && (
-              <li aria-hidden className="hidden pt-14 sm:block">
+              <li
+                role="presentation"
+                aria-hidden
+                className="hidden pt-14 sm:block"
+              >
                 <InkArrow seed={i} />
               </li>
             )}
