@@ -37,6 +37,9 @@ describe("isJunk", () => {
   test("drops anything under __MACOSX or a dot-folder", () => {
     expect(isJunk("__MACOSX/scan.pdf")).toBe(true);
     expect(isJunk("export/__MACOSX/._scan.pdf")).toBe(true);
+    // The same sidecar beside its file, as a USB stick or Windows leaves it.
+    expect(isJunk("._scan.pdf")).toBe(true);
+    expect(isJunk("export/sources/._scan.pdf")).toBe(true);
     expect(isJunk(".mdgest/doc.pdf/analysis.json")).toBe(true);
     expect(isJunk("export/.git/HEAD")).toBe(true);
   });
