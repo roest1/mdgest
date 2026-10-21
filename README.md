@@ -58,6 +58,31 @@ On every push to `main` and every pull request.
 | ui    | `react`, `tailwind`                                                                      |
 | fonts | Literata (serif), Geist Sans (ui), JetBrains Mono (code) - self-hosted via `@fontsource` |
 
+### Browser floor
+
+Desktop browsers and tablets. Phones are turned away at load with a screen that
+says so, before the app mounts: a phone runs out of memory far below the limits
+in `limits.ts`, and the editor puts a page and its markdown side by side. A
+phone is a touch-only device whose screen's short side is under 600 CSS px
+(`IS_PHONE` in `main.tsx`).
+
+| Requirement                      | Chrome / Edge | Firefox | Safari   |
+| -------------------------------- | ------------- | ------- | -------- |
+| OPFS with sync access handle     | **102**       | 111     | 15.2     |
+| module worker (`type: "module"`) | 80            | **114** | 15       |
+| Web Locks (`navigator.locks`)    | 69            | 96      | **15.4** |
+
+The floor is the bold number in each column (`getDirectory` alone is Chrome
+86; the handle is not). Dropping to a classic worker would need a bundled
+script and would lower Firefox only to 111.
+
+`pdfjs-dist` 6 declares no browser floor of its own — only a Node one, for its
+build — so this table is the app's, worth re-measuring on a browser near its
+bottom. `OffscreenCanvas` adds no row: figures are drawn on the main thread,
+into an ordinary canvas. Nor does `FileSystemFileHandle.move()`, which
+`edits.json` and the manifest are written through: Chrome 102, Firefox 111,
+Safari 15.2, per MDN's compatibility data.
+
 ---
 
 MIT — see [LICENSE](LICENSE).
