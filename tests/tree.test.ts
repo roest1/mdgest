@@ -27,23 +27,27 @@ describe("buildTree", () => {
   });
 
   test("puts folders first, then files, each alphabetical ignoring case", () => {
-    const tree = buildTree([
+    const entries = [
       pdf("zeta"),
       pdf("Alpha"),
       pdf("beta/one"),
       pdf("alpha-dir/x"),
       pdf("Beta/two"),
-    ]);
-    expect(outline(tree)).toEqual([
+    ];
+    const expected = [
       "alpha-dir/ 1",
       "  x",
-      "beta/ 1",
-      "  one",
       "Beta/ 1",
       "  two",
+      "beta/ 1",
+      "  one",
       "Alpha",
       "zeta",
-    ]);
+    ];
+    expect(outline(buildTree(entries))).toEqual(expected);
+    // Names that differ only in case are ordered by code point, not by the
+    // order they arrived in: the same listing, reversed, draws the same tree.
+    expect(outline(buildTree([...entries].reverse()))).toEqual(expected);
   });
 
   test("counts every file below a folder, not only its own", () => {

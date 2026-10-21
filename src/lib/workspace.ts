@@ -41,15 +41,21 @@ export const TEMP = ".tmp";
  *  segment is given is `.assets`. */
 const MAX_SEGMENT_BYTES = 255 - ".assets".length;
 
-/** `text` cut to at most `max` UTF-8 bytes, never inside a character. */
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/** `text` cut to at most `max` UTF-8 bytes, never inside a character --
+ *  a grapheme, not a code point: a base is not kept without its mark, nor
+ *  a family emoji without its members. */
 function cutToBytes(text: string, max: number): string {
   let bytes = 0;
   let cut = "";
-  for (const ch of text) {
-    const code = ch.codePointAt(0)!;
-    bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+  for (const { segment } of graphemes.segment(text)) {
+    for (const ch of segment) {
+      const code = ch.codePointAt(0)!;
+      bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+    }
     if (bytes > max) break;
-    cut += ch;
+    cut += segment;
   }
   return cut;
 }
@@ -146,6 +152,10 @@ export function basename(path: string): string {
 export function stem(filename: string): string {
   const base = basename(filename);
   const dot = base.lastIndexOf(".");
+  // `.hidden` is a name with no extension; `.pdf` alone is an extension
+  // with no name, and its stem is empty -- which is what `renamedId`
+  // refuses for the same input, so a drop and a rename agree on it.
+  if (dot === 0) return /^\.pdf$/i.test(base) ? "" : base;
   return dot > 0 ? base.slice(0, dot) : base;
 }
 
@@ -260,18 +270,24 @@ export function docIdFor(filename: string, folder = ""): string {
  *  so a rename lands on no id a drop could not. A `.pdf` on the end is
  *  optional, and nothing else is taken for an extension: `v2.1` is a name,
  *  not `v2` with a suffix. "" -- which is no id -- when nothing was typed, so
- *  a cleared field refuses rather than renaming to `pdf`. Shared by the
- *  landing, to show the id before it is asked for, and the stage, which
- *  decides. */
+ *  a cleared field refuses rather than renaming to `pdf`. So is a name
+ *  with no letter or digit in it: `.`, `..` and `---` have nothing for a
+ *  slug to keep, and the fallback it would reach for is `doc`, an id that
+ *  may already be taken. A name, not a path: a separator typed into it is
+ *  punctuation, slugged to a dash like any other, so a rename never moves
+ *  the document into another folder -- or, with `..`, out of its own.
+ *  Shared by the landing, to show the id before it is asked for, and the
+ *  stage, which decides. */
 export function renamedId(docId: string, name: string): string {
   const folder = docId.split("/").slice(0, -1).join("/");
   // The suffix off first, so that a bare `.pdf` is an empty name and not a
   // hidden file called `.pdf` whose stem slugs to `pdf`.
   const typed = name
+    .replace(/[/\\]/g, "-")
     .trim()
     .replace(/\.pdf$/i, "")
     .trim();
-  if (typed === "") return "";
+  if (!/[\p{L}\p{N}]/u.test(typed)) return "";
   return docIdFor(`${typed}.pdf`, folder);
 }
 
@@ -307,8 +323,10 @@ export interface Manifest {
 
 export const FORMAT = 1;
 
-/** The longest a workspace's name is kept, in code points. A label for a
- *  header and the start of a file name, not a place to write. */
+/** The longest a workspace's name is kept, in graphemes -- what a person
+ *  sees as one character, so a cut never lands inside a family emoji or
+ *  between a base and its mark. A label for a header and the start of a
+ *  file name, not a place to write. */
 const MAX_NAME = 80;
 
 /** A workspace's name as it is kept: whitespace collapsed, control and
@@ -318,17 +336,24 @@ const MAX_NAME = 80;
  *
  *  Format characters (`\p{Cf}`) go because they are invisible or reorder
  *  what is around them: a zero-width space is a name that shows as nothing,
- *  and a bidi override reverses the rest of the header line. The one kept
- *  is the zero-width joiner, which is what holds a family emoji together. */
+ *  and a bidi override reverses the rest of the header line. Two are kept:
+ *  the zero-width joiner, which holds a family emoji together, and the
+ *  non-joiner, which is spelling in Persian, Urdu and the Indic scripts --
+ *  without it a plural is two words. Kept only between visible characters:
+ *  at an end, or beside a space, each is as invisible as the rest. */
 export function cleanName(name: string): string | null {
-  const kept = [
-    ...name
-      .normalize("NFC")
-      .replace(/(?:(?!\u200d)[\p{Cc}\p{Cf}\s])+/gu, " ")
-      .trim(),
-  ]
+  const collapsed = name
+    .normalize("NFC")
+    .replace(/(?:(?![\u200c\u200d])[\p{Cc}\p{Cf}\s])+/gu, " ")
+    .trim();
+  const kept = Array.from(graphemes.segment(collapsed), (g) => g.segment)
     .slice(0, MAX_NAME)
     .join("")
+    // A whole run at once, judged by what is outside it: a run with a
+    // visible character on both sides stays, however long.
+    .replace(/(?<![^\s])[\u200c\u200d]+|[\u200c\u200d]+(?![^\s])/gu, "")
+    // A joiner that sat between two spaces leaves them touching.
+    .replace(/ {2,}/g, " ")
     .trim();
   return kept || null;
 }

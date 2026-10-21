@@ -7,7 +7,7 @@
 import { strFromU8, unzipSync } from "fflate";
 import { MAX_ENTRIES, MAX_INFLATED } from "./limits";
 import { isJunk, isManifest, isPdf } from "./upload";
-import { human } from "./words";
+import { human, messageOf } from "./words";
 import { normalizePath } from "./workspace";
 
 export interface ZipEntry {
@@ -27,15 +27,10 @@ function wanted(path: string): boolean {
   return isPdf(path) || isManifest(path);
 }
 
-/** An entry's name as a path, spelled the one way `workspace` spells paths.
- *  Some Windows tools write `\` between folders, which the format does not
- *  allow and every unzipper tolerates; others keep the `./` they were given.
- *  Left as they are, `ws\mdgest.json` is neither a manifest nor junk to
- *  anything that splits on `/`, and `./sources/a.pdf` is under a dot-folder
- *  called `.`. */
-function entryPath(name: string): string {
-  return normalizePath(name);
-}
+/** A refusal of the archive's contents, made inside fflate's filter. Thrown
+ *  from there it surfaces through `unzipSync` like one of fflate's own, and
+ *  `opening` has to tell the two apart: this one is already a sentence. */
+class Refused extends Error {}
 
 /** Stored (0) and deflated (8) are what fflate opens; a 7-Zip or WinZip
  *  archive may hold bzip2 (12), LZMA (14) or zstd (93), which it refuses one
@@ -54,7 +49,10 @@ const OPENABLE = new Set([0, 8]);
  * are decoded as fflate decodes them, so a name here is a name in its filter.
  * Empty when the bytes are not a zip at all, which `unzipSync` then says. */
 function encryptedNames(d: Uint8Array): Set<string> {
-  const u16 = (at: number) => d[at]! | (d[at + 1]! << 8);
+  // Zero past either end, so a truncated record reads as no signature
+  // rather than as `undefined` folded into a number.
+  const u16 = (at: number) =>
+    at >= 0 && at + 1 < d.length ? d[at]! | (d[at + 1]! << 8) : 0;
   const u32 = (at: number) => (u16(at) | (u16(at + 2) << 16)) >>> 0;
   const names = new Set<string>();
   let e = d.length - 22;
@@ -62,8 +60,17 @@ function encryptedNames(d: Uint8Array): Set<string> {
     if (d.length - e > 65558) return names;
   }
   if (e < 0) return names;
-  let count = u16(e + 10);
+  // Offset 8, the entries on this disk, which is the count fflate walks by;
+  // offset 10 is the total over every disk, and the two are only equal in
+  // an archive that is honest about being one disk.
+  let count = u16(e + 8);
   let at = u32(e + 16);
+  // The zip64 record exactly where fflate 0.8.3 reads it: whenever a
+  // locator sits 20 bytes before the end record, whatever the end record
+  // itself says. Not on the format's 0xFFFF sentinels, which fflate does
+  // not look at -- an archive whose locator and end record disagree has
+  // to be walked the way fflate walks it, or an entry it inflates is one
+  // this never saw.
   if (e >= 20 && u32(e - 20) === 0x07064b50) {
     const ze = u32(e - 12);
     if (u32(ze) === 0x06064b50) {
@@ -71,8 +78,12 @@ function encryptedNames(d: Uint8Array): Set<string> {
       at = u32(ze + 48);
     }
   }
-  for (let i = 0; i < count && at + 46 <= d.length; i++) {
-    if (u32(at) !== 0x02014b50) break;
+  // Every one of `count` headers, as fflate reads them: it checks no
+  // signature and stops at no bad header, so neither does this -- a header
+  // this stopped at would be one fflate read as garbage and walked past,
+  // and the entries after it ones it inflates. Only the buffer's end stops
+  // the walk, where fflate reads zeros and this reads nothing.
+  for (let i = 0; i < count && at < d.length; i++) {
     const flag = u16(at + 8);
     const nameLength = u16(at + 28);
     const extraLength = u16(at + 30);
@@ -87,13 +98,16 @@ function encryptedNames(d: Uint8Array): Set<string> {
 }
 
 /** `read`, with fflate's own errors -- `invalid zip data`, `unexpected EOF`
- *  -- put in a sentence that fits after "its export.zip". */
+ *  -- put in a sentence that fits after "its export.zip". A `Refused` thrown
+ *  from inside the filter is already that sentence and passes through. */
 function opening<T>(read: () => T): T {
   try {
     return read();
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(`could not be opened as a zip archive (${reason}).`);
+    if (error instanceof Refused) throw error;
+    throw new Error(
+      `could not be opened as a zip archive (${messageOf(error)}).`,
+    );
   }
 }
 
@@ -117,12 +131,18 @@ export function unzip(buf: ArrayBuffer): ZipEntry[] {
       filter: (f) => {
         // A folder entry: nothing to inflate, whatever it is called.
         if (f.name.endsWith("/")) return false;
-        const path = entryPath(f.name);
+        // Spelled the one way `workspace` spells paths. Some Windows tools
+        // write `\` between folders, which the format does not allow and
+        // every unzipper tolerates; others keep the `./` they were given.
+        // Left as they are, `ws\mdgest.json` is neither a manifest nor junk
+        // to anything that splits on `/`, and `./sources/a.pdf` is under a
+        // dot-folder called `.`.
+        const path = normalizePath(f.name);
         if (isJunk(path) || !wanted(path)) return false;
         if (encrypted.has(f.name))
-          throw new Error(`it holds ${path}, which is password-protected.`);
+          throw new Refused(`it holds ${path}, which is password-protected.`);
         if (!OPENABLE.has(f.compression)) {
-          throw new Error(
+          throw new Refused(
             `it holds ${path}, compressed in a way (method ${f.compression}) ` +
               `this browser cannot open. Drop the folder instead of the zip.`,
           );
@@ -133,7 +153,7 @@ export function unzip(buf: ArrayBuffer): ZipEntry[] {
         // is not saying which copy it means -- nor does one that spells a path
         // both ways round.
         if (costs.has(path))
-          throw new Error(`it holds ${path} more than once.`);
+          throw new Refused(`it holds ${path} more than once.`);
         // What opening this entry allocates, read from the central directory:
         // free here and unavailable later, which is what lets the refusals
         // below happen before the allocations they refuse. fflate inflates into
@@ -173,7 +193,7 @@ export function unzip(buf: ArrayBuffer): ZipEntry[] {
     unzipSync(data, { filter: (f) => raw.has(f.name) }),
   );
   return Object.entries(files).map(([name, bytes]) => ({
-    path: entryPath(name),
+    path: normalizePath(name),
     bytes: bytes as Uint8Array<ArrayBuffer>,
   }));
 }

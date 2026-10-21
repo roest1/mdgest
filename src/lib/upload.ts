@@ -19,15 +19,19 @@ export const isManifest = (path: string): boolean =>
   basename(path) === MANIFEST;
 
 /** Entry paths no one put in an upload on purpose. `__MACOSX/` is the mac zip
- *  tool's resource-fork sidecar; `.DS_Store` and `Thumbs.db` are the two
- *  desktops' folder metadata. Anything under a dot-directory goes too, which
- *  is also what keeps a stray `.mdgest/` cache from being read as content. */
+ *  tool's resource-fork sidecar, and `._name` is the same sidecar written
+ *  beside the file instead -- what a Mac leaves on a USB stick or an exFAT
+ *  drive, and what unzipping on Windows spills next to the real `name`.
+ *  `.DS_Store` and `Thumbs.db` are the two desktops' folder metadata.
+ *  Anything under a dot-directory goes too, which is also what keeps a stray
+ *  `.mdgest/` cache from being read as content. */
 export function isJunk(path: string): boolean {
   const parts = path.split("/");
   const base = parts.at(-1) ?? "";
   return (
     parts.includes("__MACOSX") ||
     parts.slice(0, -1).some((p) => p.startsWith(".")) ||
+    base.startsWith("._") ||
     base === ".DS_Store" ||
     base === "Thumbs.db"
   );
