@@ -41,7 +41,7 @@ const QA = [
       <>
         Yes, once the page has loaded — no model is called and no file is
         fetched. For a copy that's offline from the very first load, clone{" "}
-        <Link path="#getting-started">the repo</Link> and run it locally.
+        <Link path="#development">the repo</Link> and run it locally.
       </>
     ),
   },
@@ -59,8 +59,8 @@ const QA = [
   },
   {
     q: "What can I upload?",
-    a: `A single PDF, a zip of PDFs, a folder of PDFs, or a folder of a previous workspace. 
-        Folder-hierarchy is kept in tact.`,
+    a: `A single PDF, a zip of PDFs, a folder of PDFs, or a folder of a previous
+      workspace. Folder hierarchy is kept intact.`,
   },
   {
     q: "Why not just convert the whole thing in one go?",
@@ -72,7 +72,7 @@ const QA = [
   {
     q: "Which browsers?",
     a: `Chrome and Edge 102 or later, Firefox 114 or later, Safari 15.4 or
-      later including iOS. The floor is set by the origin-private file system (OPFS),
+      later. The floor is set by the origin-private file system (OPFS),
       module workers and Web Locks, which are what let the engine stay synchronous,
       off the thread that paints, and safe with two tabs open.`,
   },
