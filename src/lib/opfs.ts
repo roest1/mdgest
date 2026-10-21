@@ -83,6 +83,16 @@ export async function space(): Promise<{
   return { usage, quota, free: Math.max(0, quota - usage) };
 }
 
+/** Whether `cause` is the browser saying the entry is not there -- the one
+ *  failure `dirAt` and `fileAt` answer with `null`. Everything else (a file
+ *  where a folder was asked for, a lock another tab holds, a disk the
+ *  browser could not read) is rethrown: reported as "not there", a transient
+ *  error would read as a workspace with no manifest, and a discard would
+ *  follow. `remove` draws the same line. */
+function isNotFound(cause: unknown): boolean {
+  return cause instanceof DOMException && cause.name === "NotFoundError";
+}
+
 /** Walk to a directory in the workspace, optionally creating it. `null` when
  *  it is not there and `create` was not asked for, so callers can branch
  *  instead of catching. */
@@ -94,8 +104,9 @@ async function dirAt(
   for (const name of [...HOME, ...path]) {
     try {
       dir = await dir.getDirectoryHandle(name, { create });
-    } catch {
-      return null;
+    } catch (cause) {
+      if (isNotFound(cause)) return null;
+      throw cause;
     }
   }
   return dir;
@@ -111,8 +122,9 @@ async function fileAt(
   if (!dir) return null;
   try {
     return await dir.getFileHandle(name, { create });
-  } catch {
-    return null;
+  } catch (cause) {
+    if (isNotFound(cause)) return null;
+    throw cause;
   }
 }
 
@@ -149,10 +161,13 @@ async function fill(
   keep: boolean,
   path: string[],
 ): Promise<void> {
-  const access = await handle.createSyncAccessHandle();
+  let access: FileSystemSyncAccessHandle | null = null;
   let had: Uint8Array | null = null;
   let emptied = false;
   try {
+    // Inside the try: the open is where a file another tab holds fails,
+    // and that failure deserves the same sentence as a full disk below.
+    access = await handle.createSyncAccessHandle();
     if (keep) {
       const size = access.getSize();
       if (size > 0) {
@@ -174,7 +189,7 @@ async function fill(
     // What was there, back where it was. Best effort, on the handle already
     // open: if this fails too the file is lost either way, and the error
     // thrown below is still the one that says what happened.
-    if (had && emptied) {
+    if (access && had && emptied) {
       try {
         access.truncate(0);
         access.write(had, { at: 0 });
@@ -183,19 +198,30 @@ async function fill(
         // Nothing further to try.
       }
     }
-    // A full disk arrives as a bare DOMException carrying the browser's own
-    // wording, and the drop zone renders a message verbatim to whoever is
-    // standing there. Say what failed and what to do about it instead.
+    // A full disk, or a file held open, arrives as a bare DOMException
+    // carrying the browser's own wording, and the drop zone renders a
+    // message verbatim to whoever is standing there. Say what failed and
+    // what to do about it instead.
     if (cause instanceof DOMException && cause.name === "QuotaExceededError") {
       throw new Error(
         `No room left in this browser to write ${path.join("/")}. Free some space and try again.`,
+        { cause },
+      );
+    }
+    if (
+      cause instanceof DOMException &&
+      cause.name === "NoModificationAllowedError"
+    ) {
+      throw new Error(
+        `${path.join("/")} is open in another tab of this browser. Close it and try again.`,
+        { cause },
       );
     }
     throw cause;
   } finally {
     // Not optional and not deferrable: an unclosed sync handle holds an
     // exclusive lock on the file, and the next open of it rejects.
-    access.close();
+    access?.close();
   }
 }
 
@@ -233,9 +259,17 @@ export async function replaceFile(
   }
   try {
     await handle.move(dir, name);
-  } catch {
+  } catch (refused) {
     await remove(temp).catch(() => {});
-    await writeFile(path, data, { keep: true });
+    try {
+      await writeFile(path, data, { keep: true });
+    } catch (cause) {
+      // Two failures, and the first is the one that says why the second
+      // was tried at all: kept as the cause, where a console shows it.
+      if (cause instanceof Error && cause.cause === undefined)
+        cause.cause = refused;
+      throw cause;
+    }
   }
 }
 
@@ -248,39 +282,36 @@ export async function clearTemp(): Promise<void> {
   await remove([TEMP], true);
 }
 
+/** A file's bytes, or null where there is no file.
+ *
+ * Through `getFile`, not a sync access handle: the handle is an exclusive
+ * lock, and a read that takes one fails whenever another tab is writing the
+ * same file, which a listing has no business doing. `getFile` answers with
+ * a snapshot of the file as it was when asked, whole, with no lock held --
+ * so a read never fails for a write under way, and never sees half of one. */
 export async function readFile(
   path: string[],
 ): Promise<Uint8Array<ArrayBuffer> | null> {
   const handle = await fileAt(path);
   if (!handle) return null;
-  const access = await handle.createSyncAccessHandle();
-  try {
-    const buf = new Uint8Array(access.getSize());
-    access.read(buf, { at: 0 });
-    return buf;
-  } finally {
-    access.close();
-  }
+  const file = await handle.getFile();
+  return new Uint8Array(await file.arrayBuffer());
 }
 
 /** How long a file is, without reading it.
  *
- * The sync handle answers this outright, and `readFile` above only knows the
- * length because it asks the same question before allocating. Worth its own
- * export because the landing's listing wants a length beside every document's
+ * `getFile` answers this without touching the bytes. Worth its own export
+ * because the landing's listing wants a length beside every document's
  * name: taking that from the bytes made a returning visit pay a read of every
  * PDF in the workspace to print numbers it could have asked for. `null` where
- * `readFile` would also have given nothing.
+ * `readFile` would also have given nothing. No lock, as in `readFile`: a
+ * listing has to answer while another tab is writing one of the files it
+ * lists.
  */
 export async function size(path: string[]): Promise<number | null> {
   const handle = await fileAt(path);
   if (!handle) return null;
-  const access = await handle.createSyncAccessHandle();
-  try {
-    return access.getSize();
-  } finally {
-    access.close();
-  }
+  return (await handle.getFile()).size;
 }
 
 const enc = new TextEncoder();
@@ -307,8 +338,7 @@ export async function remove(path: string[], recursive = false): Promise<void> {
     // Already gone is what was asked for. Anything else -- a file another tab
     // holds open -- is a remove that did not happen, and has to say so rather
     // than let a discard report a workspace emptied that is not.
-    if (!(cause instanceof DOMException && cause.name === "NotFoundError"))
-      throw cause;
+    if (!isNotFound(cause)) throw cause;
   });
 }
 
@@ -428,8 +458,7 @@ export async function clearWorkspace(): Promise<void> {
     .catch((cause: unknown) => {
       // As in `remove`: already gone is what was asked for, and anything else
       // is a discard that did not happen.
-      if (!(cause instanceof DOMException && cause.name === "NotFoundError"))
-        throw cause;
+      if (!isNotFound(cause)) throw cause;
     });
   await ensureWorkspace();
 }

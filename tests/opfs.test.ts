@@ -28,27 +28,28 @@ worker.onmessage = (
   else call?.reject(new Error(error));
 };
 
+/** Post one call to the worker and wait for its answer. */
+function call(fn: string, args: unknown[]): Promise<unknown> {
+  const id = next++;
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject });
+    worker.postMessage({ id, fn, args });
+  });
+}
+
 /** Call an `opfs.ts` export in the worker. */
 function opfs<K extends keyof Api>(
   fn: K,
   ...args: Parameters<Api[K]>
 ): Promise<Awaited<ReturnType<Api[K]>>> {
-  const id = next++;
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
-    worker.postMessage({ id, fn, args });
-  });
+  return call(fn, args) as Promise<Awaited<ReturnType<Api[K]>>>;
 }
 
 /** Call one of the worker's own hooks on `move`: see `opfs.worker.ts`. */
 function harness(fn: "moves"): Promise<number>;
 function harness(fn: "refuseMoves", on: boolean): Promise<void>;
 function harness(fn: string, ...args: unknown[]): Promise<unknown> {
-  const id = next++;
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
-    worker.postMessage({ id, fn, args });
-  });
+  return call(fn, args);
 }
 
 const bytes = (text: string) => new TextEncoder().encode(text);
