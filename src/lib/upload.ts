@@ -26,7 +26,8 @@ export function isJunk(path: string): boolean {
   const parts = path.split("/");
   const base = parts.at(-1) ?? "";
   return (
-    parts.some((p) => p === "__MACOSX" || (p.startsWith(".") && p !== base)) ||
+    parts.includes("__MACOSX") ||
+    parts.slice(0, -1).some((p) => p.startsWith(".")) ||
     base === ".DS_Store" ||
     base === "Thumbs.db"
   );
@@ -46,8 +47,10 @@ export function workspaceRoots(paths: string[]): string[] {
   const roots = top ? [""] : [];
   for (const path of paths) {
     const parts = path.split("/");
-    if (parts.length !== 2 || parts[1] !== MANIFEST || roots.includes(parts[0]))
+    // `""` is the root's own name, and `/mdgest.json` is not at the root.
+    if (parts.length !== 2 || parts[0] === "" || parts[1] !== MANIFEST)
       continue;
+    if (roots.includes(parts[0])) continue;
     if (top && (parts[0] === SOURCES || parts[0] === MARKDOWN)) continue;
     roots.push(parts[0]);
   }

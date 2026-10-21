@@ -42,6 +42,8 @@ describe("isJunk", () => {
   });
 
   test("keeps a dot-file itself, and everything ordinary", () => {
+    expect(isJunk(".x/.x")).toBe(true);
+    expect(isJunk("export/.mdgest/.mdgest")).toBe(true);
     expect(isJunk(".hidden.pdf")).toBe(false);
     expect(isJunk("scans/.hidden.pdf")).toBe(false);
     expect(isJunk("manuals/hydraulics/valves.pdf")).toBe(false);
@@ -84,6 +86,7 @@ describe("workspaceRoots", () => {
 
   test("looks no deeper than one folder", () => {
     expect(workspaceRoots(["x/y/mdgest.json", "loose.pdf"])).toEqual([]);
+    expect(workspaceRoots(["/mdgest.json", "/sources/a.pdf"])).toEqual([]);
   });
 });
 
