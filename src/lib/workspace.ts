@@ -260,11 +260,14 @@ export function docIdFor(filename: string, folder = ""): string {
  *  so a rename lands on no id a drop could not. A `.pdf` on the end is
  *  optional, and nothing else is taken for an extension: `v2.1` is a name,
  *  not `v2` with a suffix. "" -- which is no id -- when nothing was typed, so
- *  a cleared field refuses rather than renaming to `pdf`. A name, not a
- *  path: a separator typed into it is punctuation, slugged to a dash like
- *  any other, so a rename never moves the document into another folder --
- *  or, with `..`, out of its own. Shared by the landing, to show the id
- *  before it is asked for, and the stage, which decides. */
+ *  a cleared field refuses rather than renaming to `pdf`. So is a name
+ *  with no letter or digit in it: `.`, `..` and `---` have nothing for a
+ *  slug to keep, and the fallback it would reach for is `doc`, an id that
+ *  may already be taken. A name, not a path: a separator typed into it is
+ *  punctuation, slugged to a dash like any other, so a rename never moves
+ *  the document into another folder -- or, with `..`, out of its own.
+ *  Shared by the landing, to show the id before it is asked for, and the
+ *  stage, which decides. */
 export function renamedId(docId: string, name: string): string {
   const folder = docId.split("/").slice(0, -1).join("/");
   // The suffix off first, so that a bare `.pdf` is an empty name and not a
@@ -274,7 +277,7 @@ export function renamedId(docId: string, name: string): string {
     .trim()
     .replace(/\.pdf$/i, "")
     .trim();
-  if (typed === "") return "";
+  if (!/[\p{L}\p{N}]/u.test(typed)) return "";
   return docIdFor(`${typed}.pdf`, folder);
 }
 
@@ -310,9 +313,13 @@ export interface Manifest {
 
 export const FORMAT = 1;
 
-/** The longest a workspace's name is kept, in code points. A label for a
- *  header and the start of a file name, not a place to write. */
+/** The longest a workspace's name is kept, in graphemes -- what a person
+ *  sees as one character, so a cut never lands inside a family emoji or
+ *  between a base and its mark. A label for a header and the start of a
+ *  file name, not a place to write. */
 const MAX_NAME = 80;
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 /** A workspace's name as it is kept: whitespace collapsed, control and
  *  format characters out, cut to `MAX_NAME`. Null when nothing is left. Not
@@ -327,12 +334,11 @@ const MAX_NAME = 80;
  *  without it a plural is two words. Kept only between visible characters:
  *  at an end, or beside a space, each is as invisible as the rest. */
 export function cleanName(name: string): string | null {
-  const kept = [
-    ...name
-      .normalize("NFC")
-      .replace(/(?:(?![\u200c\u200d])[\p{Cc}\p{Cf}\s])+/gu, " ")
-      .trim(),
-  ]
+  const collapsed = name
+    .normalize("NFC")
+    .replace(/(?:(?![\u200c\u200d])[\p{Cc}\p{Cf}\s])+/gu, " ")
+    .trim();
+  const kept = Array.from(graphemes.segment(collapsed), (g) => g.segment)
     .slice(0, MAX_NAME)
     .join("")
     .replace(

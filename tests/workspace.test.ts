@@ -190,11 +190,18 @@ describe("renamedId", () => {
     expect(renamedId("x/a", "v2.1")).toBe("x/v2-1");
   });
 
+  test("gives no id for a name with no letter or digit", () => {
+    expect(renamedId("a/b", ".")).toBe("");
+    expect(renamedId("a/b", "..")).toBe("");
+    expect(renamedId("a/b", "...pdf")).toBe("");
+    expect(renamedId("a/b", "---")).toBe("");
+    expect(renamedId("a", "/")).toBe("");
+  });
+
   test("treats a separator as punctuation, never as a folder", () => {
     expect(renamedId("invoices/a", "x/y")).toBe("invoices/x-y");
     expect(renamedId("invoices/a", "x\\y")).toBe("invoices/x-y");
     expect(renamedId("invoices/a", "../y")).toBe("invoices/y");
-    expect(renamedId("a", "/")).toBe("doc");
   });
 
   test("gives no id for an empty name", () => {
@@ -234,6 +241,17 @@ describe("cleanName", () => {
   test("keeps 80 code points, not 80 UTF-16 units", () => {
     const emoji = "😀".repeat(100);
     expect(cleanName(emoji)).toBe("😀".repeat(80));
+  });
+
+  test("cuts between graphemes, never inside one", () => {
+    const family = "👨\u200d👩\u200d👧";
+    expect(cleanName("a".repeat(79) + family)).toBe("a".repeat(79) + family);
+    expect(cleanName("a".repeat(80) + family)).toBe("a".repeat(80));
+    // A base and its combining mark, where NFC has no composed form.
+    expect(cleanName("a".repeat(79) + "क\u093f")).toBe(
+      "a".repeat(79) + "क\u093f",
+    );
+    expect(cleanName("a".repeat(80) + "क\u093f")).toBe("a".repeat(80));
   });
 });
 
