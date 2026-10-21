@@ -41,15 +41,21 @@ export const TEMP = ".tmp";
  *  segment is given is `.assets`. */
 const MAX_SEGMENT_BYTES = 255 - ".assets".length;
 
-/** `text` cut to at most `max` UTF-8 bytes, never inside a character. */
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/** `text` cut to at most `max` UTF-8 bytes, never inside a character --
+ *  a grapheme, not a code point: a base is not kept without its mark, nor
+ *  a family emoji without its members. */
 function cutToBytes(text: string, max: number): string {
   let bytes = 0;
   let cut = "";
-  for (const ch of text) {
-    const code = ch.codePointAt(0)!;
-    bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+  for (const { segment } of graphemes.segment(text)) {
+    for (const ch of segment) {
+      const code = ch.codePointAt(0)!;
+      bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+    }
     if (bytes > max) break;
-    cut += ch;
+    cut += segment;
   }
   return cut;
 }
@@ -146,6 +152,10 @@ export function basename(path: string): string {
 export function stem(filename: string): string {
   const base = basename(filename);
   const dot = base.lastIndexOf(".");
+  // `.hidden` is a name with no extension; `.pdf` alone is an extension
+  // with no name, and its stem is empty -- which is what `renamedId`
+  // refuses for the same input, so a drop and a rename agree on it.
+  if (dot === 0) return /^\.pdf$/i.test(base) ? "" : base;
   return dot > 0 ? base.slice(0, dot) : base;
 }
 
@@ -319,8 +329,6 @@ export const FORMAT = 1;
  *  file name, not a place to write. */
 const MAX_NAME = 80;
 
-const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-
 /** A workspace's name as it is kept: whitespace collapsed, control and
  *  format characters out, cut to `MAX_NAME`. Null when nothing is left. Not
  *  made safe for a path -- the export does that, with `cleanSegment`, so the
@@ -341,10 +349,9 @@ export function cleanName(name: string): string | null {
   const kept = Array.from(graphemes.segment(collapsed), (g) => g.segment)
     .slice(0, MAX_NAME)
     .join("")
-    .replace(
-      /(?<![^\s\u200c\u200d])[\u200c\u200d]+|[\u200c\u200d]+(?![^\s\u200c\u200d])/gu,
-      "",
-    )
+    // A whole run at once, judged by what is outside it: a run with a
+    // visible character on both sides stays, however long.
+    .replace(/(?<![^\s])[\u200c\u200d]+|[\u200c\u200d]+(?![^\s])/gu, "")
     // A joiner that sat between two spaces leaves them touching.
     .replace(/ {2,}/g, " ")
     .trim();

@@ -53,6 +53,12 @@ describe("cleanSegment", () => {
   test("cuts to 248 UTF-8 bytes, never inside a character", () => {
     const ascii = cleanSegment("a".repeat(300));
     expect(ascii).toHaveLength(248);
+    // A grapheme is a character: 247 bytes, then a base plus its mark (4
+    // bytes) that would cross the cap goes whole, not base alone.
+    expect(cleanSegment("a".repeat(247) + "क\u093f")).toBe("a".repeat(247));
+    expect(cleanSegment("a".repeat(242) + "क\u093f")).toBe(
+      "a".repeat(242) + "क\u093f",
+    );
     // Three bytes each: 82 fit in 246, and the 83rd would cross the cap.
     const wide = cleanSegment("報".repeat(100));
     expect(wide).toBe("報".repeat(82));
@@ -98,6 +104,8 @@ describe("slug, basename, stem", () => {
     expect(basename("c.pdf")).toBe("c.pdf");
     expect(stem("a/b/c.tar.pdf")).toBe("c.tar");
     expect(stem(".hidden")).toBe(".hidden");
+    expect(stem(".pdf")).toBe("");
+    expect(stem(".PDF")).toBe("");
     expect(stem("noext")).toBe("noext");
   });
 });
@@ -178,6 +186,13 @@ describe("docIdFor", () => {
   });
 });
 
+describe("docIdFor", () => {
+  test("a file that is only its extension gets the fallback id, as a rename refuses it", () => {
+    expect(docIdFor(".pdf")).toBe("doc");
+    expect(docIdFor("x/.PDF")).toBe("x/doc");
+  });
+});
+
 describe("renamedId", () => {
   test("lands in the document's own folder, through the same rules", () => {
     expect(renamedId("invoices/a", "B Copy")).toBe("invoices/b-copy");
@@ -235,6 +250,9 @@ describe("cleanName", () => {
     expect(cleanName("\u200d\u200c\u200d")).toBeNull();
     expect(cleanName("\u200dabc\u200c")).toBe("abc");
     expect(cleanName("a\u200d \u200cb")).toBe("a b");
+    // A run between two visible characters stays whole.
+    expect(cleanName("a\u200d\u200db")).toBe("a\u200d\u200db");
+    expect(cleanName("نامه\u200c\u200cها")).toBe("نامه\u200c\u200cها");
     expect(cleanName("a \u200d\u200c b")).toBe("a b");
   });
 
