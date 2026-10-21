@@ -58,6 +58,12 @@
     overflow: hidden;
   }
 
+  /* lucide draws for a 24px grid; at 12–14px the default 2px stroke muddies
+     — thin it once, everywhere */
+  svg.lucide {
+    stroke-width: 1.75;
+  }
+
   /* visible keyboard focus, for a tool driven by keys */
   :focus-visible {
     outline: 2px solid
@@ -140,5 +146,47 @@
         color-mix(in srgb, var(--color-accent-lit) 13%, transparent),
         transparent
       );
+  }
+
+  /* The drop zone's border, at rest and on hover both. It is an SVG rect and
+     not `border-style: dashed` because a CSS dashed border exposes no offset
+     to animate — and because the two cannot be swapped at hover without the
+     dashes visibly resizing: Chrome stretches border dashes to divide each
+     edge evenly, so its dash length depends on the box's dimensions and never
+     lands on a round number.
+
+     `6 4` matches the 3:2 rhythm Chrome was painting (measured at 6/4 device
+     px on a 672px-wide box).
+
+     Scoped to `.upload-zone:hover` and not Tailwind's `group-hover:` on
+     purpose: the pick buttons inside are already groups, and `group-hover:`
+     matches any hovered `.group` ancestor — sharing the marker would light
+     both glyphs up whenever the cursor entered the box. */
+  .dash {
+    stroke-dasharray: 6 4;
+    transition: color 0.2s ease-out;
+  }
+  .upload-zone:hover .dash {
+    animation: march 0.6s linear infinite;
+  }
+}
+
+/* ── motion ─────────────────────────────────────────────────────────── */
+/* -10 is one full `6 4` cycle, so the loop is seamless. */
+@keyframes march {
+  to {
+    stroke-dashoffset: -10;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    /* a delay is motion too */
+    animation-delay: 0s !important;
   }
 }
