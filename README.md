@@ -51,7 +51,7 @@ bun run dev # http://127.0.0.1:2048, or set WEB_PORT
 
 |       |                                                                                          |
 | ----- | ---------------------------------------------------------------------------------------- |
-| build | `vite` (rolldown), `typescript`, `oxlint`                                                |
+| build | `vite` (rolldown), `typescript`, `oxlint`, `prettier` (formatting)                       |
 | ui    | `react`, `tailwind`                                                                      |
 | fonts | Literata (serif), Geist Sans (ui), JetBrains Mono (code) - self-hosted via `@fontsource` |
 
