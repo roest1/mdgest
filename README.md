@@ -29,6 +29,8 @@ a single pdf, a zip of pdfs, or a folder with pdfs in it.
 curl -fsSL https://bun.com/install | bash
 ```
 
+### Get Started
+
 ```bash
 git clone https://github.com/roest1/mdgest.git && cd mdgest
 bun install
