@@ -20,9 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The pin is `packageManager` in package.json, the one place the Bun
+      # version is written down, so CI runs the Bun the lockfile was made with
+      # rather than whatever shipped this morning.
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: package.json
 
       # `bun install --frozen-lockfile` rather than a plain install, so a lockfile
       # that drifted from package.json fails here instead of resolving to something
