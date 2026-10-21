@@ -224,6 +224,12 @@ is advisory — which is why an export, not the workspace, is the durable copy
 
 ### Browser floor
 
+Desktop browsers and tablets. Phones are turned away at load with a screen that
+says so, before the app mounts: a phone runs out of memory far below the limits
+in `limits.ts`, and the editor puts a page and its markdown side by side. A
+phone is a touch-only device whose screen's short side is under 600 CSS px
+(`IS_PHONE` in `main.tsx`).
+
 | Requirement                      | Chrome / Edge | Firefox | Safari   |
 | -------------------------------- | ------------- | ------- | -------- |
 | OPFS with sync access handle     | **102**       | 111     | 15.2     |
