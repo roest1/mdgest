@@ -18,6 +18,37 @@ function archive(files: Record<string, string | undefined>): ArrayBuffer {
   ) as ArrayBuffer;
 }
 
+/** `buf` with one central-directory field of the entry called `name`
+ *  rewritten: the general-purpose flag (offset 8) or the method (offset 10).
+ *  What a zip tool writes for an encrypted or LZMA entry, without the tool. */
+function patched(
+  buf: ArrayBuffer,
+  name: string,
+  field: "flag" | "method",
+  value: number,
+): ArrayBuffer {
+  const d = new Uint8Array(buf.slice(0));
+  const want = strToU8(name);
+  for (let at = 0; at + 46 <= d.length; at++) {
+    if (
+      d[at] !== 0x50 ||
+      d[at + 1] !== 0x4b ||
+      d[at + 2] !== 1 ||
+      d[at + 3] !== 2
+    )
+      continue;
+    const nameLength = d[at + 28]! | (d[at + 29]! << 8);
+    const found = d.subarray(at + 46, at + 46 + nameLength);
+    if (found.length !== want.length || !found.every((b, i) => b === want[i]))
+      continue;
+    const off = at + (field === "flag" ? 8 : 10);
+    d[off] = value & 0xff;
+    d[off + 1] = value >> 8;
+    return d.buffer as ArrayBuffer;
+  }
+  throw new Error(`no central header for ${name}`);
+}
+
 const paths = (buf: ArrayBuffer) =>
   unzip(buf)
     .map((e) => e.path)
@@ -58,6 +89,51 @@ describe("unzip", () => {
     expect(paths(buf)).toEqual(["ws/mdgest.json", "ws/sources/a.pdf"]);
   });
 
+  test("reads ./-prefixed and traversing names as paths", () => {
+    const buf = archive({
+      "./mdgest.json": "{}",
+      "./sources/a.pdf": undefined,
+      "sources/../b.pdf": undefined,
+    });
+    // `..` is dropped, not resolved -- the spelling `cleanId` gives it too.
+    expect(paths(buf)).toEqual([
+      "mdgest.json",
+      "sources/a.pdf",
+      "sources/b.pdf",
+    ]);
+  });
+
+  test("leaves folder entries alone, whatever they are called", () => {
+    const buf = archive({ "a.pdf/": "", "b.pdf": undefined });
+    expect(paths(buf)).toEqual(["b.pdf"]);
+  });
+
+  test("refuses a password-protected entry rather than its ciphertext", () => {
+    const buf = patched(
+      archive({ "a.pdf": undefined, "b.pdf": undefined }),
+      "b.pdf",
+      "flag",
+      1,
+    );
+    expect(() => unzip(buf)).toThrow("b.pdf, which is password-protected");
+  });
+
+  test("ignores a password on an entry it would not open anyway", () => {
+    const buf = patched(
+      archive({ "a.pdf": undefined, "notes.txt": undefined }),
+      "notes.txt",
+      "flag",
+      1,
+    );
+    expect(paths(buf)).toEqual(["a.pdf"]);
+  });
+
+  test("refuses a compression method it cannot open, in its own words", () => {
+    const buf = patched(archive({ "a.pdf": undefined }), "a.pdf", "method", 14);
+    expect(() => unzip(buf)).toThrow("method 14");
+    expect(() => unzip(buf)).not.toThrow("unknown compression type");
+  });
+
   test("hands back each entry's bytes", () => {
     const buf = archive({ "a.pdf": "%PDF-1.7 hello" });
     const [entry] = unzip(buf);
@@ -83,7 +159,9 @@ describe("unzip", () => {
     expect(paths(archive(files))).toEqual(["a.pdf"]);
   });
 
-  test("refuses what is not an archive", () => {
-    expect(() => unzip(strToU8("not a zip").buffer as ArrayBuffer)).toThrow();
+  test("refuses what is not an archive, in its own words", () => {
+    expect(() => unzip(strToU8("not a zip").buffer as ArrayBuffer)).toThrow(
+      "could not be opened as a zip archive",
+    );
   });
 });
