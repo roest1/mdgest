@@ -2,11 +2,15 @@
   "name": "mdgest",
   "private": true,
   "version": "0.0.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
     "lint": "oxlint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -19,7 +23,8 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "oxlint": "^1.88.0",
-    "typescript": "~6.0.3",
+    "prettier": "3.9.10",
+    "typescript": "^7.0.2",
     "vite": "^8.3.4"
   }
 }
