@@ -1,5 +1,6 @@
 import { GitHubLink } from "src/components/landing/GitHubLink";
 import { Brand } from "src/components/landing/Brand";
+import { Footer } from "src/components/landing/Footer";
 
 export default function Landing() {
   return (
@@ -10,6 +11,7 @@ export default function Landing() {
           <Brand />
         </div>
       </div>
+      <Footer />
     </main>
   );
 }
