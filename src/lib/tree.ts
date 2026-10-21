@@ -6,6 +6,8 @@
  * know how a file arrived.
  */
 
+import { byCodePoint } from "./workspace";
+
 /** What a leaf is. Folders are the only non-leaf. `pdf` is what gets
  *  uploaded; `md` and `json` are what the engine writes and only show up
  *  once a workspace listing includes its outputs. */
@@ -53,8 +55,13 @@ export type TreeNode =
     };
 
 /** One collator for every comparison: the options form of `localeCompare`
- *  builds one per call. */
-const byName = new Intl.Collator(undefined, { sensitivity: "base" }).compare;
+ *  builds one per call. Case-insensitive, so `beta` and `Beta` -- both ids
+ *  the engine allows side by side -- tie, and the tie is broken by code
+ *  point: without that their order is whatever order they arrived in, and a
+ *  listing from disk and a staged drop would show them swapped. */
+const collate = new Intl.Collator(undefined, { sensitivity: "base" }).compare;
+const byName = (a: string, b: string): number =>
+  collate(a, b) || byCodePoint(a, b);
 
 /** Folders first, then files, each alphabetical and case-insensitive —
  *  the order every file manager settles on. In place: the nodes are this
@@ -119,6 +126,5 @@ export function buildTree(entries: Entry[]): TreeNode[] {
       removable,
     });
   }
-  root.files = seen.size;
   return sortNodes(root.children);
 }
