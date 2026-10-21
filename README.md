@@ -79,9 +79,12 @@ script and would lower Firefox only to 111.
 `pdfjs-dist` 6 declares no browser floor of its own — only a Node one, for its
 build — so this table is the app's, worth re-measuring on a browser near its
 bottom. `OffscreenCanvas` adds no row: figures are drawn on the main thread,
-into an ordinary canvas. Nor does `FileSystemFileHandle.move()`, which
-`edits.json` and the manifest are written through: Chrome 102, Firefox 111,
-Safari 15.2, per MDN's compatibility data.
+into an ordinary canvas. Nor does `FileSystemFileHandle.move()`, which every
+text file is written through: Chrome 102, Firefox 111, Safari 15.2 (WebKit
+implemented it in October 2021; MDN does not list it). One caveat: Safari
+made a move replace a file already at its destination only in 17.0. Below
+that, a text write over an earlier version takes `replaceFile`'s in-place
+fallback, which lands but is not whole-or-nothing.
 
 ---
 

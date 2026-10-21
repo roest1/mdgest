@@ -39,7 +39,12 @@ import {
  *  `move` is missing for another reason: no spec has it yet, only every
  *  engine (Chrome 102, Firefox 111, Safari 15.2, all under the floor) and
  *  the platform tests, which hold it to replacing a file already at the
- *  destination. That replace is what `replaceFile` is built on.
+ *  destination. That replace is what `replaceFile` is built on -- and it
+ *  is Safari 17.0 that made a move replace what is already there (its
+ *  release notes: "starting to overwrite target by default"). Below that,
+ *  the move of a text file over its previous version refuses, and
+ *  `replaceFile` takes its fallback: every write still lands, but in
+ *  place, with the window a closed tab can tear.
  *
  *  Spec: https://fs.spec.whatwg.org/#api-filesystemsyncaccesshandle
  *  Tests: wpt/fs/script-tests/FileSystemFileHandle-move.js */
@@ -110,9 +115,11 @@ function describe(cause: unknown, path: string[]): unknown {
       { cause },
     );
   }
+  // Held by a sync access handle: another tab's, or this tab's own
+  // engine mid-read. Which one this layer cannot know, so neither is named.
   if (cause.name === "NoModificationAllowedError") {
     return new Error(
-      `${what} is open in another tab of this browser. Close it and try again.`,
+      `${what} is in use, here or in another tab of this browser. Try again in a moment.`,
       { cause },
     );
   }
@@ -167,38 +174,44 @@ async function fileAt(
  * for that, and `keep` is for its fallback alone. Off by default, for the
  * sources: they are written once, they are far the largest thing here to
  * hold a second copy of, and they are the one file still on the disk a
- * person dropped them from. Without `keep`, a write that fails takes its
- * file with it: the handle was created before the first byte, and a source
+ * person dropped them from. Without `keep`, a write that fails takes with
+ * it what it spoiled: the file it created, or the one it emptied. A source
  * left empty or cut short is one `docs()` lists, and the next look hashes
- * and records as the document itself.
+ * and records as the document itself. A file that was there and was never
+ * reached -- the open itself refused -- is left as it was.
  */
 export async function writeFile(
   path: string[],
   data: ArrayBuffer | Uint8Array,
   { keep = false }: { keep?: boolean } = {},
 ): Promise<void> {
+  const existed = (await fileAt(path)) !== null;
   const handle = await fileAt(path, true);
   if (!handle) throw new Error(`cannot create ${path.join("/")}`);
+  const progress = { emptied: false };
   try {
-    await fill(handle, data, keep, path);
+    await fill(handle, data, keep, path, progress);
   } catch (cause) {
-    if (!keep) await remove(path).catch(() => {});
+    if (!keep && (!existed || progress.emptied))
+      await remove(path).catch(() => {});
     throw cause;
   }
 }
 
 /** `writeFile` once the handle is open. `path` is only for the message a
  *  full disk gets, which names the file a person knows of: for
- *  `replaceFile`, the one being replaced, not its temp. */
+ *  `replaceFile`, the one being replaced, not its temp. `progress.emptied`
+ *  is set the moment the file's old bytes are gone, for the caller to know
+ *  what a failure left. */
 async function fill(
   handle: FileSystemFileHandle,
   data: ArrayBuffer | Uint8Array,
   keep: boolean,
   path: string[],
+  progress = { emptied: false },
 ): Promise<void> {
   let access: FileSystemSyncAccessHandle | null = null;
   let had: Uint8Array | null = null;
-  let emptied = false;
   try {
     // Inside the try: the open is where a file another tab holds fails,
     // and that failure deserves the same sentence as a full disk below.
@@ -214,7 +227,7 @@ async function fill(
         had = was;
       }
     }
-    emptied = true;
+    progress.emptied = true;
     access.truncate(0);
     access.write(data instanceof Uint8Array ? data : new Uint8Array(data), {
       at: 0,
@@ -223,8 +236,9 @@ async function fill(
   } catch (cause) {
     // What was there, back where it was. Best effort, on the handle already
     // open: if this fails too the file is lost either way, and the error
-    // thrown below is still the one that says what happened.
-    if (access && had && emptied) {
+    // thrown below is still the one that says what happened. `had` is set
+    // only once the read is through, so it implies the truncate followed.
+    if (access && had) {
       try {
         access.truncate(0);
         access.write(had, { at: 0 });
@@ -264,11 +278,13 @@ export async function replaceFile(
   data: ArrayBuffer | Uint8Array,
 ): Promise<void> {
   const name = path.at(-1);
-  const dir = await dirAt(path.slice(0, -1), true);
+  const dir = name ? await dirAt(path.slice(0, -1), true) : null;
+  if (!name || !dir) throw new Error(`cannot create ${path.join("/")}`);
+  // The temp only once the target is known to be writable: a temp made for
+  // a target that is not would sit in .tmp/ until the next clearTemp.
   const temp = [TEMP, crypto.randomUUID()];
   const handle = await fileAt(temp, true);
-  if (!name || !dir || !handle)
-    throw new Error(`cannot create ${path.join("/")}`);
+  if (!handle) throw new Error(`cannot create ${path.join("/")}`);
   try {
     await fill(handle, data, false, path);
   } catch (cause) {
