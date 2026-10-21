@@ -49,9 +49,11 @@ bun run dev # http://127.0.0.1:2048, or set WEB_PORT
 
 **web app deployment plan**: one bundle, hosted as static files on Cloudflare Pages.
 
-|       |                                           |
-| ----- | ----------------------------------------- |
-| build | `vite` (rolldown), `typescript`, `oxlint` |
+|       |                                                                                          |
+| ----- | ---------------------------------------------------------------------------------------- |
+| build | `vite` (rolldown), `typescript`, `oxlint`                                                |
+| ui    | `react`, `tailwind`                                                                      |
+| fonts | Literata (serif), Geist Sans (ui), JetBrains Mono (code) - self-hosted via `@fontsource` |
 
 ---
 
