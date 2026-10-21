@@ -44,5 +44,13 @@ jobs:
       - name: typecheck
         run: bun run typecheck
 
+      # The tests run in a real browser (tests/README.md): Playwright's own
+      # Chromium, the version the lockfile's playwright expects, with the system
+      # libraries it needs.
+      - name: test
+        run: |
+          bunx playwright install --with-deps chromium
+          bun run test
+
       - name: build
         run: bun run build
