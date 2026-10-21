@@ -3,6 +3,7 @@ import { GitHubLink } from "src/components/landing/GitHubLink";
 import { Brand } from "src/components/landing/Brand";
 import { DropZone } from "src/components/landing/DropZone";
 import { Footer } from "src/components/landing/Footer";
+import { HowItWorks } from "src/components/landing/how-it-works/HowItWorks";
 
 export default function Landing() {
   return (
@@ -10,8 +11,10 @@ export default function Landing() {
       <div className="landing-hero">
         <Backdrop />
         <GitHubLink />
+
         <div className="relative z-10 w-full max-w-2xl space-y-2">
           <Brand />
+
           <section>
             {/* Nothing receives the files yet: the "Added." flash is the whole
                 round trip until there is a stage to send them to. */}
@@ -19,6 +22,7 @@ export default function Landing() {
           </section>
         </div>
       </div>
+      <HowItWorks />
       <Footer />
     </main>
   );
