@@ -140,6 +140,30 @@ describe("unzip", () => {
     expect(() => unzip(buf)).not.toThrow("could not be opened");
   });
 
+  test("walks past a header fflate would walk past", () => {
+    // The first central header's signature spoiled: fflate reads it as a
+    // header anyway and goes on to the second, so the scan has to as well.
+    const buf = patched(
+      archive({ "a.pdf": undefined, "b.pdf": undefined }),
+      "b.pdf",
+      "flag",
+      1,
+    );
+    const d = new Uint8Array(buf);
+    for (let at = 0; at + 4 <= d.length; at++) {
+      if (
+        d[at] === 0x50 &&
+        d[at + 1] === 0x4b &&
+        d[at + 2] === 1 &&
+        d[at + 3] === 2
+      ) {
+        d[at + 3] = 0xff;
+        break;
+      }
+    }
+    expect(() => unzip(d.buffer)).toThrow("b.pdf, which is password-protected");
+  });
+
   test("opens an end record with nothing before it", () => {
     // 22 bytes: the end record alone. Every offset a zip64 locator or a
     // central header would be read from lies before the buffer's start.

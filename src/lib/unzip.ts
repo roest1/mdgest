@@ -78,8 +78,12 @@ function encryptedNames(d: Uint8Array): Set<string> {
       at = u32(ze + 48);
     }
   }
-  for (let i = 0; i < count && at + 46 <= d.length; i++) {
-    if (u32(at) !== 0x02014b50) break;
+  // Every one of `count` headers, as fflate reads them: it checks no
+  // signature and stops at no bad header, so neither does this -- a header
+  // this stopped at would be one fflate read as garbage and walked past,
+  // and the entries after it ones it inflates. Only the buffer's end stops
+  // the walk, where fflate reads zeros and this reads nothing.
+  for (let i = 0; i < count && at < d.length; i++) {
     const flag = u16(at + 8);
     const nameLength = u16(at + 28);
     const extraLength = u16(at + 30);
