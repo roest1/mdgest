@@ -1,111 +1,144 @@
+/* @import must precede every other rule — CSS, not a Tailwind quirk. */
+@import "tailwindcss";
+@import "@fontsource/geist-sans/400.css";
+@import "@fontsource/geist-sans/500.css";
+@import "@fontsource/geist-sans/600.css";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource-variable/literata/opsz.css";
+
+/* ── tokens ─────────────────────────────────────────────────────────────
+   The two brand hexes are the mark's gradient stops. docs/brand/ is
+   upstream; nothing enforces the match, so change both. */
+@theme {
+  --font-sans:
+    "Geist Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono:
+    "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-serif: "Literata Variable", Georgia, serif;
+
+  --color-brand: #b01221; /* mark gradient, dark stop */
+  --color-brand-lit: #f0522a; /* mark gradient, light stop */
+  --color-accent: #3b82f6;
+  --color-accent-lit: #60a5fa;
+
+  --color-ground: #14120f;
+  --color-chrome: #1b1815;
+  --color-raised: #242018;
+  --color-edge: #2f2a23;
+  --color-edge-strong: #453d32;
+
+  --color-ink: #ece7dd;
+  --color-muted: #a2988a;
+  --color-faint: #776e62;
+
+  /* the sticky note on a selection: paper and the pencil on it */
+  --color-note: #f3d35f;
+  --color-note-ink: #3a2f06;
+}
+
+/* ── base ───────────────────────────────────────────────────────────── */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply m-0 p-0 font-sans text-ink antialiased;
+    /* plain black by default; the landing page paints its own ground */
+    background-color: #000;
+    /* an app shell, not a document: panes scroll, the page does not */
+    overflow: hidden;
+  }
+
+  /* visible keyboard focus, for a tool driven by keys */
+  :focus-visible {
+    outline: 2px solid
+      color-mix(in srgb, var(--color-accent-lit) 70%, transparent);
+    outline-offset: 1px;
+  }
+}
+
+/* ── scrollbars ─────────────────────────────────────────────────────── */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --scrollbar-size: 8px;
+  --scrollbar-thumb: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-brand-lit) 85%, transparent),
+    color-mix(in srgb, var(--color-brand) 85%, transparent)
+  );
+  --scrollbar-thumb-hover: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-brand-lit) 100%, white 8%),
+    color-mix(in srgb, var(--color-brand) 100%, white 8%)
+  );
+  --scrollbar-glow: 0 0 10px
+    color-mix(in srgb, var(--color-brand-lit) 30%, transparent);
+  /* Firefox cannot paint a gradient thumb — flat brand is the closest match */
+  --scrollbar-thumb-flat: color-mix(
+    in srgb,
+    var(--color-brand) 85%,
+    transparent
+  );
+}
 
-  --sans: system-ui, "Segoe UI", Roboto, sans-serif;
-  --heading: system-ui, "Segoe UI", Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
+::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+  box-shadow: var(--scrollbar-glow);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb-flat) transparent;
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+/* ── components ─────────────────────────────────────────────────────────
+   This lives in the components layer on purpose. Unlayered CSS beats every
+   Tailwind utility, so a bare `.landing-page` would win against
+   `class="landing-page p-8"` and force `!p-8` at the call site. Inside
+   @layer components the utility wins, which is the whole point. */
+@layer components {
+  /* `body` does not scroll, so the landing page is its own scroll container. */
+  .landing-page {
+    @apply h-screen overflow-y-auto;
+    background-color: var(--color-ground);
   }
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+  /* The hero owns the wallpaper: brand red glowing top-left, accent blue
+     top-right, both fading out well inside the hero, so scrolling past it
+     leaves plain ground. */
+  .landing-hero {
+    @apply relative flex min-h-screen flex-col items-center justify-center p-4;
+    background-image:
+      radial-gradient(
+        ellipse 45% 55% at 14% 30%,
+        color-mix(in srgb, var(--color-brand) 16%, transparent),
+        transparent
+      ),
+      radial-gradient(
+        ellipse 45% 55% at 86% 30%,
+        color-mix(in srgb, var(--color-accent-lit) 13%, transparent),
+        transparent
+      );
   }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
 }
