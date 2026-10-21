@@ -49,7 +49,10 @@ const OPENABLE = new Set([0, 8]);
  * are decoded as fflate decodes them, so a name here is a name in its filter.
  * Empty when the bytes are not a zip at all, which `unzipSync` then says. */
 function encryptedNames(d: Uint8Array): Set<string> {
-  const u16 = (at: number) => d[at]! | (d[at + 1]! << 8);
+  // Zero past either end, so a truncated record reads as no signature
+  // rather than as `undefined` folded into a number.
+  const u16 = (at: number) =>
+    at >= 0 && at + 1 < d.length ? d[at]! | (d[at + 1]! << 8) : 0;
   const u32 = (at: number) => (u16(at) | (u16(at + 2) << 16)) >>> 0;
   const names = new Set<string>();
   let e = d.length - 22;
@@ -62,12 +65,15 @@ function encryptedNames(d: Uint8Array): Set<string> {
   // an archive that is honest about being one disk.
   let count = u16(e + 8);
   let at = u32(e + 16);
-  // The zip64 record only where fflate reads it: when the end record's count
-  // or offset is the sentinel that says "look there". A locator that merely
-  // sits before an ordinary end record is left alone, as fflate leaves it.
-  if (count === 0xffff || at === 0xffffffff) {
+  // The zip64 record exactly where fflate 0.8.3 reads it: whenever a
+  // locator sits 20 bytes before the end record, whatever the end record
+  // itself says. Not on the format's 0xFFFF sentinels, which fflate does
+  // not look at -- an archive whose locator and end record disagree has
+  // to be walked the way fflate walks it, or an entry it inflates is one
+  // this never saw.
+  if (e >= 20 && u32(e - 20) === 0x07064b50) {
     const ze = u32(e - 12);
-    if (e >= 20 && u32(e - 20) === 0x07064b50 && u32(ze) === 0x06064b50) {
+    if (u32(ze) === 0x06064b50) {
       count = u32(ze + 32);
       at = u32(ze + 48);
     }

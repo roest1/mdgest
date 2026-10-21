@@ -140,6 +140,14 @@ describe("unzip", () => {
     expect(() => unzip(buf)).not.toThrow("could not be opened");
   });
 
+  test("opens an end record with nothing before it", () => {
+    // 22 bytes: the end record alone. Every offset a zip64 locator or a
+    // central header would be read from lies before the buffer's start.
+    const eocd = new Uint8Array(22);
+    eocd.set([0x50, 0x4b, 0x05, 0x06]);
+    expect(unzip(eocd.buffer)).toEqual([]);
+  });
+
   test("walks the directory by the count fflate uses, not the total", () => {
     // Two entries on this disk, the second encrypted, and a total that
     // claims one: fflate inflates both, so the scan has to see both.
