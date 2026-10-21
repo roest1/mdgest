@@ -130,9 +130,11 @@
     background-color: var(--color-ground);
   }
 
-  /* The hero owns the wallpaper: brand red glowing top-left, accent blue
-     top-right, both fading out well inside the hero, so scrolling past it
-     leaves plain ground. */
+  /* The hero owns the wallpaper. The two glows sit where the two backdrop
+     glyphs do — brand red behind the PDF page top-left, accent blue behind
+     the Markdown mark top-right — and fade out well inside the hero, so
+     scrolling past it leaves plain ground. The backdrop is positioned
+     against this box, which is why it is `relative`. */
   .landing-hero {
     @apply relative flex min-h-screen flex-col items-center justify-center p-4;
     background-image:
@@ -172,10 +174,46 @@
 }
 
 /* ── motion ─────────────────────────────────────────────────────────── */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 /* -10 is one full `6 4` cycle, so the loop is seamless. */
 @keyframes march {
   to {
     stroke-dashoffset: -10;
+  }
+}
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@layer utilities {
+  .animate-draw {
+    stroke-dasharray: 1 2;
+    animation: draw 1.15s cubic-bezier(0.6, 0, 0.3, 1) forwards;
+  }
+  /* `both` rather than `forwards`: the fill has to run backward through the
+     delay too, or the head sits on screen fully formed for the second the line
+     spends catching up. 1.02s against the line's 1.15s overlaps them slightly,
+     which is what makes them read as one gesture. Stroke order is the SVG's
+     business — see Backdrop.tsx. */
+  .animate-draw-head {
+    stroke-dasharray: 1 2;
+    animation: draw 0.3s cubic-bezier(0.4, 0, 0.5, 1) 1.02s both;
+  }
+  .animate-fade-in {
+    animation: fade-in 0.15s ease-out;
   }
 }
 
@@ -186,7 +224,10 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-    /* a delay is motion too */
+    /* Collapsing duration alone is not enough once anything is choreographed
+       with a delay: the backdrop's arrowhead waits 1.02s for the line to
+       arrive, so without this it would still pop in a second after an
+       otherwise-instant page. A delay is motion too. */
     animation-delay: 0s !important;
   }
 }
