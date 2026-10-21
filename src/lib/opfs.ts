@@ -93,6 +93,32 @@ function isNotFound(cause: unknown): boolean {
   return cause instanceof DOMException && cause.name === "NotFoundError";
 }
 
+/** The browser's failure, said for whoever is standing at the drop zone.
+ *
+ * A full disk and a held file arrive as bare DOMExceptions carrying the
+ * browser's own wording ("The requested method cannot be executed because
+ * the file handle is locked"), and the drop zone renders a message verbatim.
+ * Every OPFS call that can meet either goes through here, so the sentence
+ * is the same whichever call met it. The DOMException stays as the cause,
+ * where a console shows it. Anything else is returned as it came. */
+function describe(cause: unknown, path: string[]): unknown {
+  if (!(cause instanceof DOMException)) return cause;
+  const what = path.join("/") || "the workspace";
+  if (cause.name === "QuotaExceededError") {
+    return new Error(
+      `No room left in this browser to write ${what}. Free some space and try again.`,
+      { cause },
+    );
+  }
+  if (cause.name === "NoModificationAllowedError") {
+    return new Error(
+      `${what} is open in another tab of this browser. Close it and try again.`,
+      { cause },
+    );
+  }
+  return cause;
+}
+
 /** Walk to a directory in the workspace, optionally creating it. `null` when
  *  it is not there and `create` was not asked for, so callers can branch
  *  instead of catching. */
@@ -137,10 +163,14 @@ async function fileAt(
  * Which is also why a write that fails partway would leave nothing at all.
  * With `keep`, what was there is read first and put back when the write
  * fails. That covers a write that throws, not a tab that is closed between
- * the truncate and the write -- the two files that cannot be lost go through
- * `replaceFile` for that. Off by default, for the sources: they are written
- * once, they are far the largest thing here to hold a second copy of, and
- * they are the one file still on the disk a person dropped them from.
+ * the truncate and the write -- every text file goes through `replaceFile`
+ * for that, and `keep` is for its fallback alone. Off by default, for the
+ * sources: they are written once, they are far the largest thing here to
+ * hold a second copy of, and they are the one file still on the disk a
+ * person dropped them from. Without `keep`, a write that fails takes its
+ * file with it: the handle was created before the first byte, and a source
+ * left empty or cut short is one `docs()` lists, and the next look hashes
+ * and records as the document itself.
  */
 export async function writeFile(
   path: string[],
@@ -149,7 +179,12 @@ export async function writeFile(
 ): Promise<void> {
   const handle = await fileAt(path, true);
   if (!handle) throw new Error(`cannot create ${path.join("/")}`);
-  await fill(handle, data, keep, path);
+  try {
+    await fill(handle, data, keep, path);
+  } catch (cause) {
+    if (!keep) await remove(path).catch(() => {});
+    throw cause;
+  }
 }
 
 /** `writeFile` once the handle is open. `path` is only for the message a
@@ -198,26 +233,7 @@ async function fill(
         // Nothing further to try.
       }
     }
-    // A full disk, or a file held open, arrives as a bare DOMException
-    // carrying the browser's own wording, and the drop zone renders a
-    // message verbatim to whoever is standing there. Say what failed and
-    // what to do about it instead.
-    if (cause instanceof DOMException && cause.name === "QuotaExceededError") {
-      throw new Error(
-        `No room left in this browser to write ${path.join("/")}. Free some space and try again.`,
-        { cause },
-      );
-    }
-    if (
-      cause instanceof DOMException &&
-      cause.name === "NoModificationAllowedError"
-    ) {
-      throw new Error(
-        `${path.join("/")} is open in another tab of this browser. Close it and try again.`,
-        { cause },
-      );
-    }
-    throw cause;
+    throw describe(cause, path);
   } finally {
     // Not optional and not deferrable: an unclosed sync handle holds an
     // exclusive lock on the file, and the next open of it rejects.
@@ -227,19 +243,21 @@ async function fill(
 
 /** Replace a file whole or not at all: write a temp file, then move it over.
  *
- * For the two files nothing regenerates. `writeFile` truncates and then
- * writes, so a tab closed between the two leaves the file empty or torn --
- * and an empty `edits.json` is not a document whose save failed but one
- * whose decisions are gone, and an empty `mdgest.json` is a workspace that
- * refuses every action and offers to discard itself. Here the target holds
- * its old bytes until the move puts the new ones in their place, and a write
- * cut short leaves only a file in `.tmp/`, for `clearTemp`.
+ * For every text file. `writeFile` truncates and then writes, so a tab
+ * closed between the two leaves the file empty or torn -- and an empty
+ * `edits.json` is not a document whose save failed but one whose decisions
+ * are gone, an empty `mdgest.json` is a workspace that refuses every action
+ * and offers to discard itself, and an empty `analysis.json` is a document
+ * `size()` reports as read that cannot be opened. Here the target holds its
+ * old bytes until the move puts the new ones in their place, and a write
+ * cut short leaves only a file in `.tmp/`, for `clearTemp`. It is also the
+ * cheaper write: nothing is read first to be put back.
  *
  * The temp is named for this write, not for its target, so two writers
  * never share one. Where the move refuses -- an engine that will not replace
  * after all, a file someone holds open -- this falls back to `writeFile`
- * with `keep`, which is how both files were written before, rather than fail
- * a save that can still be made. A held file fails that too, and says so.
+ * with `keep`, rather than fail a save that can still be made. A held file
+ * fails that too, and says so.
  */
 export async function replaceFile(
   path: string[],
@@ -266,9 +284,10 @@ export async function replaceFile(
     } catch (cause) {
       // Two failures, and the first is the one that says why the second
       // was tried at all: kept as the cause, where a console shows it.
-      if (cause instanceof Error && cause.cause === undefined)
-        cause.cause = refused;
-      throw cause;
+      const said = describe(cause, path);
+      if (said instanceof Error && said.cause === undefined)
+        said.cause = describe(refused, path);
+      throw said;
     }
   }
 }
@@ -286,16 +305,27 @@ export async function clearTemp(): Promise<void> {
  *
  * Through `getFile`, not a sync access handle: the handle is an exclusive
  * lock, and a read that takes one fails whenever another tab is writing the
- * same file, which a listing has no business doing. `getFile` answers with
- * a snapshot of the file as it was when asked, whole, with no lock held --
- * so a read never fails for a write under way, and never sees half of one. */
+ * same file, which a listing has no business doing. `getFile` holds no lock
+ * and answers with the file as it was when asked, whole or not at all: the
+ * snapshot is checked when its bytes are read, and a write that lands in
+ * between fails that read (NotReadableError) rather than hand over half of
+ * each. Asked once more then, since the write that spoiled the first read
+ * has by then landed. A second failure is reported: two writes in a row on
+ * the file a read is after is not a window to wait out. */
 export async function readFile(
   path: string[],
 ): Promise<Uint8Array<ArrayBuffer> | null> {
   const handle = await fileAt(path);
   if (!handle) return null;
-  const file = await handle.getFile();
-  return new Uint8Array(await file.arrayBuffer());
+  const once = async () =>
+    new Uint8Array(await (await handle.getFile()).arrayBuffer());
+  try {
+    return await once();
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === "NotReadableError")
+      return once();
+    throw cause;
+  }
 }
 
 /** How long a file is, without reading it.
@@ -317,17 +347,14 @@ export async function size(path: string[]): Promise<number | null> {
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
+/** Text, written whole or not at all: see `replaceFile`. */
 export async function writeText(path: string[], text: string): Promise<void> {
-  await writeFile(path, enc.encode(text), { keep: true });
+  await replaceFile(path, enc.encode(text));
 }
 
 export async function readText(path: string[]): Promise<string | null> {
   const bytes = await readFile(path);
   return bytes === null ? null : dec.decode(bytes);
-}
-
-export async function replaceText(path: string[], text: string): Promise<void> {
-  await replaceFile(path, enc.encode(text));
 }
 
 export async function remove(path: string[], recursive = false): Promise<void> {
@@ -338,7 +365,7 @@ export async function remove(path: string[], recursive = false): Promise<void> {
     // Already gone is what was asked for. Anything else -- a file another tab
     // holds open -- is a remove that did not happen, and has to say so rather
     // than let a discard report a workspace emptied that is not.
-    if (!isNotFound(cause)) throw cause;
+    if (!isNotFound(cause)) throw describe(cause, path);
   });
 }
 
@@ -442,7 +469,7 @@ export async function manifestText(): Promise<string | null> {
 }
 
 export async function writeManifest(manifest: Manifest): Promise<void> {
-  await replaceText([MANIFEST], `${JSON.stringify(manifest, null, 1)}\n`);
+  await writeText([MANIFEST], `${JSON.stringify(manifest, null, 1)}\n`);
 }
 
 /** Empty the workspace by removing its folder whole: sources, outputs, cache,
@@ -458,7 +485,7 @@ export async function clearWorkspace(): Promise<void> {
     .catch((cause: unknown) => {
       // As in `remove`: already gone is what was asked for, and anything else
       // is a discard that did not happen.
-      if (!isNotFound(cause)) throw cause;
+      if (!isNotFound(cause)) throw describe(cause, []);
     });
   await ensureWorkspace();
 }

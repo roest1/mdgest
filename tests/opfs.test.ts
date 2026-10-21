@@ -73,12 +73,8 @@ describe("files", () => {
   test("a replacing write moves the new bytes in whole and leaves no temp behind", async () => {
     const edits = [".mdgest", "pumps.pdf", "edits.json"];
     const before = await harness("moves");
-    await opfs(
-      "replaceText",
-      edits,
-      '{"blocks": {"p1b0": {"role": "heading"}}}',
-    );
-    await opfs("replaceText", edits, "{}");
+    await opfs("writeText", edits, '{"blocks": {"p1b0": {"role": "heading"}}}');
+    await opfs("writeText", edits, "{}");
     // Both by the move, the one way that is never torn, and not the fallback.
     expect(await harness("moves")).toBe(before + 2);
     expect(await opfs("readText", edits)).toBe("{}");
@@ -103,7 +99,7 @@ describe("files", () => {
       '{"blocks": {"p1b0": {}}}',
     ];
     const before = await harness("moves");
-    await Promise.all(texts.map((text) => opfs("replaceText", edits, text)));
+    await Promise.all(texts.map((text) => opfs("writeText", edits, text)));
     expect(await harness("moves")).toBe(before + texts.length);
     expect(texts).toContain(await opfs("readText", edits));
     expect(await opfs("walk", [".tmp"])).toEqual([]);
@@ -111,14 +107,10 @@ describe("files", () => {
 
   test("where the move is refused, the write still lands, in place, and its temp is dropped", async () => {
     const edits = [".mdgest", "pumps.pdf", "edits.json"];
-    await opfs(
-      "replaceText",
-      edits,
-      '{"blocks": {"p1b0": {"role": "heading"}}}',
-    );
+    await opfs("writeText", edits, '{"blocks": {"p1b0": {"role": "heading"}}}');
     await harness("refuseMoves", true);
     try {
-      await opfs("replaceText", edits, "{}");
+      await opfs("writeText", edits, "{}");
     } finally {
       await harness("refuseMoves", false);
     }
@@ -129,11 +121,11 @@ describe("files", () => {
   test("a write cut short before its move leaves the target as it was, and clearTemp drops only the temp", async () => {
     // What a tab closed mid-write leaves: the temp, never moved.
     await opfs(
-      "replaceText",
+      "writeText",
       [".mdgest", "pumps.pdf", "edits.json"],
       '{"done": true}',
     );
-    await opfs("writeText", [".tmp", "0b5f6c1e-orphan"], "{");
+    await opfs("writeFile", [".tmp", "0b5f6c1e-orphan"], bytes("{"));
     expect(await opfs("readText", [".mdgest", "pumps.pdf", "edits.json"])).toBe(
       '{"done": true}',
     );
