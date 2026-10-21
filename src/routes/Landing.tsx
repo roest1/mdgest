@@ -5,6 +5,7 @@ import { DropZone } from "src/components/landing/DropZone";
 import { Footer } from "src/components/landing/Footer";
 import { HowItWorks } from "src/components/landing/how-it-works/HowItWorks";
 import { Guarantees } from "src/components/landing/Guarantees";
+import { Faq } from "src/components/landing/Faq";
 
 export default function Landing() {
   return (
@@ -25,6 +26,7 @@ export default function Landing() {
       </div>
       <HowItWorks />
       <Guarantees />
+      <Faq />
       <Footer />
     </main>
   );
