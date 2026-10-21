@@ -7,7 +7,7 @@
 import { strFromU8, unzipSync } from "fflate";
 import { MAX_ENTRIES, MAX_INFLATED } from "./limits";
 import { isJunk, isManifest, isPdf } from "./upload";
-import { human } from "./words";
+import { human, messageOf } from "./words";
 import { normalizePath } from "./workspace";
 
 export interface ZipEntry {
@@ -27,15 +27,10 @@ function wanted(path: string): boolean {
   return isPdf(path) || isManifest(path);
 }
 
-/** An entry's name as a path, spelled the one way `workspace` spells paths.
- *  Some Windows tools write `\` between folders, which the format does not
- *  allow and every unzipper tolerates; others keep the `./` they were given.
- *  Left as they are, `ws\mdgest.json` is neither a manifest nor junk to
- *  anything that splits on `/`, and `./sources/a.pdf` is under a dot-folder
- *  called `.`. */
-function entryPath(name: string): string {
-  return normalizePath(name);
-}
+/** A refusal of the archive's contents, made inside fflate's filter. Thrown
+ *  from there it surfaces through `unzipSync` like one of fflate's own, and
+ *  `opening` has to tell the two apart: this one is already a sentence. */
+class Refused extends Error {}
 
 /** Stored (0) and deflated (8) are what fflate opens; a 7-Zip or WinZip
  *  archive may hold bzip2 (12), LZMA (14) or zstd (93), which it refuses one
@@ -62,11 +57,17 @@ function encryptedNames(d: Uint8Array): Set<string> {
     if (d.length - e > 65558) return names;
   }
   if (e < 0) return names;
-  let count = u16(e + 10);
+  // Offset 8, the entries on this disk, which is the count fflate walks by;
+  // offset 10 is the total over every disk, and the two are only equal in
+  // an archive that is honest about being one disk.
+  let count = u16(e + 8);
   let at = u32(e + 16);
-  if (e >= 20 && u32(e - 20) === 0x07064b50) {
+  // The zip64 record only where fflate reads it: when the end record's count
+  // or offset is the sentinel that says "look there". A locator that merely
+  // sits before an ordinary end record is left alone, as fflate leaves it.
+  if (count === 0xffff || at === 0xffffffff) {
     const ze = u32(e - 12);
-    if (u32(ze) === 0x06064b50) {
+    if (e >= 20 && u32(e - 20) === 0x07064b50 && u32(ze) === 0x06064b50) {
       count = u32(ze + 32);
       at = u32(ze + 48);
     }
@@ -87,13 +88,16 @@ function encryptedNames(d: Uint8Array): Set<string> {
 }
 
 /** `read`, with fflate's own errors -- `invalid zip data`, `unexpected EOF`
- *  -- put in a sentence that fits after "its export.zip". */
+ *  -- put in a sentence that fits after "its export.zip". A `Refused` thrown
+ *  from inside the filter is already that sentence and passes through. */
 function opening<T>(read: () => T): T {
   try {
     return read();
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(`could not be opened as a zip archive (${reason}).`);
+    if (error instanceof Refused) throw error;
+    throw new Error(
+      `could not be opened as a zip archive (${messageOf(error)}).`,
+    );
   }
 }
 
@@ -117,12 +121,18 @@ export function unzip(buf: ArrayBuffer): ZipEntry[] {
       filter: (f) => {
         // A folder entry: nothing to inflate, whatever it is called.
         if (f.name.endsWith("/")) return false;
-        const path = entryPath(f.name);
+        // Spelled the one way `workspace` spells paths. Some Windows tools
+        // write `\` between folders, which the format does not allow and
+        // every unzipper tolerates; others keep the `./` they were given.
+        // Left as they are, `ws\mdgest.json` is neither a manifest nor junk
+        // to anything that splits on `/`, and `./sources/a.pdf` is under a
+        // dot-folder called `.`.
+        const path = normalizePath(f.name);
         if (isJunk(path) || !wanted(path)) return false;
         if (encrypted.has(f.name))
-          throw new Error(`it holds ${path}, which is password-protected.`);
+          throw new Refused(`it holds ${path}, which is password-protected.`);
         if (!OPENABLE.has(f.compression)) {
-          throw new Error(
+          throw new Refused(
             `it holds ${path}, compressed in a way (method ${f.compression}) ` +
               `this browser cannot open. Drop the folder instead of the zip.`,
           );
@@ -133,7 +143,7 @@ export function unzip(buf: ArrayBuffer): ZipEntry[] {
         // is not saying which copy it means -- nor does one that spells a path
         // both ways round.
         if (costs.has(path))
-          throw new Error(`it holds ${path} more than once.`);
+          throw new Refused(`it holds ${path} more than once.`);
         // What opening this entry allocates, read from the central directory:
         // free here and unavailable later, which is what lets the refusals
         // below happen before the allocations they refuse. fflate inflates into
@@ -173,7 +183,7 @@ export function unzip(buf: ArrayBuffer): ZipEntry[] {
     unzipSync(data, { filter: (f) => raw.has(f.name) }),
   );
   return Object.entries(files).map(([name, bytes]) => ({
-    path: entryPath(name),
+    path: normalizePath(name),
     bytes: bytes as Uint8Array<ArrayBuffer>,
   }));
 }

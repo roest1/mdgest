@@ -49,6 +49,26 @@ function patched(
   throw new Error(`no central header for ${name}`);
 }
 
+/** `buf` with the end record's total-entries field (offset 10) set to
+ *  `total`, leaving the on-this-disk count (offset 8) as written. The two
+ *  agree in every archive a tool makes; a crafted one can say otherwise. */
+function totalEntries(buf: ArrayBuffer, total: number): ArrayBuffer {
+  const d = new Uint8Array(buf.slice(0));
+  for (let e = d.length - 22; e >= 0; e--) {
+    if (
+      d[e] === 0x50 &&
+      d[e + 1] === 0x4b &&
+      d[e + 2] === 5 &&
+      d[e + 3] === 6
+    ) {
+      d[e + 10] = total & 0xff;
+      d[e + 11] = total >> 8;
+      return d.buffer as ArrayBuffer;
+    }
+  }
+  throw new Error("no end record");
+}
+
 const paths = (buf: ArrayBuffer) =>
   unzip(buf)
     .map((e) => e.path)
@@ -116,6 +136,23 @@ describe("unzip", () => {
       1,
     );
     expect(() => unzip(buf)).toThrow("b.pdf, which is password-protected");
+    // Its own sentence, not re-wrapped as fflate's failure to open the zip.
+    expect(() => unzip(buf)).not.toThrow("could not be opened");
+  });
+
+  test("walks the directory by the count fflate uses, not the total", () => {
+    // Two entries on this disk, the second encrypted, and a total that
+    // claims one: fflate inflates both, so the scan has to see both.
+    const buf = totalEntries(
+      patched(
+        archive({ "a.pdf": undefined, "b.pdf": undefined }),
+        "b.pdf",
+        "flag",
+        1,
+      ),
+      1,
+    );
+    expect(() => unzip(buf)).toThrow("b.pdf, which is password-protected");
   });
 
   test("ignores a password on an entry it would not open anyway", () => {
@@ -143,7 +180,7 @@ describe("unzip", () => {
 
   test("refuses one path spelled two ways", () => {
     const buf = archive({ "a/b.pdf": undefined, "a\\b.pdf": undefined });
-    expect(() => unzip(buf)).toThrow("more than once");
+    expect(() => unzip(buf)).toThrow(/^it holds a\/b\.pdf more than once\.$/);
   });
 
   test("refuses more files than one archive may hold, before inflating", () => {
