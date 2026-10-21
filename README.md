@@ -42,8 +42,11 @@ bun run dev # http://127.0.0.1:2048, or set WEB_PORT
 1. `bun install --frozen-lockfile`
 2. `bun run lint` (oxlint)
 3. `bun run format:check` (prettier)
-4. `bun run typecheck` (`tsc -b`),
-5. `bun run build` (`tsc -b` then vite) after , on every push to `main` and every pull request.
+4. `bun run typecheck` (`tsc -b`)
+5. `bun run test` (vitest in headless Chromium, see [tests/README.md](tests/README.md))
+6. `bun run build` (`tsc -b` then vite)
+
+On every push to `main` and every pull request.
 
 ### Tech stack
 
