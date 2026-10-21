@@ -58,6 +58,12 @@
     overflow: hidden;
   }
 
+  /* lucide draws for a 24px grid; at 12–14px the default 2px stroke muddies
+     — thin it once, everywhere */
+  svg.lucide {
+    stroke-width: 1.75;
+  }
+
   /* visible keyboard focus, for a tool driven by keys */
   :focus-visible {
     outline: 2px solid
@@ -124,9 +130,11 @@
     background-color: var(--color-ground);
   }
 
-  /* The hero owns the wallpaper: brand red glowing top-left, accent blue
-     top-right, both fading out well inside the hero, so scrolling past it
-     leaves plain ground. */
+  /* The hero owns the wallpaper. The two glows sit where the two backdrop
+     glyphs do — brand red behind the PDF page top-left, accent blue behind
+     the Markdown mark top-right — and fade out well inside the hero, so
+     scrolling past it leaves plain ground. The backdrop is positioned
+     against this box, which is why it is `relative`. */
   .landing-hero {
     @apply relative flex min-h-screen flex-col items-center justify-center p-4;
     background-image:
@@ -140,5 +148,86 @@
         color-mix(in srgb, var(--color-accent-lit) 13%, transparent),
         transparent
       );
+  }
+
+  /* The drop zone's border, at rest and on hover both. It is an SVG rect and
+     not `border-style: dashed` because a CSS dashed border exposes no offset
+     to animate — and because the two cannot be swapped at hover without the
+     dashes visibly resizing: Chrome stretches border dashes to divide each
+     edge evenly, so its dash length depends on the box's dimensions and never
+     lands on a round number.
+
+     `6 4` matches the 3:2 rhythm Chrome was painting (measured at 6/4 device
+     px on a 672px-wide box).
+
+     Scoped to `.upload-zone:hover` and not Tailwind's `group-hover:` on
+     purpose: the pick buttons inside are already groups, and `group-hover:`
+     matches any hovered `.group` ancestor — sharing the marker would light
+     both glyphs up whenever the cursor entered the box. */
+  .dash {
+    stroke-dasharray: 6 4;
+    transition: color 0.2s ease-out;
+  }
+  .upload-zone:hover .dash {
+    animation: march 0.6s linear infinite;
+  }
+}
+
+/* ── motion ─────────────────────────────────────────────────────────── */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* -10 is one full `6 4` cycle, so the loop is seamless. */
+@keyframes march {
+  to {
+    stroke-dashoffset: -10;
+  }
+}
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@layer utilities {
+  .animate-draw {
+    stroke-dasharray: 1 2;
+    animation: draw 1.15s cubic-bezier(0.6, 0, 0.3, 1) forwards;
+  }
+  /* `both` rather than `forwards`: the fill has to run backward through the
+     delay too, or the head sits on screen fully formed for the second the line
+     spends catching up. 1.02s against the line's 1.15s overlaps them slightly,
+     which is what makes them read as one gesture. Stroke order is the SVG's
+     business — see Backdrop.tsx. */
+  .animate-draw-head {
+    stroke-dasharray: 1 2;
+    animation: draw 0.3s cubic-bezier(0.4, 0, 0.5, 1) 1.02s both;
+  }
+  .animate-fade-in {
+    animation: fade-in 0.15s ease-out;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    /* Collapsing duration alone is not enough once anything is choreographed
+       with a delay: the backdrop's arrowhead waits 1.02s for the line to
+       arrive, so without this it would still pop in a second after an
+       otherwise-instant page. A delay is motion too. */
+    animation-delay: 0s !important;
   }
 }
