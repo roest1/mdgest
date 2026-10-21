@@ -1,4 +1,4 @@
-/** The backdrop's drawings, kept apart from it so each is drawn once.
+/** The drawings the backdrop and the how-it-works section share, so each is drawn once.
  *
  * Both are SVG fragments, not documents: each expects to sit inside a caller's
  * <svg>, in whatever group carries the transform and opacity it wants. */
