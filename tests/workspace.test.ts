@@ -190,6 +190,13 @@ describe("renamedId", () => {
     expect(renamedId("x/a", "v2.1")).toBe("x/v2-1");
   });
 
+  test("treats a separator as punctuation, never as a folder", () => {
+    expect(renamedId("invoices/a", "x/y")).toBe("invoices/x-y");
+    expect(renamedId("invoices/a", "x\\y")).toBe("invoices/x-y");
+    expect(renamedId("invoices/a", "../y")).toBe("invoices/y");
+    expect(renamedId("a", "/")).toBe("doc");
+  });
+
   test("gives no id for an empty name", () => {
     expect(renamedId("a/b", "")).toBe("");
     expect(renamedId("a/b", "   ")).toBe("");
@@ -209,6 +216,19 @@ describe("cleanName", () => {
     expect(cleanName("\u200b")).toBeNull();
     expect(cleanName("a\u202eb")).toBe("a b");
     expect(cleanName("👨\u200d👩\u200d👧")).toBe("👨\u200d👩\u200d👧");
+  });
+
+  test("keeps the non-joiner Persian and Indic spelling needs", () => {
+    expect(cleanName("نامه\u200cها")).toBe("نامه\u200cها");
+    expect(cleanName("क\u200cष")).toBe("क\u200cष");
+  });
+
+  test("drops a joiner that is not between two visible characters", () => {
+    expect(cleanName("\u200d")).toBeNull();
+    expect(cleanName("\u200d\u200c\u200d")).toBeNull();
+    expect(cleanName("\u200dabc\u200c")).toBe("abc");
+    expect(cleanName("a\u200d \u200cb")).toBe("a b");
+    expect(cleanName("a \u200d\u200c b")).toBe("a b");
   });
 
   test("keeps 80 code points, not 80 UTF-16 units", () => {

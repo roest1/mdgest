@@ -260,14 +260,17 @@ export function docIdFor(filename: string, folder = ""): string {
  *  so a rename lands on no id a drop could not. A `.pdf` on the end is
  *  optional, and nothing else is taken for an extension: `v2.1` is a name,
  *  not `v2` with a suffix. "" -- which is no id -- when nothing was typed, so
- *  a cleared field refuses rather than renaming to `pdf`. Shared by the
- *  landing, to show the id before it is asked for, and the stage, which
- *  decides. */
+ *  a cleared field refuses rather than renaming to `pdf`. A name, not a
+ *  path: a separator typed into it is punctuation, slugged to a dash like
+ *  any other, so a rename never moves the document into another folder --
+ *  or, with `..`, out of its own. Shared by the landing, to show the id
+ *  before it is asked for, and the stage, which decides. */
 export function renamedId(docId: string, name: string): string {
   const folder = docId.split("/").slice(0, -1).join("/");
   // The suffix off first, so that a bare `.pdf` is an empty name and not a
   // hidden file called `.pdf` whose stem slugs to `pdf`.
   const typed = name
+    .replace(/[/\\]/g, "-")
     .trim()
     .replace(/\.pdf$/i, "")
     .trim();
@@ -318,17 +321,26 @@ const MAX_NAME = 80;
  *
  *  Format characters (`\p{Cf}`) go because they are invisible or reorder
  *  what is around them: a zero-width space is a name that shows as nothing,
- *  and a bidi override reverses the rest of the header line. The one kept
- *  is the zero-width joiner, which is what holds a family emoji together. */
+ *  and a bidi override reverses the rest of the header line. Two are kept:
+ *  the zero-width joiner, which holds a family emoji together, and the
+ *  non-joiner, which is spelling in Persian, Urdu and the Indic scripts --
+ *  without it a plural is two words. Kept only between visible characters:
+ *  at an end, or beside a space, each is as invisible as the rest. */
 export function cleanName(name: string): string | null {
   const kept = [
     ...name
       .normalize("NFC")
-      .replace(/(?:(?!\u200d)[\p{Cc}\p{Cf}\s])+/gu, " ")
+      .replace(/(?:(?![\u200c\u200d])[\p{Cc}\p{Cf}\s])+/gu, " ")
       .trim(),
   ]
     .slice(0, MAX_NAME)
     .join("")
+    .replace(
+      /(?<![^\s\u200c\u200d])[\u200c\u200d]+|[\u200c\u200d]+(?![^\s\u200c\u200d])/gu,
+      "",
+    )
+    // A joiner that sat between two spaces leaves them touching.
+    .replace(/ {2,}/g, " ")
     .trim();
   return kept || null;
 }
