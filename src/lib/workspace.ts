@@ -101,6 +101,14 @@ function names(path: string): string[] {
     .filter((p) => p !== "" && p !== "." && p !== ".."); // remove extra slashes and ignore current and parent dirs (block traversal)
 }
 
+/** A path as one spelling: forward-slashed, no empty, `.` or `..` names, no
+ *  slash at either end. The one normalizer for paths that arrive from outside
+ *  -- a zip's entries, a drop's relative paths -- so junk detection and root
+ *  finding see what `cleanId` would. "" when nothing is left. */
+export function normalizePath(path: string): string {
+  return names(path).join("/");
+}
+
 /** A folder path, every name in it cleaned as a folder's. */
 export function cleanPath(path: string): string {
   return names(path).map(cleanFolder).join("/");
@@ -160,7 +168,16 @@ export function isDocId(value: string): boolean {
  * yesterday's -- need the same answer everywhere. The order a person reads
  * is the tree's, which sorts for them separately. */
 export function byCodePoint(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
+  // Not `<` on the strings: that compares UTF-16 code units, which puts an
+  // astral character (emoji, CJK Extension B) before U+E000..U+FFFF.
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const x = a.codePointAt(i)!;
+    const y = b.codePointAt(i)!;
+    if (x !== y) return x < y ? -1 : 1;
+    if (x > 0xffff) i++; // a surrogate pair is two units
+  }
+  return a.length === b.length ? 0 : a.length < b.length ? -1 : 1;
 }
 
 /** A document id as path segments, refusing anything that is not an id.
@@ -242,12 +259,20 @@ export function docIdFor(filename: string, folder = ""): string {
  *  sits in. Through `docIdFor`, the rules a dropped file's name goes through,
  *  so a rename lands on no id a drop could not. A `.pdf` on the end is
  *  optional, and nothing else is taken for an extension: `v2.1` is a name,
- *  not `v2` with a suffix. Shared by the landing, to show the id before it is
- *  asked for, and the stage, which decides. */
+ *  not `v2` with a suffix. "" -- which is no id -- when nothing was typed, so
+ *  a cleared field refuses rather than renaming to `pdf`. Shared by the
+ *  landing, to show the id before it is asked for, and the stage, which
+ *  decides. */
 export function renamedId(docId: string, name: string): string {
   const folder = docId.split("/").slice(0, -1).join("/");
-  const typed = name.trim();
-  return docIdFor(/\.pdf$/i.test(typed) ? typed : `${typed}.pdf`, folder);
+  // The suffix off first, so that a bare `.pdf` is an empty name and not a
+  // hidden file called `.pdf` whose stem slugs to `pdf`.
+  const typed = name
+    .trim()
+    .replace(/\.pdf$/i, "")
+    .trim();
+  if (typed === "") return "";
+  return docIdFor(`${typed}.pdf`, folder);
 }
 
 /** The visible manifest an exported workspace carries at its root, and the
@@ -286,15 +311,20 @@ export const FORMAT = 1;
  *  header and the start of a file name, not a place to write. */
 const MAX_NAME = 80;
 
-/** A workspace's name as it is kept: whitespace collapsed, control
- *  characters out, cut to `MAX_NAME`. Null when nothing is left. Not made
- *  safe for a path -- the export does that, with `cleanSegment`, so the name
- *  a person typed is the one they see. */
+/** A workspace's name as it is kept: whitespace collapsed, control and
+ *  format characters out, cut to `MAX_NAME`. Null when nothing is left. Not
+ *  made safe for a path -- the export does that, with `cleanSegment`, so the
+ *  name a person typed is the one they see.
+ *
+ *  Format characters (`\p{Cf}`) go because they are invisible or reorder
+ *  what is around them: a zero-width space is a name that shows as nothing,
+ *  and a bidi override reverses the rest of the header line. The one kept
+ *  is the zero-width joiner, which is what holds a family emoji together. */
 export function cleanName(name: string): string | null {
   const kept = [
     ...name
       .normalize("NFC")
-      .replace(/[\p{Cc}\s]+/gu, " ")
+      .replace(/(?:(?!\u200d)[\p{Cc}\p{Cf}\s])+/gu, " ")
       .trim(),
   ]
     .slice(0, MAX_NAME)

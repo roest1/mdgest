@@ -125,6 +125,16 @@ describe("byCodePoint", () => {
     ]);
     expect(byCodePoint("a", "a")).toBe(0);
   });
+
+  test("orders astral characters by code point, not UTF-16 unit", () => {
+    expect(["😀", "\uff01", "a"].sort(byCodePoint)).toEqual([
+      "a",
+      "\uff01",
+      "😀",
+    ]);
+    expect(byCodePoint("a", "ab")).toBe(-1);
+    expect(byCodePoint("😀", "😀")).toBe(0);
+  });
 });
 
 describe("a document's places", () => {
@@ -179,6 +189,13 @@ describe("renamedId", () => {
     expect(renamedId("x/a", "b.PDF")).toBe("x/b");
     expect(renamedId("x/a", "v2.1")).toBe("x/v2-1");
   });
+
+  test("gives no id for an empty name", () => {
+    expect(renamedId("a/b", "")).toBe("");
+    expect(renamedId("a/b", "   ")).toBe("");
+    expect(renamedId("a/b", ".pdf")).toBe("");
+    expect(renamedId("a/b", " .PDF ")).toBe("");
+  });
 });
 
 describe("cleanName", () => {
@@ -189,6 +206,9 @@ describe("cleanName", () => {
   test("is null when nothing is left", () => {
     expect(cleanName("")).toBeNull();
     expect(cleanName(" \u0000 ")).toBeNull();
+    expect(cleanName("\u200b")).toBeNull();
+    expect(cleanName("a\u202eb")).toBe("a b");
+    expect(cleanName("👨\u200d👩\u200d👧")).toBe("👨\u200d👩\u200d👧");
   });
 
   test("keeps 80 code points, not 80 UTF-16 units", () => {
