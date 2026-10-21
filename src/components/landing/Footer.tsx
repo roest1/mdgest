@@ -8,7 +8,13 @@ export function Footer() {
           text-faint sm:flex-row sm:items-center sm:justify-between"
       >
         <div className="flex items-center gap-2">
-          <img src="/mark.svg" alt="" width={20} height={20} className="rounded-[5px]" />
+          <img
+            src="/mark.svg"
+            alt=""
+            width={20}
+            height={20}
+            className="rounded-[5px]"
+          />
           <span className="font-serif text-sm font-semibold tracking-tight text-muted">
             mdgest
           </span>
