@@ -1,22 +1,28 @@
 /** A zip upload opened into the shape a dropped folder arrives in: PDFs and
  *  manifests, by path, with everything else left in the archive. */
 
-import { strFromU8, strToU8, zipSync } from "fflate";
+import { strFromU8, strToU8 } from "fflate";
 import { describe, expect, test } from "vitest";
 import { MAX_ENTRIES } from "src/lib/limits";
 import { unzip } from "src/lib/unzip";
+import { zipOf } from "./harness";
 
 /** An archive of `files`, each entry's text its own name unless given. */
 function archive(files: Record<string, string | undefined>): ArrayBuffer {
-  const entries = Object.fromEntries(
-    Object.entries(files).map(([name, text]) => [name, strToU8(text ?? name)]),
+  const zipped = zipOf(
+    Object.fromEntries(
+      Object.entries(files).map(([name, text]) => [name, text ?? name]),
+    ),
   );
-  const zipped = zipSync(entries);
   return zipped.buffer.slice(
     zipped.byteOffset,
     zipped.byteOffset + zipped.byteLength,
-  ) as ArrayBuffer;
+  );
 }
+
+/** Whether a zip record signature `PK a b` sits at `at`. */
+const signed = (d: Uint8Array, at: number, a: number, b: number): boolean =>
+  d[at] === 0x50 && d[at + 1] === 0x4b && d[at + 2] === a && d[at + 3] === b;
 
 /** `buf` with one central-directory field of the entry called `name`
  *  rewritten: the general-purpose flag (offset 8) or the method (offset 10).
@@ -30,13 +36,7 @@ function patched(
   const d = new Uint8Array(buf.slice(0));
   const want = strToU8(name);
   for (let at = 0; at + 46 <= d.length; at++) {
-    if (
-      d[at] !== 0x50 ||
-      d[at + 1] !== 0x4b ||
-      d[at + 2] !== 1 ||
-      d[at + 3] !== 2
-    )
-      continue;
+    if (!signed(d, at, 1, 2)) continue;
     const nameLength = d[at + 28]! | (d[at + 29]! << 8);
     const found = d.subarray(at + 46, at + 46 + nameLength);
     if (found.length !== want.length || !found.every((b, i) => b === want[i]))
@@ -55,12 +55,7 @@ function patched(
 function totalEntries(buf: ArrayBuffer, total: number): ArrayBuffer {
   const d = new Uint8Array(buf.slice(0));
   for (let e = d.length - 22; e >= 0; e--) {
-    if (
-      d[e] === 0x50 &&
-      d[e + 1] === 0x4b &&
-      d[e + 2] === 5 &&
-      d[e + 3] === 6
-    ) {
+    if (signed(d, e, 5, 6)) {
       d[e + 10] = total & 0xff;
       d[e + 11] = total >> 8;
       return d.buffer as ArrayBuffer;
@@ -151,12 +146,7 @@ describe("unzip", () => {
     );
     const d = new Uint8Array(buf);
     for (let at = 0; at + 4 <= d.length; at++) {
-      if (
-        d[at] === 0x50 &&
-        d[at + 1] === 0x4b &&
-        d[at + 2] === 1 &&
-        d[at + 3] === 2
-      ) {
+      if (signed(d, at, 1, 2)) {
         d[at + 3] = 0xff;
         break;
       }

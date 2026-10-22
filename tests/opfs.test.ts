@@ -7,52 +7,17 @@
 
 import { beforeEach, describe, expect, test } from "vitest";
 import type * as Opfs from "src/lib/opfs";
+import { emptyManifest } from "src/lib/workspace";
+import { Client, bytes } from "./harness";
+import type { Harness } from "./worker";
 
 type Api = typeof Opfs;
 
-const worker = new Worker(new URL("./opfs.worker.ts", import.meta.url), {
-  type: "module",
-});
-let next = 0;
-const pending = new Map<
-  number,
-  { resolve: (v: unknown) => void; reject: (e: Error) => void }
->();
-worker.onmessage = (
-  event: MessageEvent<{ id: number; value?: unknown; error?: string }>,
-) => {
-  const { id, value, error } = event.data;
-  const call = pending.get(id);
-  pending.delete(id);
-  if (error === undefined) call?.resolve(value);
-  else call?.reject(new Error(error));
-};
-
-/** Post one call to the worker and wait for its answer. */
-function call(fn: string, args: unknown[]): Promise<unknown> {
-  const id = next++;
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
-    worker.postMessage({ id, fn, args });
-  });
-}
-
+const client = new Client(new URL("./worker.ts", import.meta.url));
 /** Call an `opfs.ts` export in the worker. */
-function opfs<K extends keyof Api>(
-  fn: K,
-  ...args: Parameters<Api[K]>
-): Promise<Awaited<ReturnType<Api[K]>>> {
-  return call(fn, args) as Promise<Awaited<ReturnType<Api[K]>>>;
-}
-
-/** Call one of the worker's own hooks on `move`: see `opfs.worker.ts`. */
-function harness(fn: "moves"): Promise<number>;
-function harness(fn: "refuseMoves", on: boolean): Promise<void>;
-function harness(fn: string, ...args: unknown[]): Promise<unknown> {
-  return call(fn, args);
-}
-
-const bytes = (text: string) => new TextEncoder().encode(text);
+const opfs = client.bind<Api>("opfs");
+/** Call one of the worker's own hooks on `move`: see `worker.ts`. */
+const harness = client.bind<Harness>("harness");
 
 beforeEach(async () => {
   await opfs("clearWorkspace");
@@ -75,7 +40,7 @@ describe("files", () => {
     const before = await harness("moves");
     await opfs("writeText", edits, '{"blocks": {"p1b0": {"role": "heading"}}}');
     await opfs("writeText", edits, "{}");
-    // Both by the move, the one way that is never torn, and not the fallback.
+    // Both by the move, the one way that is never torn.
     expect(await harness("moves")).toBe(before + 2);
     expect(await opfs("readText", edits)).toBe("{}");
     expect(await opfs("size", edits)).toBe(2);
@@ -84,9 +49,7 @@ describe("files", () => {
 
   test("the manifest is written by a replacing write", async () => {
     const before = await harness("moves");
-    await opfs("writeManifest", { format: 1, documents: {} } as Parameters<
-      Api["writeManifest"]
-    >[0]);
+    await opfs("writeManifest", emptyManifest());
     expect(await harness("moves")).toBe(before + 1);
   });
 
@@ -105,16 +68,19 @@ describe("files", () => {
     expect(await opfs("walk", [".tmp"])).toEqual([]);
   });
 
-  test("where the move is refused, the write still lands, in place, and its temp is dropped", async () => {
+  test("where the move is refused, the write fails, the target is as it was, and its temp is dropped", async () => {
     const edits = [".mdgest", "pumps.pdf", "edits.json"];
-    await opfs("writeText", edits, '{"blocks": {"p1b0": {"role": "heading"}}}');
+    const was = '{"blocks": {"p1b0": {"role": "heading"}}}';
+    await opfs("writeText", edits, was);
     await harness("refuseMoves", true);
     try {
-      await opfs("writeText", edits, "{}");
+      await expect(opfs("writeText", edits, "{}")).rejects.toThrow(
+        "refused by the test",
+      );
     } finally {
       await harness("refuseMoves", false);
     }
-    expect(await opfs("readText", edits)).toBe("{}");
+    expect(await opfs("readText", edits)).toBe(was);
     expect(await opfs("walk", [".tmp"])).toEqual([]);
   });
 
@@ -149,7 +115,7 @@ describe("files", () => {
     ).resolves.toBeUndefined();
   });
 
-  test("walk lists every file below a folder, depth first, by code point", async () => {
+  test("walk lists every file below a folder, depth first, in one fixed order", async () => {
     for (const path of ["b.txt", "a/z.txt", "a/b/c.txt", "B.txt", "a-1.txt"]) {
       await opfs("writeText", ["markdown", ...path.split("/")], path);
     }
@@ -170,7 +136,7 @@ describe("files", () => {
 });
 
 describe("documents", () => {
-  test("the document listing is the .pdf files in sources/ under valid ids, sorted by code point", async () => {
+  test("the document listing is the .pdf files in sources/ under valid ids, in one fixed order", async () => {
     for (const path of [
       "pumps.pdf",
       "pumps-2.pdf",
@@ -244,9 +210,7 @@ describe("documents", () => {
 
   test("clearing the workspace leaves it empty and still listable", async () => {
     await opfs("writeFile", ["sources", "pumps.pdf"], bytes("%PDF"));
-    await opfs("writeManifest", { format: 1, documents: {} } as Parameters<
-      Api["writeManifest"]
-    >[0]);
+    await opfs("writeManifest", emptyManifest());
     await opfs("clearWorkspace");
     expect(await opfs("docs")).toEqual([]);
     expect(await opfs("manifestText")).toBeNull();

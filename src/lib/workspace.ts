@@ -47,6 +47,9 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
  *  a grapheme, not a code point: a base is not kept without its mark, nor
  *  a family emoji without its members. */
 function cutToBytes(text: string, max: number): string {
+  // A UTF-16 unit encodes to at most three bytes -- a pair of them, to
+  // four -- so a short name is under the cap without being walked.
+  if (text.length * 3 <= max) return text;
   let bytes = 0;
   let cut = "";
   for (const { segment } of graphemes.segment(text)) {
@@ -153,8 +156,10 @@ export function stem(filename: string): string {
   const base = basename(filename);
   const dot = base.lastIndexOf(".");
   // `.hidden` is a name with no extension; `.pdf` alone is an extension
-  // with no name, and its stem is empty -- which is what `renamedId`
-  // refuses for the same input, so a drop and a rename agree on it.
+  // with no name, and its stem is empty. The two doors do not agree on
+  // what that means, and are not meant to: a rename refuses it, since a
+  // person can type again, and a drop takes `slug`'s fallback, since a file
+  // has to land somewhere.
   if (dot === 0) return /^\.pdf$/i.test(base) ? "" : base;
   return dot > 0 ? base.slice(0, dot) : base;
 }
@@ -171,23 +176,17 @@ export function isDocId(value: string): boolean {
   return value !== "" && cleanId(value) === value;
 }
 
-/** Ids and file names in one fixed order, by code point.
+/** Ids and file names in one fixed order: the language's own, by UTF-16
+ *  code unit.
  *
  * Not `localeCompare`: that order depends on the locale of the machine, and
  * two tabs comparing listings -- or one tab comparing today's listing to
- * yesterday's -- need the same answer everywhere. The order a person reads
- * is the tree's, which sorts for them separately. */
-export function byCodePoint(a: string, b: string): number {
-  // Not `<` on the strings: that compares UTF-16 code units, which puts an
-  // astral character (emoji, CJK Extension B) before U+E000..U+FFFF.
-  const n = Math.min(a.length, b.length);
-  for (let i = 0; i < n; i++) {
-    const x = a.codePointAt(i)!;
-    const y = b.codePointAt(i)!;
-    if (x !== y) return x < y ? -1 : 1;
-    if (x > 0xffff) i++; // a surrogate pair is two units
-  }
-  return a.length === b.length ? 0 : a.length < b.length ? -1 : 1;
+ * yesterday's -- need the same answer everywhere. Which order it is does not
+ * matter, only that it is the same one every time, so it is the cheapest
+ * one there is. The order a person reads is the tree's, which sorts for
+ * them separately. */
+export function byCodeUnit(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 /** A document id as path segments, refusing anything that is not an id.
@@ -280,15 +279,22 @@ export function docIdFor(filename: string, folder = ""): string {
  *  stage, which decides. */
 export function renamedId(docId: string, name: string): string {
   const folder = docId.split("/").slice(0, -1).join("/");
-  // The suffix off first, so that a bare `.pdf` is an empty name and not a
-  // hidden file called `.pdf` whose stem slugs to `pdf`.
-  const typed = name
+  const typed = renameStem(name);
+  if (!/[\p{L}\p{N}]/u.test(typed)) return "";
+  return docIdFor(`${typed}.pdf`, folder);
+}
+
+/** What was typed as a new name, less its optional `.pdf`: empty for a name
+ *  of nothing, which the stage says differently from a name of only
+ *  punctuation. The suffix comes off first, so that a bare `.pdf` is an
+ *  empty name and not a hidden file called `.pdf` whose stem slugs to
+ *  `pdf`. */
+export function renameStem(name: string): string {
+  return name
     .replace(/[/\\]/g, "-")
     .trim()
     .replace(/\.pdf$/i, "")
     .trim();
-  if (!/[\p{L}\p{N}]/u.test(typed)) return "";
-  return docIdFor(`${typed}.pdf`, folder);
 }
 
 /** The visible manifest an exported workspace carries at its root, and the

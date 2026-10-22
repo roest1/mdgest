@@ -5,7 +5,7 @@ import {
   assetsDir,
   assetsPrefix,
   basename,
-  byCodePoint,
+  byCodeUnit,
   cacheDir,
   cleanId,
   cleanName,
@@ -20,6 +20,7 @@ import {
   isRecord,
   markdownPath,
   parseManifest,
+  renameStem,
   renamedId,
   slug,
   sourcePath,
@@ -123,25 +124,11 @@ describe("isDocId", () => {
   });
 });
 
-describe("byCodePoint", () => {
-  test("orders by code point, the same on every machine", () => {
-    expect(["b", "B", "a", "ä"].sort(byCodePoint)).toEqual([
-      "B",
-      "a",
-      "b",
-      "ä",
-    ]);
-    expect(byCodePoint("a", "a")).toBe(0);
-  });
-
-  test("orders astral characters by code point, not UTF-16 unit", () => {
-    expect(["😀", "\uff01", "a"].sort(byCodePoint)).toEqual([
-      "a",
-      "\uff01",
-      "😀",
-    ]);
-    expect(byCodePoint("a", "ab")).toBe(-1);
-    expect(byCodePoint("😀", "😀")).toBe(0);
+describe("byCodeUnit", () => {
+  test("orders the same on every machine, whatever the locale", () => {
+    expect(["b", "B", "a", "ä"].sort(byCodeUnit)).toEqual(["B", "a", "b", "ä"]);
+    expect(byCodeUnit("a", "a")).toBe(0);
+    expect(byCodeUnit("a", "ab")).toBe(-1);
   });
 });
 
@@ -184,9 +171,7 @@ describe("docIdFor", () => {
   test("cleans traversal out of both parts", () => {
     expect(docIdFor("../../etc/passwd.pdf", "..")).toBe("etc/passwd");
   });
-});
 
-describe("docIdFor", () => {
   test("a file that is only its extension gets the fallback id, as a rename refuses it", () => {
     expect(docIdFor(".pdf")).toBe("doc");
     expect(docIdFor("x/.PDF")).toBe("x/doc");
@@ -219,7 +204,10 @@ describe("renamedId", () => {
     expect(renamedId("invoices/a", "../y")).toBe("invoices/y");
   });
 
-  test("gives no id for an empty name", () => {
+  test("gives no id for an empty name, which renameStem tells from punctuation", () => {
+    expect(renameStem(" .PDF ")).toBe("");
+    expect(renameStem("---")).toBe("---");
+    expect(renameStem("b.pdf")).toBe("b");
     expect(renamedId("a/b", "")).toBe("");
     expect(renamedId("a/b", "   ")).toBe("");
     expect(renamedId("a/b", ".pdf")).toBe("");

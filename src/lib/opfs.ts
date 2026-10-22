@@ -22,7 +22,7 @@ import {
   WORKSPACE_ID,
   WORKSPACES,
   assetsDir,
-  byCodePoint,
+  byCodeUnit,
   cacheDir,
   isDocId,
   markdownPath,
@@ -39,12 +39,11 @@ import {
  *  `move` is missing for another reason: no spec has it yet, only every
  *  engine (Chrome 102, Firefox 111, Safari 15.2, all under the floor) and
  *  the platform tests, which hold it to replacing a file already at the
- *  destination. That replace is what `replaceFile` is built on -- and it
- *  is Safari 17.0 that made a move replace what is already there (its
- *  release notes: "starting to overwrite target by default"). Below that,
- *  the move of a text file over its previous version refuses, and
- *  `replaceFile` takes its fallback: every write still lands, but in
- *  place, with the window a closed tab can tear.
+ *  destination. That replace is what `replaceFile` is built on. Safari
+ *  made a move replace what is already there in 17.0 (its release notes:
+ *  "starting to overwrite target by default"), under the floor the README
+ *  sets at 18 -- so at the floor, a move that refuses is a failure to
+ *  report, not one to write around.
  *
  *  Spec: https://fs.spec.whatwg.org/#api-filesystemsyncaccesshandle
  *  Tests: wpt/fs/script-tests/FileSystemFileHandle-move.js */
@@ -100,26 +99,20 @@ function isNotFound(cause: unknown): boolean {
 
 /** The browser's failure, said for whoever is standing at the drop zone.
  *
- * A full disk and a held file arrive as bare DOMExceptions carrying the
- * browser's own wording ("The requested method cannot be executed because
- * the file handle is locked"), and the drop zone renders a message verbatim.
- * Every OPFS call that can meet either goes through here, so the sentence
- * is the same whichever call met it. The DOMException stays as the cause,
- * where a console shows it. Anything else is returned as it came. */
+ * A full disk arrives as a bare DOMException carrying the browser's own
+ * wording, and the drop zone renders a message verbatim. Every OPFS call
+ * that can meet one goes through here, so the sentence is the same
+ * whichever call met it. The DOMException stays as the cause, where a
+ * console shows it. Anything else is returned as it came -- a held file
+ * among them: a sync access handle is an exclusive lock, and every write
+ * here is made under the workspace's lock in `stage.ts`, so a file held
+ * open is not a case this layer has words for. */
 function describe(cause: unknown, path: string[]): unknown {
   if (!(cause instanceof DOMException)) return cause;
   const what = path.join("/") || "the workspace";
   if (cause.name === "QuotaExceededError") {
     return new Error(
       `No room left in this browser to write ${what}. Free some space and try again.`,
-      { cause },
-    );
-  }
-  // Held by a sync access handle: another tab's, or this tab's own
-  // engine mid-read. Which one this layer cannot know, so neither is named.
-  if (cause.name === "NoModificationAllowedError") {
-    return new Error(
-      `${what} is in use, here or in another tab of this browser. Try again in a moment.`,
       { cause },
     );
   }
@@ -145,14 +138,19 @@ async function dirAt(
   return dir;
 }
 
-async function fileAt(
-  path: string[],
+/** A path as the folder it is in and the name it has there; no name for
+ *  the workspace itself. */
+function split(path: string[]): [dir: string[], name: string | undefined] {
+  return [path.slice(0, -1), path.at(-1)];
+}
+
+/** The file `name` in `dir`, optionally creating it; `null` when it is not
+ *  there and `create` was not asked for. */
+async function fileIn(
+  dir: FileSystemDirectoryHandle,
+  name: string,
   create = false,
 ): Promise<FileSystemFileHandle | null> {
-  const name = path.at(-1);
-  if (!name) return null;
-  const dir = await dirAt(path.slice(0, -1), create);
-  if (!dir) return null;
   try {
     return await dir.getFileHandle(name, { create });
   } catch (cause) {
@@ -161,39 +159,49 @@ async function fileAt(
   }
 }
 
-/** Replace a file's contents.
+async function fileAt(
+  path: string[],
+  create = false,
+): Promise<FileSystemFileHandle | null> {
+  const [parent, name] = split(path);
+  if (!name) return null;
+  const dir = await dirAt(parent, create);
+  return dir && fileIn(dir, name, create);
+}
+
+/** Write a file in place: the sources' write.
  *
  * `truncate(0)` before writing, not after: a sync handle writes at an offset
  * into whatever is already there, so overwriting a long file with a short one
- * would leave the tail of the old one behind and produce JSON that parses.
+ * would leave the tail of the old one behind.
  *
- * Which is also why a write that fails partway would leave nothing at all.
- * With `keep`, what was there is read first and put back when the write
- * fails. That covers a write that throws, not a tab that is closed between
- * the truncate and the write -- every text file goes through `replaceFile`
- * for that, and `keep` is for its fallback alone. Off by default, for the
- * sources: they are written once, they are far the largest thing here to
- * hold a second copy of, and they are the one file still on the disk a
- * person dropped them from. Without `keep`, a write that fails takes with
- * it what it spoiled: the file it created, or the one it emptied. A source
- * left empty or cut short is one `docs()` lists, and the next look hashes
- * and records as the document itself. A file that was there and was never
- * reached -- the open itself refused -- is left as it was.
+ * Which is also why a tab closed between the truncate and the write leaves
+ * the file empty or torn. Every text file goes through `replaceFile` for
+ * that; the sources take this write because they are written once, under a
+ * hash the manifest records only once the bytes are down, and they are the
+ * one file still on the disk a person dropped them from. A write that fails
+ * takes with it what it spoiled: the file it created, or the one it
+ * emptied. A source left empty or cut short is one `docs()` lists, and the
+ * next look hashes and records as the document itself. A file that was
+ * there and was never reached -- the open itself refused -- is left as it
+ * was.
  */
 export async function writeFile(
   path: string[],
   data: ArrayBuffer | Uint8Array,
-  { keep = false }: { keep?: boolean } = {},
 ): Promise<void> {
-  const existed = (await fileAt(path)) !== null;
-  const handle = await fileAt(path, true);
+  // One walk to the folder, and both looks at the file from there.
+  const [parent, name] = split(path);
+  const dir = name ? await dirAt(parent, true) : null;
+  if (!name || !dir) throw new Error(`cannot create ${path.join("/")}`);
+  const existed = (await fileIn(dir, name)) !== null;
+  const handle = await fileIn(dir, name, true);
   if (!handle) throw new Error(`cannot create ${path.join("/")}`);
   const progress = { emptied: false };
   try {
-    await fill(handle, data, keep, path, progress);
+    await fill(handle, data, path, progress);
   } catch (cause) {
-    if (!keep && (!existed || progress.emptied))
-      await remove(path).catch(() => {});
+    if (!existed || progress.emptied) await remove(path).catch(() => {});
     throw cause;
   }
 }
@@ -206,27 +214,11 @@ export async function writeFile(
 async function fill(
   handle: FileSystemFileHandle,
   data: ArrayBuffer | Uint8Array,
-  keep: boolean,
   path: string[],
   progress = { emptied: false },
 ): Promise<void> {
-  let access: FileSystemSyncAccessHandle | null = null;
-  let had: Uint8Array | null = null;
+  const access = await handle.createSyncAccessHandle();
   try {
-    // Inside the try: the open is where a file another tab holds fails,
-    // and that failure deserves the same sentence as a full disk below.
-    access = await handle.createSyncAccessHandle();
-    if (keep) {
-      const size = access.getSize();
-      if (size > 0) {
-        // Assigned only once the read is through: a `read` that throws
-        // leaves a buffer that is zeroes where it did not reach, and
-        // putting that back is the loss this is here to prevent.
-        const was = new Uint8Array(size);
-        access.read(was, { at: 0 });
-        had = was;
-      }
-    }
     progress.emptied = true;
     access.truncate(0);
     access.write(data instanceof Uint8Array ? data : new Uint8Array(data), {
@@ -234,24 +226,11 @@ async function fill(
     });
     access.flush();
   } catch (cause) {
-    // What was there, back where it was. Best effort, on the handle already
-    // open: if this fails too the file is lost either way, and the error
-    // thrown below is still the one that says what happened. `had` is set
-    // only once the read is through, so it implies the truncate followed.
-    if (access && had) {
-      try {
-        access.truncate(0);
-        access.write(had, { at: 0 });
-        access.flush();
-      } catch {
-        // Nothing further to try.
-      }
-    }
     throw describe(cause, path);
   } finally {
     // Not optional and not deferrable: an unclosed sync handle holds an
     // exclusive lock on the file, and the next open of it rejects.
-    access?.close();
+    access.close();
   }
 }
 
@@ -264,21 +243,19 @@ async function fill(
  * and offers to discard itself, and an empty `analysis.json` is a document
  * `size()` reports as read that cannot be opened. Here the target holds its
  * old bytes until the move puts the new ones in their place, and a write
- * cut short leaves only a file in `.tmp/`, for `clearTemp`. It is also the
- * cheaper write: nothing is read first to be put back.
+ * cut short leaves only a file in `.tmp/`, for `clearTemp`.
  *
  * The temp is named for this write, not for its target, so two writers
- * never share one. Where the move refuses -- an engine that will not replace
- * after all, a file someone holds open -- this falls back to `writeFile`
- * with `keep`, rather than fail a save that can still be made. A held file
- * fails that too, and says so.
+ * never share one. A move that refuses is reported, with the target as it
+ * was and the temp dropped: every engine at the floor replaces a file
+ * already at the destination, so there is nothing to write around.
  */
 export async function replaceFile(
   path: string[],
   data: ArrayBuffer | Uint8Array,
 ): Promise<void> {
-  const name = path.at(-1);
-  const dir = name ? await dirAt(path.slice(0, -1), true) : null;
+  const [parent, name] = split(path);
+  const dir = name ? await dirAt(parent, true) : null;
   if (!name || !dir) throw new Error(`cannot create ${path.join("/")}`);
   // The temp only once the target is known to be writable: a temp made for
   // a target that is not would sit in .tmp/ until the next clearTemp.
@@ -286,25 +263,11 @@ export async function replaceFile(
   const handle = await fileAt(temp, true);
   if (!handle) throw new Error(`cannot create ${path.join("/")}`);
   try {
-    await fill(handle, data, false, path);
+    await fill(handle, data, path);
+    await handle.move(dir, name);
   } catch (cause) {
     await remove(temp).catch(() => {});
-    throw cause;
-  }
-  try {
-    await handle.move(dir, name);
-  } catch (refused) {
-    await remove(temp).catch(() => {});
-    try {
-      await writeFile(path, data, { keep: true });
-    } catch (cause) {
-      // Two failures, and the first is the one that says why the second
-      // was tried at all: kept as the cause, where a console shows it.
-      const said = describe(cause, path);
-      if (said instanceof Error && said.cause === undefined)
-        said.cause = describe(refused, path);
-      throw said;
-    }
+    throw describe(cause, path);
   }
 }
 
@@ -324,24 +287,15 @@ export async function clearTemp(): Promise<void> {
  * same file, which a listing has no business doing. `getFile` holds no lock
  * and answers with the file as it was when asked, whole or not at all: the
  * snapshot is checked when its bytes are read, and a write that lands in
- * between fails that read (NotReadableError) rather than hand over half of
- * each. Asked once more then, since the write that spoiled the first read
- * has by then landed. A second failure is reported: two writes in a row on
- * the file a read is after is not a window to wait out. */
+ * between fails the read rather than hand over half of each. That write
+ * cannot land here: every read and every write of the workspace is made
+ * under its lock, in `stage.ts`, so the failure is not caught or retried. */
 export async function readFile(
   path: string[],
 ): Promise<Uint8Array<ArrayBuffer> | null> {
   const handle = await fileAt(path);
   if (!handle) return null;
-  const once = async () =>
-    new Uint8Array(await (await handle.getFile()).arrayBuffer());
-  try {
-    return await once();
-  } catch (cause) {
-    if (cause instanceof DOMException && cause.name === "NotReadableError")
-      return once();
-    throw cause;
-  }
+  return new Uint8Array(await (await handle.getFile()).arrayBuffer());
 }
 
 /** How long a file is, without reading it.
@@ -374,9 +328,9 @@ export async function readText(path: string[]): Promise<string | null> {
 }
 
 export async function remove(path: string[], recursive = false): Promise<void> {
-  const name = path.at(-1);
+  const [parent, name] = split(path);
   if (!name) return;
-  const dir = await dirAt(path.slice(0, -1));
+  const dir = await dirAt(parent);
   await dir?.removeEntry(name, { recursive }).catch((cause: unknown) => {
     // Already gone is what was asked for. Anything else -- a file another tab
     // holds open -- is a remove that did not happen, and has to say so rather
@@ -401,7 +355,7 @@ export async function walk(path: string[]): Promise<string[]> {
   ): Promise<string[]> => {
     const entries: [string, FileSystemHandle][] = [];
     for await (const entry of handle.entries()) entries.push(entry);
-    entries.sort(([a], [b]) => byCodePoint(a, b));
+    entries.sort(([a], [b]) => byCodeUnit(a, b));
     const below = await Promise.all(
       entries.map(([name, child]) => {
         const rel = prefix ? `${prefix}/${name}` : name;
@@ -447,7 +401,7 @@ export async function docs(): Promise<string[]> {
       // filenames, and `-` sorts before `.`, so `pumps-2.pdf` lands ahead of
       // `pumps.pdf` -- an order that is correct for the files and visibly wrong
       // for the ids a person reads.
-      .sort(byCodePoint)
+      .sort(byCodeUnit)
   );
 }
 

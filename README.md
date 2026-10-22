@@ -66,25 +66,27 @@ in `limits.ts`, and the editor puts a page and its markdown side by side. A
 phone is a touch-only device whose screen's short side is under 600 CSS px
 (`IS_PHONE` in `main.tsx`).
 
-| Requirement                      | Chrome / Edge | Firefox | Safari   |
-| -------------------------------- | ------------- | ------- | -------- |
-| OPFS with sync access handle     | **102**       | 111     | 15.2     |
-| module worker (`type: "module"`) | 80            | **114** | 15       |
-| Web Locks (`navigator.locks`)    | 69            | 96      | **15.4** |
+| Requirement                             | Chrome / Edge | Firefox | Safari |
+| --------------------------------------- | ------------- | ------- | ------ |
+| `pdfjs-dist` 6, legacy build (its FAQ)  | **125**       | **ESR** | **18** |
+| OPFS with sync access handle            | 102           | 111     | 15.2   |
+| `move()` replacing a file already there | 102           | 111     | 17.0   |
+| module worker (`type: "module"`)        | 80            | 114     | 15     |
+| Web Locks (`navigator.locks`)           | 69            | 96      | 15.4   |
+| `Intl.Segmenter`                        | 87            | 125     | 14.1   |
+| regex lookbehind                        | 62            | 78      | 16.4   |
 
-The floor is the bold number in each column (`getDirectory` alone is Chrome
-86; the handle is not). Dropping to a classic worker would need a bundled
-script and would lower Firefox only to 111.
+The floor is the bold row: what pdf.js's own FAQ lists for its legacy build,
+which is the build the app uses. Everything below it in the table is under
+that floor, so the rest is a record of what else the app leans on, not of what
+sets the floor. (`getDirectory` alone is Chrome 86; the handle is not.)
 
-`pdfjs-dist` 6 declares no browser floor of its own — only a Node one, for its
-build — so this table is the app's, worth re-measuring on a browser near its
-bottom. `OffscreenCanvas` adds no row: figures are drawn on the main thread,
-into an ordinary canvas. Nor does `FileSystemFileHandle.move()`, which every
-text file is written through: Chrome 102, Firefox 111, Safari 15.2 (WebKit
-implemented it in October 2021; MDN does not list it). One caveat: Safari
-made a move replace a file already at its destination only in 17.0. Below
-that, a text write over an earlier version takes `replaceFile`'s in-place
-fallback, which lands but is not whole-or-nothing.
+`OffscreenCanvas` adds no row: figures are drawn on the main thread, into an
+ordinary canvas. `FileSystemFileHandle.move()` is what every text file is
+written through (WebKit implemented it in October 2021; MDN does not list it),
+and Safari made it replace a file already at its destination in 17.0. At the
+floor, a move that refuses is reported as a failed write, with the file as it
+was: there is no in-place fallback.
 
 ---
 
