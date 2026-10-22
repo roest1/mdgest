@@ -171,6 +171,33 @@
   .upload-zone:hover .dash {
     animation: march 0.6s linear infinite;
   }
+
+  /* A name that may not fit its cell. The hidden copy gives the cell its
+     natural width so the row lays out as if the name fit; the absolute copy
+     is what is seen, clipped to the cell, and on hover scrolls to its end
+     and back. `100cqw` is the cell's width, which is why it is a container. */
+  .marquee {
+    position: relative;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .marquee-fit {
+    visibility: hidden;
+  }
+  .marquee-view {
+    position: absolute;
+    inset: 0;
+    container-type: inline-size;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .marquee-view > span {
+    display: inline-block;
+  }
+  .group:hover .marquee-view > span,
+  .marquee:hover .marquee-view > span {
+    animation: marquee 3.4s linear infinite;
+  }
 }
 
 /* ── motion ─────────────────────────────────────────────────────────── */
@@ -185,6 +212,19 @@
   }
 }
 /* -10 is one full `6 4` cycle, so the loop is seamless. */
+/* Still at the front before it sets off and again at the tail before it
+   starts over, so the name is readable at both ends of the trip. */
+@keyframes marquee {
+  0%,
+  15% {
+    transform: translateX(0);
+  }
+  85%,
+  100% {
+    transform: translateX(min(0px, calc(100cqw - 100%)));
+  }
+}
+
 @keyframes march {
   to {
     stroke-dashoffset: -10;
