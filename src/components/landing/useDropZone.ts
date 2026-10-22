@@ -39,12 +39,12 @@ const EMPTY: Record<Source, string | null> = {
   dir: "That folder is empty.",
 };
 
-/** What a drop could not read, said briefly: a few paths and a count. */
-function unreadable(paths: string[]): string {
-  return `Could not read ${few(paths)}.`;
+interface FileInputProps {
+  ref: React.RefObject<HTMLInputElement | null>;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
-interface DropZoneState {
+interface DropZoneApi {
   /** A drag is hovering the zone. */
   isDragging: boolean;
   /** Files are in flight. */
@@ -53,14 +53,6 @@ interface DropZoneState {
   error: string | null;
   /** Set for FLASH_MS after a settled upload; exclusive with `error`. */
   success: boolean;
-}
-
-interface FileInputProps {
-  ref: React.RefObject<HTMLInputElement | null>;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-}
-
-interface DropZoneApi extends DropZoneState {
   /** Spread onto the drop target. Drop only — picking is the two openers
    * below, so the target itself handles no clicks. */
   dropProps: {
@@ -226,7 +218,7 @@ export function useDropZone({
       }: { carried?: boolean; skipped?: string[] } = {},
     ) => {
       const ok = files.filter((f) => wanted(f.name));
-      const unread = skipped.length ? unreadable(skipped) : null;
+      const unread = skipped.length ? `Could not read ${few(skipped)}.` : null;
       // An error from any drop wins the shared settle — a failure is worth
       // more of the one message slot than a sibling's success — and two are
       // both kept, since each is about different files.
@@ -283,9 +275,11 @@ export function useDropZone({
       for (const item of Array.from(e.dataTransfer.items ?? [])) {
         if (item.kind !== "file") continue;
         const entry = item.webkitGetAsEntry?.();
-        const file = entry ? null : item.getAsFile();
         if (entry) entries.push(entry);
-        else if (file) plain.push(file);
+        else {
+          const file = item.getAsFile();
+          if (file) plain.push(file);
+        }
       }
       const dropped = Array.from(e.dataTransfer.files);
       const fromItems = entries.length + plain.length > 0;

@@ -9,64 +9,20 @@
  * its own: the one way to start from nothing seen and nothing staged, even
  * after a test that leaves the stage deliberately stale. */
 
-import { strToU8, zipSync } from "fflate";
 import { beforeEach, describe, expect, test } from "vitest";
 import type * as Opfs from "src/lib/opfs";
 import type { StageView } from "src/lib/protocol";
 import type * as Stage from "src/lib/stage";
 import { MAX_MANIFEST } from "src/lib/limits";
-import { MANIFEST as MANIFEST_NAME } from "src/lib/workspace";
+import { MANIFEST as MANIFEST_NAME, parseManifest } from "src/lib/workspace";
+import { Client, bytes, zipOf } from "./harness";
 
-type StageApi = typeof Stage;
-type OpfsApi = typeof Opfs;
-
-let worker: Worker | null = null;
-let next = 0;
-const pending = new Map<
-  number,
-  { resolve: (v: unknown) => void; reject: (e: Error) => void }
->();
-
-function spawn(): Worker {
-  const w = new Worker(new URL("./stage.worker.ts", import.meta.url), {
-    type: "module",
-  });
-  w.onmessage = (
-    event: MessageEvent<{ id: number; value?: unknown; error?: string }>,
-  ) => {
-    const { id, value, error } = event.data;
-    const call = pending.get(id);
-    pending.delete(id);
-    if (error === undefined) call?.resolve(value);
-    else call?.reject(new Error(error));
-  };
-  return w;
-}
-
-function call(mod: string, fn: string, args: unknown[]): Promise<unknown> {
-  const id = next++;
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
-    worker!.postMessage({ id, mod, fn, args });
-  });
-}
-
+const client = new Client(new URL("./worker.ts", import.meta.url));
 /** Call a `stage.ts` export in the worker. */
-function stage<K extends keyof StageApi>(
-  fn: K,
-  ...args: Parameters<StageApi[K]>
-): Promise<Awaited<ReturnType<StageApi[K]>>> {
-  return call("stage", fn, args) as Promise<Awaited<ReturnType<StageApi[K]>>>;
-}
-
+const stage = client.bind<typeof Stage>("stage");
 /** Call an `opfs.ts` export in the same worker: what is on disk under the
  *  stage, and what another tab would write beside it. */
-function opfs<K extends keyof OpfsApi>(
-  fn: K,
-  ...args: Parameters<OpfsApi[K]>
-): Promise<Awaited<ReturnType<OpfsApi[K]>>> {
-  return call("opfs", fn, args) as Promise<Awaited<ReturnType<OpfsApi[K]>>>;
-}
+const opfs = client.bind<typeof Opfs>("opfs");
 
 /** A dropped file: the name is its path within the drop, the way the drop
  *  zone rewrites it before the engine sees it. */
@@ -74,22 +30,13 @@ const dropped = (path: string, text = path) => new File([text], path);
 
 /** A zip of `files`, each entry's text its own name, dropped as `name`. */
 const zipped = (name: string, files: Record<string, string>) =>
-  new File(
-    [
-      zipSync(
-        Object.fromEntries(
-          Object.entries(files).map(([path, text]) => [path, strToU8(text)]),
-        ),
-      ),
-    ],
-    name,
-  );
+  new File([zipOf(files)], name);
 
 const manifest = (documents: Record<string, unknown> = {}, name?: string) =>
   JSON.stringify({ format: 1, ...(name ? { name } : {}), documents });
 const EMPTY = manifest();
 
-const sha = (text: string) => opfs("sha256", new TextEncoder().encode(text));
+const sha = (text: string) => opfs("sha256", bytes(text));
 
 const ids = (view: StageView) => view.rows.map((r) => r.docId).sort();
 const statuses = (view: StageView) =>
@@ -98,18 +45,11 @@ const row = (view: StageView, docId: string) =>
   view.rows.find((r) => r.docId === docId)!;
 const stored = async () => {
   const text = await opfs("manifestText");
-  return text === null
-    ? null
-    : (JSON.parse(text) as {
-        name?: string;
-        documents: Record<string, { sha256?: string }>;
-      });
+  return text === null ? null : parseManifest(text);
 };
 
 beforeEach(async () => {
-  worker?.terminate();
-  pending.clear();
-  worker = spawn();
+  client.restart();
   await opfs("clearWorkspace");
 });
 
@@ -631,7 +571,7 @@ describe("the browser's workspace", () => {
   });
 
   test("one written before manifests existed still lists, and gets its hashes written", async () => {
-    await opfs("writeSource", "a", new TextEncoder().encode("bytes").buffer);
+    await opfs("writeSource", "a", bytes("bytes").buffer);
     const view = await stage("stageView");
     expect(view.workspace).toEqual({
       name: null,

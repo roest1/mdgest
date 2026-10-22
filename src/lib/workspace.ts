@@ -47,6 +47,9 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
  *  a grapheme, not a code point: a base is not kept without its mark, nor
  *  a family emoji without its members. */
 function cutToBytes(text: string, max: number): string {
+  // A UTF-16 unit encodes to at most three bytes -- a pair of them, to
+  // four -- so a short name is under the cap without being walked.
+  if (text.length * 3 <= max) return text;
   let bytes = 0;
   let cut = "";
   for (const { segment } of graphemes.segment(text)) {

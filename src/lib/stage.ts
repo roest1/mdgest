@@ -53,7 +53,6 @@ import { few, human, messageOf, plural } from "./words";
 import {
   MANIFEST,
   SOURCES,
-  basename,
   byCodeUnit,
   cleanId,
   cleanName,
@@ -70,10 +69,16 @@ import {
   type Manifest,
 } from "./workspace";
 
-interface Staged extends Candidate {
-  /** Null for the browser's own documents, which are already in OPFS. */
-  blob: Blob | null;
-}
+/** A candidate and its bytes: a blob for what was dropped, and none for
+ *  the browser's own documents, which are already in OPFS. One fact, so a
+ *  check on either side narrows the other. */
+type Staged = Candidate &
+  (
+    | { from: "browser"; blob: null }
+    | { from: Exclude<Origin, "browser">; blob: Blob }
+  );
+/** A staged copy that was dropped, with the bytes to write. */
+type Dropped = Extract<Staged, { blob: Blob }>;
 
 interface Workspace {
   name: string | null;
@@ -190,10 +195,6 @@ function listedIds(): string[] {
   return workspace ? Object.keys(workspace.manifest.documents) : [];
 }
 
-function listedHash(docId: string): string | undefined {
-  return workspace?.manifest.documents[docId]?.sha256;
-}
-
 function statusOf(
   docId: string,
   own: Staged[],
@@ -202,8 +203,9 @@ function statusOf(
   if (own.length === 0) return "missing";
   if (own.length > 1) return "conflict";
   const [c] = own;
-  if (workspace && docId in workspace.manifest.documents) {
-    const listed = listedHash(docId);
+  const entry = workspace?.manifest.documents[docId];
+  if (entry) {
+    const listed = entry.sha256;
     // An entry an export left unhashed has nothing to compare against. Its
     // own source, arriving with it, is what it lists; any other copy under
     // its id may not be, and is marked for a look.
@@ -215,13 +217,20 @@ function statusOf(
   return first !== undefined && first !== docId ? "duplicate" : "new";
 }
 
-function view(): StageView {
+/** A row as the stage holds it, with the copies themselves. */
+interface Row {
+  docId: string;
+  status: Status;
+  own: Staged[];
+}
+
+function rows(): Row[] {
   // Listed ids first, then arrivals in order: the manifest's documents own
   // their bytes, so a loose copy of one of them is the duplicate, never the
   // other way round.
   const ids = [...new Set([...listedIds(), ...candidates.keys()])];
   const owner = new Map<string, string>();
-  const rows: StageRow[] = ids.map((docId) => {
+  const rows: Row[] = ids.map((docId) => {
     const own = candidates.get(docId) ?? [];
     const status = statusOf(docId, own, owner);
     if (
@@ -231,7 +240,22 @@ function view(): StageView {
     ) {
       owner.set(own[0].sha256, docId);
     }
-    return {
+    return { docId, status, own };
+  });
+  return rows.sort((a, b) => byCodeUnit(a.docId, b.docId));
+}
+
+/** The stage as the page sees it: `rows` without the bytes. */
+function view(): StageView {
+  const listed = listedIds();
+  return {
+    workspace: workspace && {
+      name: workspace.name,
+      origin: workspace.origin,
+      listed: listed.length,
+    },
+    unreadable,
+    rows: rows().map(({ docId, status, own }): StageRow => ({
       docId,
       status,
       candidates: own.map((c) => ({
@@ -240,17 +264,7 @@ function view(): StageView {
         bytes: c.bytes,
         from: c.from,
       })),
-    };
-  });
-  rows.sort((a, b) => byCodeUnit(a.docId, b.docId));
-  return {
-    workspace: workspace && {
-      name: workspace.name,
-      origin: workspace.origin,
-      listed: listedIds().length,
-    },
-    unreadable,
-    rows,
+    })),
   };
 }
 
@@ -315,7 +329,7 @@ function sayRepeats(repeats: Repeats, rejected: string[]): void {
 async function hashed(
   docId: string,
   item: Item,
-  from: Origin,
+  from: Dropped["from"],
 ): Promise<[string, Staged]> {
   const buf = item.bytes ?? (await item.blob.arrayBuffer());
   const sha256 = await opfs.sha256(buf);
@@ -396,7 +410,7 @@ async function stageGroup(
   // longer readable -- takes out only itself, said in `rejected` the way a
   // size or a bad archive is. Never the whole drop.
   const pending: (() => Promise<[string, Staged] | null>)[] = [];
-  const hash = (docId: string, item: Item, from: Origin) => () =>
+  const hash = (docId: string, item: Item, from: Dropped["from"]) => () =>
     hashed(docId, item, from).catch((cause: unknown) => {
       rejected.push(
         `${item.path} could not be read, so it was not staged: ${messageOf(cause)}`,
@@ -406,7 +420,10 @@ async function stageGroup(
   let arriving: Workspace | null = null;
 
   for (const root of roots) {
-    const name = root || (zipName ? stem(zipName) : "workspace");
+    // What the workspace arrived as: its folder's name, or its zip's. One
+    // dropped as bare files has neither, and is spoken of as "workspace".
+    const arrivedAs = cleanName(root || (zipName ? stem(zipName) : ""));
+    const name = arrivedAs ?? "workspace";
     const before = arriving?.name ?? drop.arrived;
     if (before != null) {
       rejected.push(
@@ -435,11 +452,7 @@ async function stageGroup(
       },
     );
     if (!manifest) continue;
-    // A workspace with no name of its own takes the one it arrived under:
-    // its folder's, or its zip's. One dropped as bare files has neither.
-    const arrivedAs = cleanName(
-      root ? basename(root) : zipName ? stem(zipName) : "",
-    );
+    // A workspace with no name of its own takes the one it arrived under.
     if (manifest.name === undefined && arrivedAs) manifest.name = arrivedAs;
     arriving = { name, origin: "upload", manifest };
     const sources = root ? `${root}/${SOURCES}` : SOURCES;
@@ -805,10 +818,11 @@ async function seed(): Promise<void> {
  * hashing again: the manifest records the hash taken at the drop, and that
  * has to be the hash of what is written. A zip's entries are Blobs made here,
  * in memory, and cannot change. */
-async function readAgain(staged: Staged, blob: Blob): Promise<ArrayBuffer> {
+async function readAgain(staged: Dropped): Promise<ArrayBuffer> {
   const gone = new Error(
     `${staged.name} was moved or changed after it was dropped. Take it out and drop it again.`,
   );
+  const { blob } = staged;
   const buf = await blob.arrayBuffer().catch(() => {
     throw gone;
   });
@@ -822,16 +836,14 @@ async function readAgain(staged: Staged, blob: Blob): Promise<ArrayBuffer> {
 export function commit(): Promise<{ docs: string[] }> {
   return exclusive(async () => {
     if (unreadable) throw new Error(unreadable);
-    const { rows } = view();
-    const conflicts = rows.filter((r) => r.status === "conflict").length;
+    const all = rows();
+    const conflicts = all.filter((r) => r.status === "conflict").length;
     if (conflicts)
       throw new Error(`${plural(conflicts, "conflict")} to resolve first.`);
-    if (rows.length === 0) throw new Error("Nothing staged.");
+    if (all.length === 0) throw new Error("Nothing staged.");
     // A missing row has no copy to write, and its entry is kept as it is.
-    const chosen = rows.flatMap((row) =>
-      row.candidates.length === 1
-        ? [{ row, staged: candidates.get(row.docId)![0] }]
-        : [],
+    const chosen = all.flatMap((row) =>
+      row.own.length === 1 ? [{ row, staged: row.own[0] }] : [],
     );
 
     // Room is asked for once, before anything is written, rather than found
@@ -845,7 +857,8 @@ export function commit(): Promise<{ docs: string[] }> {
     // not a reason to refuse -- `writeFile` still reports a real full disk in
     // words if it comes to that.
     let writing = 0;
-    for (const { staged } of chosen) if (staged.blob) writing += staged.bytes;
+    for (const { staged } of chosen)
+      if (staged.from !== "browser") writing += staged.bytes;
     const { free } = await opfs.space();
     if (free > 0 && writing * RESERVE > free) {
       throw new Error(
@@ -880,7 +893,7 @@ export function commit(): Promise<{ docs: string[] }> {
       // `undefined` is left out by JSON, so on disk this entry has no hash.
       pending.documents[row.docId] = {
         ...held,
-        sha256: staged.blob ? undefined : staged.sha256,
+        sha256: staged.from === "browser" ? staged.sha256 : undefined,
       };
     }
 
@@ -902,13 +915,13 @@ export function commit(): Promise<{ docs: string[] }> {
       // the bytes are down.
       await opfs.writeManifest(pending);
       for (const { row, staged } of chosen) {
-        if (!staged.blob) continue;
+        if (staged.from === "browser") continue;
         // What was derived from the old bytes is wrong for the new ones.
         // Removed first: stopping between the two then leaves old bytes short
         // of their derivations, which come back, rather than new bytes beside
         // derivations of the old.
         if (row.status === "revised") await opfs.removeDerived(row.docId);
-        await opfs.writeSource(row.docId, await readAgain(staged, staged.blob));
+        await opfs.writeSource(row.docId, await readAgain(staged));
       }
       await opfs.writeManifest(final);
     });

@@ -145,20 +145,35 @@ async function dirAt(
   return dir;
 }
 
-async function fileAt(
-  path: string[],
+/** A path as the folder it is in and the name it has there; no name for
+ *  the workspace itself. */
+function split(path: string[]): [dir: string[], name: string | undefined] {
+  return [path.slice(0, -1), path.at(-1)];
+}
+
+/** The file `name` in `dir`, optionally creating it; `null` when it is not
+ *  there and `create` was not asked for. */
+async function fileIn(
+  dir: FileSystemDirectoryHandle,
+  name: string,
   create = false,
 ): Promise<FileSystemFileHandle | null> {
-  const name = path.at(-1);
-  if (!name) return null;
-  const dir = await dirAt(path.slice(0, -1), create);
-  if (!dir) return null;
   try {
     return await dir.getFileHandle(name, { create });
   } catch (cause) {
     if (isNotFound(cause)) return null;
     throw cause;
   }
+}
+
+async function fileAt(
+  path: string[],
+  create = false,
+): Promise<FileSystemFileHandle | null> {
+  const [parent, name] = split(path);
+  if (!name) return null;
+  const dir = await dirAt(parent, create);
+  return dir && fileIn(dir, name, create);
 }
 
 /** Replace a file's contents.
@@ -185,8 +200,12 @@ export async function writeFile(
   data: ArrayBuffer | Uint8Array,
   { keep = false }: { keep?: boolean } = {},
 ): Promise<void> {
-  const existed = (await fileAt(path)) !== null;
-  const handle = await fileAt(path, true);
+  // One walk to the folder, and both looks at the file from there.
+  const [parent, name] = split(path);
+  const dir = name ? await dirAt(parent, true) : null;
+  if (!name || !dir) throw new Error(`cannot create ${path.join("/")}`);
+  const existed = (await fileIn(dir, name)) !== null;
+  const handle = await fileIn(dir, name, true);
   if (!handle) throw new Error(`cannot create ${path.join("/")}`);
   const progress = { emptied: false };
   try {
@@ -277,8 +296,8 @@ export async function replaceFile(
   path: string[],
   data: ArrayBuffer | Uint8Array,
 ): Promise<void> {
-  const name = path.at(-1);
-  const dir = name ? await dirAt(path.slice(0, -1), true) : null;
+  const [parent, name] = split(path);
+  const dir = name ? await dirAt(parent, true) : null;
   if (!name || !dir) throw new Error(`cannot create ${path.join("/")}`);
   // The temp only once the target is known to be writable: a temp made for
   // a target that is not would sit in .tmp/ until the next clearTemp.
@@ -365,9 +384,9 @@ export async function readText(path: string[]): Promise<string | null> {
 }
 
 export async function remove(path: string[], recursive = false): Promise<void> {
-  const name = path.at(-1);
+  const [parent, name] = split(path);
   if (!name) return;
-  const dir = await dirAt(path.slice(0, -1));
+  const dir = await dirAt(parent);
   await dir?.removeEntry(name, { recursive }).catch((cause: unknown) => {
     // Already gone is what was asked for. Anything else -- a file another tab
     // holds open -- is a remove that did not happen, and has to say so rather

@@ -1,5 +1,6 @@
 import {
   type Call,
+  type Failure,
   type Method,
   type Params,
   type Reply,
@@ -23,11 +24,7 @@ const pending = new Map<number, Pending>();
  * on `instanceof TypeError` would stop working across the boundary. Carrying
  * the name as data and restoring it here keeps that legible; `cause` holds the
  * worker's own stack, which is where the failure actually happened. */
-function rebuild(failure: {
-  name: string;
-  message: string;
-  stack?: string;
-}): Error {
+function rebuild(failure: Failure): Error {
   const error = new Error(failure.message, { cause: failure.stack });
   error.name = failure.name;
   return error;
@@ -38,9 +35,10 @@ function start(): Promise<void> {
   // `type: "module"` is what lets the worker use `import`, and it is what sets
   // Firefox's floor: module workers are in Firefox 114. The rest of the floor
   // is in the README, under "Browser floor".
-  worker = new Worker(new URL("./engine.worker.ts", import.meta.url), {
+  const started = new Worker(new URL("./engine.worker.ts", import.meta.url), {
     type: "module",
   });
+  worker = started;
 
   ready = new Promise<void>((resolve, reject) => {
     // Everything outstanding fails with the engine, and so does every call
@@ -51,7 +49,7 @@ function start(): Promise<void> {
       pending.clear();
     };
 
-    worker!.onmessage = (event: MessageEvent) => {
+    started.onmessage = (event: MessageEvent) => {
       const message = event.data as Reply | Startup;
 
       // Id 0 is the worker's own, and answers the start rather than a call:
@@ -72,7 +70,7 @@ function start(): Promise<void> {
     // A worker whose script fails to load never sends anything, so without
     // this every call would hang instead of failing -- the worst way to be
     // broken.
-    worker!.onerror = (event) =>
+    started.onerror = (event) =>
       fail(new Error(`the engine failed to start: ${event.message}`));
   });
 

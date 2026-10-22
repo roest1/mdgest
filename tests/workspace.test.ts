@@ -171,9 +171,7 @@ describe("docIdFor", () => {
   test("cleans traversal out of both parts", () => {
     expect(docIdFor("../../etc/passwd.pdf", "..")).toBe("etc/passwd");
   });
-});
 
-describe("docIdFor", () => {
   test("a file that is only its extension gets the fallback id, as a rename refuses it", () => {
     expect(docIdFor(".pdf")).toBe("doc");
     expect(docIdFor("x/.PDF")).toBe("x/doc");

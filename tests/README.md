@@ -21,6 +21,7 @@ is settled, what a commit writes and what it refuses; `engine.test.ts`, what
 the engine worker does with a call it has no method for; `words.test.ts`, the
 counting the UI phrases with.
 
-`opfs.worker.ts` and `stage.worker.ts` run `opfs.ts` and `stage.ts` where they
-run in the app, since a synchronous file handle exists only in a worker. Nothing under `tests/` is imported from
-`src/`, so none of it reaches a build.
+`worker.ts` runs `opfs.ts` and `stage.ts` where they run in the app, since a
+synchronous file handle exists only in a worker; `harness.ts` is the wire
+between it and a test. Nothing under `tests/` is imported from `src/`, so
+none of it reaches a build.

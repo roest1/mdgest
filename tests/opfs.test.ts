@@ -7,52 +7,17 @@
 
 import { beforeEach, describe, expect, test } from "vitest";
 import type * as Opfs from "src/lib/opfs";
+import { emptyManifest } from "src/lib/workspace";
+import { Client, bytes } from "./harness";
+import type { Harness } from "./worker";
 
 type Api = typeof Opfs;
 
-const worker = new Worker(new URL("./opfs.worker.ts", import.meta.url), {
-  type: "module",
-});
-let next = 0;
-const pending = new Map<
-  number,
-  { resolve: (v: unknown) => void; reject: (e: Error) => void }
->();
-worker.onmessage = (
-  event: MessageEvent<{ id: number; value?: unknown; error?: string }>,
-) => {
-  const { id, value, error } = event.data;
-  const call = pending.get(id);
-  pending.delete(id);
-  if (error === undefined) call?.resolve(value);
-  else call?.reject(new Error(error));
-};
-
-/** Post one call to the worker and wait for its answer. */
-function call(fn: string, args: unknown[]): Promise<unknown> {
-  const id = next++;
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
-    worker.postMessage({ id, fn, args });
-  });
-}
-
+const client = new Client(new URL("./worker.ts", import.meta.url));
 /** Call an `opfs.ts` export in the worker. */
-function opfs<K extends keyof Api>(
-  fn: K,
-  ...args: Parameters<Api[K]>
-): Promise<Awaited<ReturnType<Api[K]>>> {
-  return call(fn, args) as Promise<Awaited<ReturnType<Api[K]>>>;
-}
-
-/** Call one of the worker's own hooks on `move`: see `opfs.worker.ts`. */
-function harness(fn: "moves"): Promise<number>;
-function harness(fn: "refuseMoves", on: boolean): Promise<void>;
-function harness(fn: string, ...args: unknown[]): Promise<unknown> {
-  return call(fn, args);
-}
-
-const bytes = (text: string) => new TextEncoder().encode(text);
+const opfs = client.bind<Api>("opfs");
+/** Call one of the worker's own hooks on `move`: see `worker.ts`. */
+const harness = client.bind<Harness>("harness");
 
 beforeEach(async () => {
   await opfs("clearWorkspace");
@@ -84,9 +49,7 @@ describe("files", () => {
 
   test("the manifest is written by a replacing write", async () => {
     const before = await harness("moves");
-    await opfs("writeManifest", { format: 1, documents: {} } as Parameters<
-      Api["writeManifest"]
-    >[0]);
+    await opfs("writeManifest", emptyManifest());
     expect(await harness("moves")).toBe(before + 1);
   });
 
@@ -244,9 +207,7 @@ describe("documents", () => {
 
   test("clearing the workspace leaves it empty and still listable", async () => {
     await opfs("writeFile", ["sources", "pumps.pdf"], bytes("%PDF"));
-    await opfs("writeManifest", { format: 1, documents: {} } as Parameters<
-      Api["writeManifest"]
-    >[0]);
+    await opfs("writeManifest", emptyManifest());
     await opfs("clearWorkspace");
     expect(await opfs("docs")).toEqual([]);
     expect(await opfs("manifestText")).toBeNull();
