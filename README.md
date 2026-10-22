@@ -52,11 +52,12 @@ On every push to `main` and every pull request.
 
 **web app deployment plan**: one bundle, hosted as static files on Cloudflare Pages.
 
-|       |                                                                                          |
-| ----- | ---------------------------------------------------------------------------------------- |
-| build | `vite` (rolldown), `typescript`, `oxlint`, `prettier` (formatting)                       |
-| ui    | `react`, `tailwind`                                                                      |
-| fonts | Literata (serif), Geist Sans (ui), JetBrains Mono (code) - self-hosted via `@fontsource` |
+|          |                                                                                          |
+| -------- | ---------------------------------------------------------------------------------------- |
+| build    | `vite` (rolldown), `typescript`, `oxlint`, `prettier` (formatting)                       |
+| ui       | `react`, `tailwind`, `lucide-react` icons                                                |
+| fonts    | Literata (serif), Geist Sans (ui), JetBrains Mono (code) - self-hosted via `@fontsource` |
+| archives | `fflate` - unzip on the way in, zip on the way out                                       |
 
 ### Browser floor
 
