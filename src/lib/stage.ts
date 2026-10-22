@@ -31,6 +31,7 @@ import {
   MAX_MANIFEST,
   RESERVE,
 } from "./limits";
+import { bare } from "./exchange";
 import * as opfs from "./opfs";
 import type {
   Candidate,
@@ -52,7 +53,6 @@ import { few, human, messageOf, plural } from "./words";
 import {
   MANIFEST,
   SOURCES,
-  bare,
   basename,
   byCodePoint,
   cleanId,
@@ -62,6 +62,7 @@ import {
   emptyManifest,
   isDocId,
   parseManifest,
+  renameStem,
   renamedId,
   sourcePath,
   stem,
@@ -508,8 +509,10 @@ export function stage(
     // The drop's batches, in the order they began: the plain files are one
     // batch, placed where the first of them arrived, and each zip is its
     // own. Staged in that order, because arrival order is what decides
-    // which copy is "the duplicate" and which workspace was first.
-    const batches: { items: Item[]; zipName: string | null }[] = [];
+    // which copy is "the duplicate" and which workspace was first. A zip is
+    // held as the file it came as and inflated only when its turn comes, so
+    // the drop's peak is one archive's contents and not every archive's.
+    const batches: (Item[] | File)[] = [];
     let plain: Item[] | null = null;
     // Count and size are checked before anything is read, and a drop that is
     // partly over either stages the rest: the listing is what a person reads,
@@ -538,9 +541,15 @@ export function stage(
         );
         break;
       }
-      if (!isZip(file.name)) {
-        if (!plain) batches.push({ items: (plain = []), zipName: null });
+      if (isZip(file.name)) batches.push(file);
+      else {
+        if (!plain) batches.push((plain = []));
         plain.push({ path: file.name, blob: file });
+      }
+    }
+    for (const batch of batches) {
+      if (!(batch instanceof File)) {
+        await stageGroup(batch, null, rejected, drop);
         continue;
       }
       // A zip is a batch of its own: its entry paths say nothing about where
@@ -551,24 +560,24 @@ export function stage(
       // output, and an explicit copy here would only be a second one.
       let entries;
       try {
-        entries = unzip(await file.arrayBuffer());
+        entries = unzip(await batch.arrayBuffer());
       } catch (cause) {
         // An archive that is too large, or not one at all, takes only itself
         // out of the drop. The rest of what was dropped still stages.
-        rejected.push(`${file.name} was not staged: ${messageOf(cause)}`);
+        rejected.push(`${batch.name} was not staged: ${messageOf(cause)}`);
         continue;
       }
-      batches.push({
-        items: entries.map((e) => ({
+      await stageGroup(
+        entries.map((e) => ({
           path: e.path,
           blob: new Blob([e.bytes]),
           bytes: e.bytes,
         })),
-        zipName: file.name,
-      });
+        batch.name,
+        rejected,
+        drop,
+      );
     }
-    for (const { items, zipName } of batches)
-      await stageGroup(items, zipName, rejected, drop);
     sayRepeats(drop.repeats, rejected);
     return { view: view(), rejected };
   });
@@ -638,7 +647,7 @@ export function renameCandidate(
         "A document already in the browser is renamed in the editor, not here.",
       );
     }
-    if (!name.trim()) throw new Error("Give it a name.");
+    if (!renameStem(name)) throw new Error("Give it a name.");
     const next = renamedId(docId, name);
     // `renamedId` answers "" for a name with nothing to slug -- dots and
     // dashes alone -- and "" is not an id a manifest can list.
@@ -703,37 +712,34 @@ export function stageView(): Promise<StageView> {
  *  page waits on it. */
 async function seed(): Promise<void> {
   if (seen) return;
-  // Read into locals under the lock and handed to the stage at the end, all
-  // at once. Under the lock, so a commit in another tab is never looked at
-  // halfway -- not the listing, and not the documents probed after it, which
-  // that commit would be clearing and writing back one by one. All at once,
-  // because a read that throws partway leaves the stage as unseeded as it
-  // found it, and the next look tries again. Marked seen with its slot still
-  // empty, the stage would pass for an empty browser, and a commit would
-  // clear the workspace it had failed to read.
-  type Read =
-    | { now: Snapshot; unreadable: string }
-    | { now: Snapshot; manifest?: undefined }
-    | {
-        now: Snapshot;
-        manifest: Manifest;
-        found: ([string, Staged] | null)[];
-        filled: boolean;
-      };
-  const read = await locked(async (): Promise<Read> => {
+  // Under the lock, so a commit in another tab is never looked at halfway --
+  // not the listing, and not the documents probed after it, which that
+  // commit would be clearing and writing back one by one. Read into locals
+  // and handed to the stage at the end, after the last await: a read that
+  // throws partway leaves the stage as unseeded as it found it, and the next
+  // look tries again. Marked seen with its slot still empty, the stage would
+  // pass for an empty browser, and a commit would clear the workspace it
+  // had failed to read. The write-back is outside, since `locked` is not
+  // reentrant and `guarded` takes it again.
+  const manifest = await locked(async (): Promise<Manifest | null> => {
     const now = await look();
     let stored: Manifest | null = null;
     if (now.manifest !== null) {
       try {
         stored = parseManifest(now.manifest);
       } catch (cause) {
-        return { now, unreadable: messageOf(cause) };
+        unreadable = `The workspace in this browser could not be opened: ${messageOf(cause)}`;
+        seen = now;
+        return null;
       }
     }
     // A manifest with no sources is a workspace too: its documents are
     // missing, and its decisions wait for them. Only a browser with neither
     // holds nothing -- which is what lets a commit clear it.
-    if (now.manifest === null && now.docs.length === 0) return { now };
+    if (now.manifest === null && now.docs.length === 0) {
+      seen = now;
+      return null;
+    }
 
     // Probed a few at a time, in the listing's order: each probe is a
     // handful of round trips to the file system, and a corpus of them one
@@ -766,31 +772,20 @@ async function seed(): Promise<void> {
       now.docs.map((docId) => () => probe(docId)),
       HASH_WIDTH,
     );
-    return { now, manifest, found, filled };
+    seen = now;
+    workspace = { name: null, origin: "browser", manifest };
+    for (const entry of found) {
+      if (!entry) continue;
+      const [docId, staged] = entry;
+      manifest.documents[docId] = {
+        ...manifest.documents[docId],
+        sha256: staged.sha256,
+      };
+      insert(docId, staged);
+    }
+    // Answered only when there is something to write back.
+    return filled ? manifest : null;
   });
-
-  const { now } = read;
-  if ("unreadable" in read) {
-    unreadable = `The workspace in this browser could not be opened: ${read.unreadable}`;
-    seen = now;
-    return;
-  }
-  if (!read.manifest) {
-    seen = now;
-    return;
-  }
-  const { manifest, found, filled } = read;
-  seen = now;
-  workspace = { name: null, origin: "browser", manifest };
-  for (const entry of found) {
-    if (!entry) continue;
-    const [docId, staged] = entry;
-    manifest.documents[docId] = {
-      ...manifest.documents[docId],
-      sha256: staged.sha256,
-    };
-    insert(docId, staged);
-  }
 
   // Written back, so the read above is the last one this workspace needs. The
   // fills are in memory otherwise, and only `commit` persists them -- which
@@ -798,7 +793,8 @@ async function seed(): Promise<void> {
   // whole corpus on every visit, and looking without changing is the common
   // visit. A failure here is not one: it costs the next visit the read this
   // one just paid, and the listing in front of the person is already right.
-  if (filled) await guarded(() => opfs.writeManifest(manifest)).catch(() => {});
+  if (manifest)
+    await guarded(() => opfs.writeManifest(manifest)).catch(() => {});
 }
 
 /** A staged file's bytes, read again to be written.

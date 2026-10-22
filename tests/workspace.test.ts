@@ -20,6 +20,7 @@ import {
   isRecord,
   markdownPath,
   parseManifest,
+  renameStem,
   renamedId,
   slug,
   sourcePath,
@@ -219,7 +220,10 @@ describe("renamedId", () => {
     expect(renamedId("invoices/a", "../y")).toBe("invoices/y");
   });
 
-  test("gives no id for an empty name", () => {
+  test("gives no id for an empty name, which renameStem tells from punctuation", () => {
+    expect(renameStem(" .PDF ")).toBe("");
+    expect(renameStem("---")).toBe("---");
+    expect(renameStem("b.pdf")).toBe("b");
     expect(renamedId("a/b", "")).toBe("");
     expect(renamedId("a/b", "   ")).toBe("");
     expect(renamedId("a/b", ".pdf")).toBe("");

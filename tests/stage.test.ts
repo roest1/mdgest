@@ -201,6 +201,9 @@ describe("loose files", () => {
     await expect(stage("renameCandidate", "a", y, "b")).rejects.toThrow(
       "b is already taken",
     );
+    await expect(stage("renameCandidate", "a", y, " .PDF ")).rejects.toThrow(
+      "Give it a name.",
+    );
     await expect(stage("renameCandidate", "a", y, "---")).rejects.toThrow(
       "a letter or a digit",
     );

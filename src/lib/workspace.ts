@@ -280,15 +280,22 @@ export function docIdFor(filename: string, folder = ""): string {
  *  stage, which decides. */
 export function renamedId(docId: string, name: string): string {
   const folder = docId.split("/").slice(0, -1).join("/");
-  // The suffix off first, so that a bare `.pdf` is an empty name and not a
-  // hidden file called `.pdf` whose stem slugs to `pdf`.
-  const typed = name
+  const typed = renameStem(name);
+  if (!/[\p{L}\p{N}]/u.test(typed)) return "";
+  return docIdFor(`${typed}.pdf`, folder);
+}
+
+/** What was typed as a new name, less its optional `.pdf`: empty for a name
+ *  of nothing, which the stage says differently from a name of only
+ *  punctuation. The suffix comes off first, so that a bare `.pdf` is an
+ *  empty name and not a hidden file called `.pdf` whose stem slugs to
+ *  `pdf`. */
+export function renameStem(name: string): string {
+  return name
     .replace(/[/\\]/g, "-")
     .trim()
     .replace(/\.pdf$/i, "")
     .trim();
-  if (!/[\p{L}\p{N}]/u.test(typed)) return "";
-  return docIdFor(`${typed}.pdf`, folder);
 }
 
 /** The visible manifest an exported workspace carries at its root, and the
@@ -304,17 +311,6 @@ export const MANIFEST = "mdgest.json";
  * editor's and travels through as it arrived, which is why both types are
  * open. The per-document hash is the one field this side depends on. */
 export type DocEntry = { sha256?: string } & Record<string, unknown>;
-
-/** An entry with its decisions taken out: what stays of one whose source
- *  is being replaced. The fields are the ones an export packs into an
- *  entry -- the edits, whether they are done, the reader they were made
- *  with and the checksum over them -- which an editor, when it lands, reads
- *  back out. Anything else an entry carries is kept, as `parseManifest`
- *  promises. */
-export function bare(entry: DocEntry): DocEntry {
-  const { edits: _e, done: _d, reader: _r, check: _c, ...rest } = entry;
-  return rest;
-}
 export interface Manifest {
   format: number;
   /** What the workspace is called: the editor's header shows it and an

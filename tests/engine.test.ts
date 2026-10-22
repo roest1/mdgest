@@ -43,3 +43,17 @@ test("a method the engine does not have is refused, even one an object inherits"
     w.terminate();
   }
 });
+
+test("a message that is not a call is answered, not left hanging", async () => {
+  const w = await spawn();
+  try {
+    for (const bad of [null, "stage", 7, {}]) {
+      const reply = await ask(w, bad);
+      expect(reply.ok).toBe(false);
+      if (!reply.ok)
+        expect(reply.error.message).toBe("not an engine call: no method");
+    }
+  } finally {
+    w.terminate();
+  }
+});

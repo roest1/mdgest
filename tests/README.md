@@ -17,7 +17,8 @@ gives up and what it is refused for; `tree.test.ts`, the order a listing
 folds into; `opfs.test.ts`, the file layer: truncating writes, replacing ones
 and what a write cut short leaves, `walk`'s order, `sha256`, and what
 `removeDerived` may touch; `stage.test.ts`, what a drop stages, how a conflict
-is settled, what a commit writes and what it refuses; `words.test.ts`, the
+is settled, what a commit writes and what it refuses; `engine.test.ts`, what
+the engine worker does with a call it has no method for; `words.test.ts`, the
 counting the UI phrases with.
 
 `opfs.worker.ts` and `stage.worker.ts` run `opfs.ts` and `stage.ts` where they

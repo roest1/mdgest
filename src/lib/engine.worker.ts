@@ -51,8 +51,14 @@ function failure(cause: unknown): Failure {
 }
 
 self.onmessage = async (event: MessageEvent) => {
-  const call = event.data as Call;
+  // Read before the try: a message that is not a call -- nothing the page
+  // sends today -- would otherwise throw on `call.method`, and then again
+  // on `call.id` in the catch, and the caller would wait forever.
+  const call = (event.data ?? {}) as Partial<Call>;
+  const id = typeof call.id === "number" ? call.id : -1;
   try {
+    if (call.method === undefined)
+      throw new Error("not an engine call: no method");
     // Own methods only: `handlers` is an object literal, and a method named
     // for something on its prototype -- `constructor`, `toString` -- would
     // otherwise be found there and called with the caller's params.
@@ -62,10 +68,10 @@ self.onmessage = async (event: MessageEvent) => {
     // The one cast in the file: looking a handler up by a runtime
     // `call.method` erases which M this is, and no assertion can put it back.
     const result = await handle(call.params as never);
-    self.postMessage({ id: call.id, ok: true, result } as Reply);
+    self.postMessage({ id, ok: true, result } as Reply);
   } catch (cause) {
     self.postMessage({
-      id: call.id,
+      id,
       ok: false,
       error: failure(cause),
     } satisfies Reply);
