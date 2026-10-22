@@ -8,6 +8,10 @@ import viteConfig from "./vite.config.ts";
 export default mergeConfig(
   viteConfig,
   defineConfig({
+    // Pre-bundled together, up front. Found one import at a time on a cold
+    // cache, `react` and `react-dom/client` are bundled apart, each with a
+    // React of its own, and the first component to render fails on a hook.
+    optimizeDeps: { include: ["react", "react-dom/client", "lucide-react"] },
     test: {
       include: ["tests/**/*.test.ts"],
       browser: {
