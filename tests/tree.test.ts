@@ -45,7 +45,7 @@ describe("buildTree", () => {
       "zeta",
     ];
     expect(outline(buildTree(entries))).toEqual(expected);
-    // Names that differ only in case are ordered by code point, not by the
+    // Names that differ only in case are ordered by code unit, not by the
     // order they arrived in: the same listing, reversed, draws the same tree.
     expect(outline(buildTree([...entries].reverse()))).toEqual(expected);
   });

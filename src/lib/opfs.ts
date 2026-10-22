@@ -22,7 +22,7 @@ import {
   WORKSPACE_ID,
   WORKSPACES,
   assetsDir,
-  byCodePoint,
+  byCodeUnit,
   cacheDir,
   isDocId,
   markdownPath,
@@ -324,24 +324,15 @@ export async function clearTemp(): Promise<void> {
  * same file, which a listing has no business doing. `getFile` holds no lock
  * and answers with the file as it was when asked, whole or not at all: the
  * snapshot is checked when its bytes are read, and a write that lands in
- * between fails that read (NotReadableError) rather than hand over half of
- * each. Asked once more then, since the write that spoiled the first read
- * has by then landed. A second failure is reported: two writes in a row on
- * the file a read is after is not a window to wait out. */
+ * between fails the read rather than hand over half of each. That write
+ * cannot land here: every read and every write of the workspace is made
+ * under its lock, in `stage.ts`, so the failure is not caught or retried. */
 export async function readFile(
   path: string[],
 ): Promise<Uint8Array<ArrayBuffer> | null> {
   const handle = await fileAt(path);
   if (!handle) return null;
-  const once = async () =>
-    new Uint8Array(await (await handle.getFile()).arrayBuffer());
-  try {
-    return await once();
-  } catch (cause) {
-    if (cause instanceof DOMException && cause.name === "NotReadableError")
-      return once();
-    throw cause;
-  }
+  return new Uint8Array(await (await handle.getFile()).arrayBuffer());
 }
 
 /** How long a file is, without reading it.
@@ -401,7 +392,7 @@ export async function walk(path: string[]): Promise<string[]> {
   ): Promise<string[]> => {
     const entries: [string, FileSystemHandle][] = [];
     for await (const entry of handle.entries()) entries.push(entry);
-    entries.sort(([a], [b]) => byCodePoint(a, b));
+    entries.sort(([a], [b]) => byCodeUnit(a, b));
     const below = await Promise.all(
       entries.map(([name, child]) => {
         const rel = prefix ? `${prefix}/${name}` : name;
@@ -447,7 +438,7 @@ export async function docs(): Promise<string[]> {
       // filenames, and `-` sorts before `.`, so `pumps-2.pdf` lands ahead of
       // `pumps.pdf` -- an order that is correct for the files and visibly wrong
       // for the ids a person reads.
-      .sort(byCodePoint)
+      .sort(byCodeUnit)
   );
 }
 

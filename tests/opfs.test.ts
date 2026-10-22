@@ -149,7 +149,7 @@ describe("files", () => {
     ).resolves.toBeUndefined();
   });
 
-  test("walk lists every file below a folder, depth first, by code point", async () => {
+  test("walk lists every file below a folder, depth first, in one fixed order", async () => {
     for (const path of ["b.txt", "a/z.txt", "a/b/c.txt", "B.txt", "a-1.txt"]) {
       await opfs("writeText", ["markdown", ...path.split("/")], path);
     }
@@ -170,7 +170,7 @@ describe("files", () => {
 });
 
 describe("documents", () => {
-  test("the document listing is the .pdf files in sources/ under valid ids, sorted by code point", async () => {
+  test("the document listing is the .pdf files in sources/ under valid ids, in one fixed order", async () => {
     for (const path of [
       "pumps.pdf",
       "pumps-2.pdf",

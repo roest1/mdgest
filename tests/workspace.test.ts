@@ -5,7 +5,7 @@ import {
   assetsDir,
   assetsPrefix,
   basename,
-  byCodePoint,
+  byCodeUnit,
   cacheDir,
   cleanId,
   cleanName,
@@ -124,25 +124,11 @@ describe("isDocId", () => {
   });
 });
 
-describe("byCodePoint", () => {
-  test("orders by code point, the same on every machine", () => {
-    expect(["b", "B", "a", "ä"].sort(byCodePoint)).toEqual([
-      "B",
-      "a",
-      "b",
-      "ä",
-    ]);
-    expect(byCodePoint("a", "a")).toBe(0);
-  });
-
-  test("orders astral characters by code point, not UTF-16 unit", () => {
-    expect(["😀", "\uff01", "a"].sort(byCodePoint)).toEqual([
-      "a",
-      "\uff01",
-      "😀",
-    ]);
-    expect(byCodePoint("a", "ab")).toBe(-1);
-    expect(byCodePoint("😀", "😀")).toBe(0);
+describe("byCodeUnit", () => {
+  test("orders the same on every machine, whatever the locale", () => {
+    expect(["b", "B", "a", "ä"].sort(byCodeUnit)).toEqual(["B", "a", "b", "ä"]);
+    expect(byCodeUnit("a", "a")).toBe(0);
+    expect(byCodeUnit("a", "ab")).toBe(-1);
   });
 });
 

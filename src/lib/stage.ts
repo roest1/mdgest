@@ -54,7 +54,7 @@ import {
   MANIFEST,
   SOURCES,
   basename,
-  byCodePoint,
+  byCodeUnit,
   cleanId,
   cleanName,
   copyManifest,
@@ -242,7 +242,7 @@ function view(): StageView {
       })),
     };
   });
-  rows.sort((a, b) => byCodePoint(a.docId, b.docId));
+  rows.sort((a, b) => byCodeUnit(a.docId, b.docId));
   return {
     workspace: workspace && {
       name: workspace.name,

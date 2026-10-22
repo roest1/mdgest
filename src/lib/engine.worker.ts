@@ -51,20 +51,14 @@ function failure(cause: unknown): Failure {
 }
 
 self.onmessage = async (event: MessageEvent) => {
-  // Read before the try: a message that is not a call -- nothing the page
-  // sends today -- would otherwise throw on `call.method`, and then again
-  // on `call.id` in the catch, and the caller would wait forever.
-  const call = (event.data ?? {}) as Partial<Call>;
-  const id = typeof call.id === "number" ? call.id : -1;
+  // Trusted as a call: the only sender is `engine.ts`, in this same bundle,
+  // and `Call` is a closed type there. Nothing is hardened against a page
+  // that is this page.
+  const call = event.data as Call;
+  const id = call.id;
   try {
-    if (call.method === undefined)
-      throw new Error("not an engine call: no method");
-    // Own methods only: `handlers` is an object literal, and a method named
-    // for something on its prototype -- `constructor`, `toString` -- would
-    // otherwise be found there and called with the caller's params.
-    if (!Object.hasOwn(handlers, call.method))
-      throw new Error(`no such engine method: ${call.method}`);
     const handle = handlers[call.method];
+    if (!handle) throw new Error(`no such engine method: ${call.method}`);
     // The one cast in the file: looking a handler up by a runtime
     // `call.method` erases which M this is, and no assertion can put it back.
     const result = await handle(call.params as never);
