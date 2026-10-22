@@ -40,7 +40,7 @@ describe("files", () => {
     const before = await harness("moves");
     await opfs("writeText", edits, '{"blocks": {"p1b0": {"role": "heading"}}}');
     await opfs("writeText", edits, "{}");
-    // Both by the move, the one way that is never torn, and not the fallback.
+    // Both by the move, the one way that is never torn.
     expect(await harness("moves")).toBe(before + 2);
     expect(await opfs("readText", edits)).toBe("{}");
     expect(await opfs("size", edits)).toBe(2);
@@ -68,16 +68,19 @@ describe("files", () => {
     expect(await opfs("walk", [".tmp"])).toEqual([]);
   });
 
-  test("where the move is refused, the write still lands, in place, and its temp is dropped", async () => {
+  test("where the move is refused, the write fails, the target is as it was, and its temp is dropped", async () => {
     const edits = [".mdgest", "pumps.pdf", "edits.json"];
-    await opfs("writeText", edits, '{"blocks": {"p1b0": {"role": "heading"}}}');
+    const was = '{"blocks": {"p1b0": {"role": "heading"}}}';
+    await opfs("writeText", edits, was);
     await harness("refuseMoves", true);
     try {
-      await opfs("writeText", edits, "{}");
+      await expect(opfs("writeText", edits, "{}")).rejects.toThrow(
+        "refused by the test",
+      );
     } finally {
       await harness("refuseMoves", false);
     }
-    expect(await opfs("readText", edits)).toBe("{}");
+    expect(await opfs("readText", edits)).toBe(was);
     expect(await opfs("walk", [".tmp"])).toEqual([]);
   });
 

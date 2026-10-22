@@ -2,10 +2,10 @@
  *  one place a synchronous file handle exists. Served over the wire in
  *  `harness.ts`.
  *
- *  `harness` reaches the move under `replaceFile`, whose fallback writes
- *  the same bytes and so cannot be told from it by what lands: `moves`
- *  answers how many moves have gone through, and `refuseMoves` makes every
- *  move after it throw, or stop throwing. */
+ *  `harness` reaches the move under `replaceFile`: `moves` answers how many
+ *  have gone through, so a test can tell a replacing write from one made
+ *  in place, and `refuseMoves` makes every move after it throw, or stop
+ *  throwing, to see what a refused move leaves. */
 
 import * as opfs from "src/lib/opfs";
 import * as stage from "src/lib/stage";
