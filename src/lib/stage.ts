@@ -52,6 +52,7 @@ import { few, human, messageOf, plural } from "./words";
 import {
   MANIFEST,
   SOURCES,
+  bare,
   basename,
   byCodePoint,
   cleanId,
@@ -287,6 +288,15 @@ interface Repeats {
   staged: string[];
 }
 
+/** What one drop's batches say to each other: the repeats they found, and
+ *  the workspace one of them staged, so a later batch refused for it says
+ *  "came in the same drop" rather than telling the person to discard
+ *  something they have only just dropped. */
+interface Drop {
+  repeats: Repeats;
+  arrived: string | null;
+}
+
 /** One line for each kind of repeat, naming a few and counting the rest, so
  *  a folder dropped twice is one sentence rather than a page of them. */
 function sayRepeats(repeats: Repeats, rejected: string[]): void {
@@ -373,8 +383,9 @@ async function stageGroup(
   items: Item[],
   zipName: string | null,
   rejected: string[],
-  repeats: Repeats,
+  drop: Drop,
 ): Promise<void> {
+  const { repeats } = drop;
   const roots = workspaceRoots(items.map((i) => i.path));
   // Each item belongs to the nearest workspace it sits in, or to none.
   const rootOf = (path: string) =>
@@ -395,6 +406,13 @@ async function stageGroup(
 
   for (const root of roots) {
     const name = root || (zipName ? stem(zipName) : "workspace");
+    const before = arriving?.name ?? drop.arrived;
+    if (before != null) {
+      rejected.push(
+        `One workspace at a time: ${name} was not staged, since ${before} came in the same drop.`,
+      );
+      continue;
+    }
     if (workspace) {
       const current =
         workspace.origin === "browser"
@@ -402,12 +420,6 @@ async function stageGroup(
           : `${workspace.name}`;
       rejected.push(
         `One workspace at a time: ${name} was not staged. Discard ${current} first.`,
-      );
-      continue;
-    }
-    if (arriving) {
-      rejected.push(
-        `One workspace at a time: ${name} was not staged, since ${arriving.name} came in the same drop.`,
       );
       continue;
     }
@@ -470,7 +482,10 @@ async function stageGroup(
   // The slot is taken only now, with every source read or accounted for. Put
   // in it before, and left there by a failure partway, a workspace would hold
   // the slot with nothing staged and refuse the same folder dropped again.
-  if (arriving) workspace = arriving;
+  if (arriving) {
+    workspace = arriving;
+    drop.arrived = arriving.name;
+  }
   for (const result of results) {
     if (!result) continue;
     const there = insert(...result);
@@ -489,8 +504,13 @@ export function stage(
     if (unreadable)
       throw new Error(`${unreadable} Discard it before adding anything.`);
     const rejected: string[] = [];
-    const repeats: Repeats = { uploaded: [], staged: [] };
-    const plain: Item[] = [];
+    const drop: Drop = { repeats: { uploaded: [], staged: [] }, arrived: null };
+    // The drop's batches, in the order they began: the plain files are one
+    // batch, placed where the first of them arrived, and each zip is its
+    // own. Staged in that order, because arrival order is what decides
+    // which copy is "the duplicate" and which workspace was first.
+    const batches: { items: Item[]; zipName: string | null }[] = [];
+    let plain: Item[] | null = null;
     // Count and size are checked before anything is read, and a drop that is
     // partly over either stages the rest: the listing is what a person reads,
     // and it says more if it holds everything that could be taken beside the
@@ -519,6 +539,7 @@ export function stage(
         break;
       }
       if (!isZip(file.name)) {
+        if (!plain) batches.push({ items: (plain = []), zipName: null });
         plain.push({ path: file.name, blob: file });
         continue;
       }
@@ -537,21 +558,33 @@ export function stage(
         rejected.push(`${file.name} was not staged: ${messageOf(cause)}`);
         continue;
       }
-      await stageGroup(
-        entries.map((e) => ({
+      batches.push({
+        items: entries.map((e) => ({
           path: e.path,
           blob: new Blob([e.bytes]),
           bytes: e.bytes,
         })),
-        file.name,
-        rejected,
-        repeats,
-      );
+        zipName: file.name,
+      });
     }
-    if (plain.length) await stageGroup(plain, null, rejected, repeats);
-    sayRepeats(repeats, rejected);
+    for (const { items, zipName } of batches)
+      await stageGroup(items, zipName, rejected, drop);
+    sayRepeats(drop.repeats, rejected);
     return { view: view(), rejected };
   });
+}
+
+/** Take one staged copy out from under its id. The last copy out brings
+ *  back what `keep` set aside, so the choice is reopened rather than the
+ *  row left empty. Until then it stays aside: taking out a copy dropped
+ *  since the choice is not a reason to lose it. */
+function takeOut(docId: string, target: Staged): void {
+  const rest = (candidates.get(docId) ?? []).filter((c) => c !== target);
+  const back = rest.length === 0 ? (shadowed.get(docId) ?? []) : [];
+  if (rest.length === 0) shadowed.delete(docId);
+  const remaining = [...rest, ...back];
+  if (remaining.length) candidates.set(docId, remaining);
+  else candidates.delete(docId);
 }
 
 export function unstage(docId: string, sha256: string): Promise<StageView> {
@@ -564,15 +597,7 @@ export function unstage(docId: string, sha256: string): Promise<StageView> {
         "A document already in the browser is removed in the editor, not here.",
       );
     }
-    const rest = own.filter((c) => c !== target);
-    // The last copy out brings back what `keep` set aside, so the choice is
-    // reopened rather than the row left empty. Until then it stays aside:
-    // taking out a copy dropped since the choice is not a reason to lose it.
-    const back = rest.length === 0 ? (shadowed.get(docId) ?? []) : [];
-    if (rest.length === 0) shadowed.delete(docId);
-    const remaining = [...rest, ...back];
-    if (remaining.length) candidates.set(docId, remaining);
-    else candidates.delete(docId);
+    takeOut(docId, target);
     return view();
   });
 }
@@ -582,10 +607,14 @@ export function keep(docId: string, sha256: string): Promise<StageView> {
     const own = candidates.get(docId) ?? [];
     const kept = own.find((c) => c.sha256 === sha256);
     if (!kept) return view();
-    shadowed.set(docId, [
+    // An id is set aside only when something is: everywhere else an empty
+    // pile and no pile are the same thing, and `renameCandidate` reads a
+    // pile, empty or not, as the id being taken.
+    const aside = [
       ...(shadowed.get(docId) ?? []),
       ...own.filter((c) => c !== kept),
-    ]);
+    ];
+    if (aside.length) shadowed.set(docId, aside);
     candidates.set(docId, [kept]);
     return view();
   });
@@ -611,6 +640,10 @@ export function renameCandidate(
     }
     if (!name.trim()) throw new Error("Give it a name.");
     const next = renamedId(docId, name);
+    // `renamedId` answers "" for a name with nothing to slug -- dots and
+    // dashes alone -- and "" is not an id a manifest can list.
+    if (!isDocId(next))
+      throw new Error("Give it a name with a letter or a digit in it.");
     if (next === docId) throw new Error(`${docId} is the name it already has.`);
     if (
       candidates.has(next) ||
@@ -619,13 +652,7 @@ export function renameCandidate(
     ) {
       throw new Error(`${next} is already taken. Try another name.`);
     }
-    const rest = own.filter((c) => c !== target);
-    // As in `unstage`: the last copy out brings back what `keep` set aside.
-    const back = rest.length === 0 ? (shadowed.get(docId) ?? []) : [];
-    if (rest.length === 0) shadowed.delete(docId);
-    const remaining = [...rest, ...back];
-    if (remaining.length) candidates.set(docId, remaining);
-    else candidates.delete(docId);
+    takeOut(docId, target);
     candidates.set(next, [target]);
     return view();
   });
@@ -676,63 +703,83 @@ export function stageView(): Promise<StageView> {
  *  page waits on it. */
 async function seed(): Promise<void> {
   if (seen) return;
-  // Under the lock, so a commit in another tab is never looked at halfway.
-  const now = await locked(look);
-  let stored: Manifest | null = null;
-  if (now.manifest !== null) {
-    try {
-      stored = parseManifest(now.manifest);
-    } catch (cause) {
-      unreadable = `The workspace in this browser could not be opened: ${messageOf(cause)}`;
-      seen = now;
-      return;
+  // Read into locals under the lock and handed to the stage at the end, all
+  // at once. Under the lock, so a commit in another tab is never looked at
+  // halfway -- not the listing, and not the documents probed after it, which
+  // that commit would be clearing and writing back one by one. All at once,
+  // because a read that throws partway leaves the stage as unseeded as it
+  // found it, and the next look tries again. Marked seen with its slot still
+  // empty, the stage would pass for an empty browser, and a commit would
+  // clear the workspace it had failed to read.
+  type Read =
+    | { now: Snapshot; unreadable: string }
+    | { now: Snapshot; manifest?: undefined }
+    | {
+        now: Snapshot;
+        manifest: Manifest;
+        found: ([string, Staged] | null)[];
+        filled: boolean;
+      };
+  const read = await locked(async (): Promise<Read> => {
+    const now = await look();
+    let stored: Manifest | null = null;
+    if (now.manifest !== null) {
+      try {
+        stored = parseManifest(now.manifest);
+      } catch (cause) {
+        return { now, unreadable: messageOf(cause) };
+      }
     }
-  }
-  // A manifest with no sources is a workspace too: its documents are
-  // missing, and its decisions wait for them. Only a browser with neither
-  // holds nothing -- which is what lets a commit clear it.
-  if (now.manifest === null && now.docs.length === 0) {
+    // A manifest with no sources is a workspace too: its documents are
+    // missing, and its decisions wait for them. Only a browser with neither
+    // holds nothing -- which is what lets a commit clear it.
+    if (now.manifest === null && now.docs.length === 0) return { now };
+
+    // Probed a few at a time, in the listing's order: each probe is a
+    // handful of round trips to the file system, and a corpus of them one
+    // after the other is what the first paint would otherwise wait on.
+    // `pooled` rather than `Promise.all` for the same reason `hashed` is --
+    // the branch that reads a document holds all of it.
+    const manifest = stored ?? emptyManifest();
+    let filled = false;
+    const probe = async (docId: string): Promise<[string, Staged] | null> => {
+      const path = sourcePath(docId);
+      let sha256 = manifest.documents[docId]?.sha256;
+      let bytes: number;
+      if (sha256 === undefined) {
+        const buf = await opfs.readFile(path);
+        if (!buf) return null;
+        sha256 = await opfs.sha256(buf);
+        bytes = buf.byteLength;
+        filled = true;
+      } else {
+        const size = await opfs.size(path);
+        if (size === null) return null;
+        bytes = size;
+      }
+      return [
+        docId,
+        { sha256, name: `${docId}.pdf`, bytes, from: "browser", blob: null },
+      ];
+    };
+    const found = await pooled(
+      now.docs.map((docId) => () => probe(docId)),
+      HASH_WIDTH,
+    );
+    return { now, manifest, found, filled };
+  });
+
+  const { now } = read;
+  if ("unreadable" in read) {
+    unreadable = `The workspace in this browser could not be opened: ${read.unreadable}`;
     seen = now;
     return;
   }
-
-  // Read into locals and handed to the stage at the end, all at once. A read
-  // that throws partway leaves the stage as unseeded as it found it, and the
-  // next look tries again. Marked seen with its slot still empty, the stage
-  // would pass for an empty browser, and a commit would clear the workspace
-  // it had failed to read.
-  //
-  // Probed a few at a time, in the listing's order: each probe is a handful
-  // of round trips to the file system, and a corpus of them one after the
-  // other is what the first paint would otherwise wait on. `pooled` rather
-  // than `Promise.all` for the same reason `hashed` is -- the branch that
-  // reads a document holds all of it.
-  const manifest = stored ?? emptyManifest();
-  let filled = false;
-  const probe = async (docId: string): Promise<[string, Staged] | null> => {
-    const path = sourcePath(docId);
-    let sha256 = manifest.documents[docId]?.sha256;
-    let bytes: number;
-    if (sha256 === undefined) {
-      const buf = await opfs.readFile(path);
-      if (!buf) return null;
-      sha256 = await opfs.sha256(buf);
-      bytes = buf.byteLength;
-      filled = true;
-    } else {
-      const size = await opfs.size(path);
-      if (size === null) return null;
-      bytes = size;
-    }
-    return [
-      docId,
-      { sha256, name: `${docId}.pdf`, bytes, from: "browser", blob: null },
-    ];
-  };
-  const found = await pooled(
-    now.docs.map((docId) => () => probe(docId)),
-    HASH_WIDTH,
-  );
+  if (!read.manifest) {
+    seen = now;
+    return;
+  }
+  const { manifest, found, filled } = read;
   seen = now;
   workspace = { name: null, origin: "browser", manifest };
   for (const entry of found) {
@@ -821,12 +868,22 @@ export function commit(): Promise<{ docs: string[] }> {
     // it -- travels through as it arrived, as `parseManifest` promises.
     // Nothing here reads it yet: the editor, when it lands, is what takes
     // decisions out of an entry and into the document's own files.
+    //
+    // Except for a revised source, whose decisions were made on bytes that
+    // are about to be replaced: they go out of both manifests, and the
+    // document starts over. Out of the interim one too -- left in, a commit
+    // that stopped between the two writes would leave them beside a source
+    // they were not made on, and the next look, finding no hash, would hash
+    // the new bytes and write that hash down beside them: a document that
+    // reads as consistent while every block its edits name belongs to the
+    // PDF it no longer has.
     for (const { row, staged } of chosen) {
       const entry = base.documents[row.docId];
-      final.documents[row.docId] = { ...entry, sha256: staged.sha256 };
+      const held = row.status === "revised" && entry ? bare(entry) : entry;
+      final.documents[row.docId] = { ...held, sha256: staged.sha256 };
       // `undefined` is left out by JSON, so on disk this entry has no hash.
       pending.documents[row.docId] = {
-        ...entry,
+        ...held,
         sha256: staged.blob ? undefined : staged.sha256,
       };
     }

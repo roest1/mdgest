@@ -201,9 +201,22 @@ describe("loose files", () => {
     await expect(stage("renameCandidate", "a", y, "b")).rejects.toThrow(
       "b is already taken",
     );
+    await expect(stage("renameCandidate", "a", y, "---")).rejects.toThrow(
+      "a letter or a digit",
+    );
     const view = await stage("renameCandidate", "a", y, "A 2.pdf");
     expect(statuses(view)).toEqual({ a: "new", "a-2": "new", b: "new" });
     expect(row(view, "a-2").candidates[0].name).toBe("A.PDF");
+  });
+
+  test("an id keep left nothing set aside under is free to rename onto", async () => {
+    const { view } = await stage("stage", [dropped("c.pdf")]);
+    const [{ sha256: c }] = row(view, "c").candidates;
+    await stage("keep", "c", c);
+    await stage("unstage", "c", c);
+    await stage("stage", [dropped("a.pdf", "x"), dropped("A.PDF", "y")]);
+    const renamed = await stage("renameCandidate", "a", await sha("y"), "c");
+    expect(statuses(renamed)).toEqual({ a: "new", c: "new" });
   });
 
   test("unstage takes one copy out, and the last one takes its row", async () => {
@@ -332,6 +345,23 @@ describe("a workspace folder", () => {
     ]);
     expect(third.rejected).toEqual([]);
     expect(third.view.workspace?.name).toBe("c");
+  });
+
+  test("batches stage in the order they were dropped", async () => {
+    const first = await stage("stage", [
+      dropped(`a/${MANIFEST_NAME}`, EMPTY),
+      dropped("a/sources/one.pdf"),
+      zipped("b.zip", { [MANIFEST_NAME]: EMPTY, "sources/two.pdf": "two" }),
+    ]);
+    expect(first.rejected).toEqual([
+      "One workspace at a time: b was not staged, since a came in the same drop.",
+    ]);
+    await stage("discardWorkspace");
+    const second = await stage("stage", [
+      zipped("z.zip", { "x.pdf": "same" }),
+      dropped("y.pdf", "same"),
+    ]);
+    expect(statuses(second.view)).toEqual({ x: "new", y: "duplicate" });
   });
 
   test("loose PDFs join it", async () => {
@@ -476,7 +506,16 @@ describe("commit", () => {
   });
 
   test("replaces a revised source and drops what was derived from it", async () => {
-    await stage("stage", [dropped("a.pdf", "v1")]);
+    const v1 = await sha("v1");
+    await stage("stage", [
+      dropped(
+        `ws/${MANIFEST_NAME}`,
+        manifest({
+          a: { sha256: v1, edits: { blocks: [] }, done: true, note: "kept" },
+        }),
+      ),
+      dropped("ws/sources/a.pdf", "v1"),
+    ]);
     await stage("commit");
     await stage("stageView");
     await opfs("writeText", [".mdgest", "a.pdf", "analysis.json"], "{}");
@@ -495,7 +534,9 @@ describe("commit", () => {
 
     await stage("commit");
     expect(await opfs("readText", ["sources", "a.pdf"])).toBe("v2");
-    expect((await stored())?.documents.a.sha256).toBe(v2);
+    // Decisions made on v1's blocks do not survive beside v2's hash; what
+    // else the entry carried does.
+    expect((await stored())?.documents.a).toEqual({ sha256: v2, note: "kept" });
     expect(await opfs("walk", [".mdgest"])).toEqual([]);
     expect(await opfs("walk", ["markdown"])).toEqual([]);
   });

@@ -53,8 +53,12 @@ function failure(cause: unknown): Failure {
 self.onmessage = async (event: MessageEvent) => {
   const call = event.data as Call;
   try {
+    // Own methods only: `handlers` is an object literal, and a method named
+    // for something on its prototype -- `constructor`, `toString` -- would
+    // otherwise be found there and called with the caller's params.
+    if (!Object.hasOwn(handlers, call.method))
+      throw new Error(`no such engine method: ${call.method}`);
     const handle = handlers[call.method];
-    if (!handle) throw new Error(`no such engine method: ${call.method}`);
     // The one cast in the file: looking a handler up by a runtime
     // `call.method` erases which M this is, and no assertion can put it back.
     const result = await handle(call.params as never);

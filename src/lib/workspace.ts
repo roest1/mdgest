@@ -304,6 +304,17 @@ export const MANIFEST = "mdgest.json";
  * editor's and travels through as it arrived, which is why both types are
  * open. The per-document hash is the one field this side depends on. */
 export type DocEntry = { sha256?: string } & Record<string, unknown>;
+
+/** An entry with its decisions taken out: what stays of one whose source
+ *  is being replaced. The fields are the ones an export packs into an
+ *  entry -- the edits, whether they are done, the reader they were made
+ *  with and the checksum over them -- which an editor, when it lands, reads
+ *  back out. Anything else an entry carries is kept, as `parseManifest`
+ *  promises. */
+export function bare(entry: DocEntry): DocEntry {
+  const { edits: _e, done: _d, reader: _r, check: _c, ...rest } = entry;
+  return rest;
+}
 export interface Manifest {
   format: number;
   /** What the workspace is called: the editor's header shows it and an
