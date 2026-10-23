@@ -55,7 +55,7 @@ On every push to `main` and every pull request.
 |          |                                                                                          |
 | -------- | ---------------------------------------------------------------------------------------- |
 | build    | `vite` (rolldown), `typescript`, `oxlint`, `prettier` (formatting)                       |
-| ui       | `react`, `tailwind`, `lucide-react` icons                                                |
+| ui       | `react`, `react-router`, `tailwind`, `lucide-react` icons                                |
 | fonts    | Literata (serif), Geist Sans (ui), JetBrains Mono (code) - self-hosted via `@fontsource` |
 | archives | `fflate` - unzip on the way in, zip on the way out                                       |
 
