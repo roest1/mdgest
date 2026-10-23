@@ -682,6 +682,9 @@ export function renameCandidate(
 
 export function discardWorkspace(): Promise<StageView> {
   return exclusive(async () => {
+    // Looked at first, like every other entry: the browser's workspace is
+    // discarded whether or not anything has listed it yet.
+    await seed();
     // The browser's own workspace is emptied, readable or not; an upload was
     // only ever staged, and forgetting it is enough.
     if (unreadable || workspace?.origin === "browser")

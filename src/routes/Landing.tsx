@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import { Backdrop } from "src/components/landing/Backdrop";
 import { Brand } from "src/components/landing/Brand";
 import { DropZone } from "src/components/landing/DropZone";
@@ -22,6 +23,7 @@ export default function Landing() {
   // not let the page store anything, which is worth saying before anyone
   // drops a file into it.
   const [problem, setProblem] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   // The first look seeds the stage from OPFS: a workspace left from an
   // earlier visit shows up as the one to continue, before anything is dropped.
@@ -103,10 +105,7 @@ export default function Landing() {
                     // person, which it does only in answer to something they
                     // did. Advisory either way: exporting is the durability.
                     void navigator.storage.persist().catch(() => false);
-                    // The editor is not here yet. Until it is, a committed
-                    // workspace is the one the next look continues, which the
-                    // listing shows on its own.
-                    setView(await engine.stageView());
+                    navigate("/edit");
                   }}
                 />
               ) : (
