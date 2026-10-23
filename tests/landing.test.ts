@@ -11,12 +11,14 @@
  * `engine.ts` is one worker for the life of the page, seeded from OPFS on
  * its first look. The unreadable case needs that first look to find a bad
  * manifest, so it goes first; every test after it starts from a stage
- * drained through the engine's own calls. */
+ * drained through the engine's own calls. The worker outlives a mount, so
+ * `revisit` is a second visit to the landing, not a second engine. */
 
 import { afterEach, expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { createRoot, type Root } from "react-dom/client";
 import { createElement } from "react";
+import { RouterProvider, createMemoryRouter } from "react-router";
 import type * as Opfs from "src/lib/opfs";
 import { engine } from "src/lib/engine";
 import { MANIFEST as MANIFEST_NAME } from "src/lib/workspace";
@@ -31,32 +33,55 @@ const opfs = new Client(new URL("./worker.ts", import.meta.url)).bind<
 let root: Root | null = null;
 let host: HTMLElement | null = null;
 
+/** The landing at its route, and anywhere else as a stand-in for the
+ *  editor, so a commit leaves the landing the way it does in the app. */
 function mount(): void {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  root.render(createElement(Landing));
+  const router = createMemoryRouter([
+    { path: "/", element: createElement(Landing) },
+    { path: "*", element: createElement("p", null, "the editor") },
+  ]);
+  root.render(createElement(RouterProvider, { router }));
 }
 
-/** Everything staged, taken out through the engine, so the next test's
- *  first look finds nothing. Unstaging a kept copy brings back what `keep`
- *  set aside, so it goes round until the listing is empty. */
-async function drain(): Promise<void> {
-  await engine.discardWorkspace();
-  for (let i = 0; i < 20; i++) {
-    const view = await engine.stageView();
-    if (view.rows.length === 0) return;
-    for (const row of view.rows)
-      for (const c of row.candidates) await engine.unstage(row.docId, c.sha256);
-  }
-  throw new Error("the stage would not drain");
-}
-
-afterEach(async () => {
+function unmount(): void {
   root?.unmount();
   host?.remove();
   root = null;
   host = null;
+}
+
+/** Coming back to the landing, which after a commit is the only way to it:
+ *  one more first look, seeded from OPFS the way an earlier visit leaves it. */
+function revisit(): void {
+  unmount();
+  mount();
+}
+
+/** The landing has gone, which is the last thing a commit does. */
+async function left(): Promise<void> {
+  await expect
+    .element(page.getByText("the editor", { exact: true }))
+    .toBeVisible();
+}
+
+/** Everything staged, taken out through the engine, so the next test's
+ *  first look finds nothing. A workspace is discarded whole; unstaging a
+ *  kept copy brings back what `keep` set aside, so that goes round until
+ *  the listing is empty. */
+async function drain(): Promise<void> {
+  let view = await engine.discardWorkspace();
+  for (let i = 0; i < 20 && view.rows.length; i++)
+    for (const row of view.rows)
+      for (const c of row.candidates)
+        view = await engine.unstage(row.docId, c.sha256);
+  if (view.rows.length) throw new Error("the stage would not drain");
+}
+
+afterEach(async () => {
+  unmount();
   await drain();
 });
 
@@ -155,20 +180,15 @@ test("keep settles a conflict the other way", async () => {
   expect(row.candidates.map((c) => c.name)).toEqual(["A.PDF"]);
 });
 
-test("commit writes the workspace, and the page continues it in place", async () => {
+test("commit writes the workspace", async () => {
   mount();
   await drop(file("a.pdf"), file("deep/b.pdf"));
   // Folders first, as a file manager lists them.
   await expect.poll(rows).toEqual(["deep/", "b", "a"]);
   await button("Create new workspace").click();
-
-  await expect.element(text(/Workspace in this browser/)).toBeVisible();
-  await expect.element(text(/2 documents/)).toBeVisible();
-  await expect.poll(rows).toEqual(["deep/", "b", "a"]);
-  await expect.element(button("Continue workspace")).toBeVisible();
+  // The handler commits and then leaves, in that order.
+  await left();
   expect(await engine.docs()).toEqual(["a", "deep/b"]);
-  // The browser's own documents are the editor's to remove, not the landing's.
-  expect(document.querySelector('[aria-label="Remove a"]')).toBeNull();
 });
 
 test("a revised source is asked about before it is replaced", async () => {
@@ -176,7 +196,17 @@ test("a revised source is asked about before it is replaced", async () => {
   await drop(file("a.pdf", "v1"));
   await expect.poll(rows).toEqual(["a"]);
   await button("Create new workspace").click();
+  await left();
+
+  // A later visit is where the committed workspace is seen listed, and
+  // where a revision of it is dropped.
+  revisit();
+  await expect.element(text(/Workspace in this browser/)).toBeVisible();
+  await expect.element(text(/1 document/)).toBeVisible();
+  await expect.poll(rows).toEqual(["a"]);
   await expect.element(button("Continue workspace")).toBeVisible();
+  // The browser's own documents are the editor's to remove, not the landing's.
+  expect(document.querySelector('[aria-label="Remove a"]')).toBeNull();
 
   // Other bytes under the browser's own id are a conflict first: the copy in
   // the browser against the one dropped. Only the arriving copy can be
@@ -202,7 +232,8 @@ test("a revised source is asked about before it is replaced", async () => {
 
   await button("Continue workspace").click();
   await button("Replace and continue").click();
-  await expect.poll(rows).toEqual(["a"]);
+  // Confirmed, and this time the bytes in the browser are the ones dropped.
+  // The listing is not looked at again: replacing leaves for the editor.
   await expect.poll(() => opfs("readText", ["sources", "a.pdf"])).toBe("v2");
 });
 
@@ -211,6 +242,8 @@ test("discarding the browser's workspace is confirmed, and keeps loose copies", 
   await drop(file("a.pdf"));
   await expect.poll(rows).toEqual(["a"]);
   await button("Create new workspace").click();
+  await left();
+  revisit();
   await expect.element(button("Continue workspace")).toBeVisible();
   await drop(file("b.pdf"));
   await expect.poll(rows).toEqual(["a", "b [new]"]);
