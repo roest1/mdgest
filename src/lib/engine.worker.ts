@@ -38,9 +38,12 @@ const handlers: Handlers = {
   renameCandidate: ({ docId, sha256, name }) =>
     stage.renameCandidate(docId, sha256, name),
   discardWorkspace: () => stage.discardWorkspace(),
+  nameStage: ({ name }) => stage.nameStage(name),
   stageView: () => stage.stageView(),
   commit: () => stage.commit(),
   docs: () => stage.docs(),
+  workspaceName: () => stage.workspaceName(),
+  renameWorkspace: ({ name }) => stage.renameWorkspace(name),
 };
 
 function failure(cause: unknown): Failure {

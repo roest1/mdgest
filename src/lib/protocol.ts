@@ -65,6 +65,11 @@ export interface StagedWorkspace {
 
 export interface StageView {
   workspace: StagedWorkspace | null;
+  /** What the workspace will be called once committed: a name given on the
+   *  landing, or else the one its manifest carries. Null for one with
+   *  neither -- loose PDFs, or a workspace never named. Not the folder or
+   *  archive it arrived as, which is `workspace.name`. */
+  title: string | null;
   /** Why the workspace in this browser could not be opened, when it could
    *  not. `workspace` is null then, and nothing stages until it is
    *  discarded. */
@@ -98,6 +103,8 @@ export interface Engine {
    *  not, this empties OPFS -- the landing confirms first. Loose files stay
    *  staged. */
   discardWorkspace: { params: void; result: StageView };
+  /** Name what will be committed. Written by the commit, not before. */
+  nameStage: { params: { name: string }; result: StageView };
   /** The current stage. The first call seeds it from OPFS if a workspace is
    *  still there from an earlier visit. */
   stageView: { params: void; result: StageView };
@@ -105,6 +112,10 @@ export interface Engine {
   commit: { params: void; result: { docs: string[] } };
   /** The committed workspace's documents, by id, for the editor to list. */
   docs: { params: void; result: string[] };
+  /** The committed workspace's name, or null when it has none. */
+  workspaceName: { params: void; result: string | null };
+  /** Name the committed workspace; answers the name as kept. */
+  renameWorkspace: { params: { name: string }; result: string };
 }
 
 export type Method = keyof Engine;

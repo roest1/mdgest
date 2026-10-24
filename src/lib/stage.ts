@@ -59,6 +59,7 @@ import {
   copyManifest,
   docIdFor,
   emptyManifest,
+  exportedName,
   isDocId,
   parseManifest,
   renameStem,
@@ -92,6 +93,10 @@ let workspace: Workspace | null = null;
  *  exported -- so nothing is staged beside it and nothing written over it
  *  until a person discards it. */
 let unreadable: string | null = null;
+/** A name typed on the landing, for the workspace a commit makes or
+ *  continues. Held here like everything else staged and written with the
+ *  rest: until then the manifest keeps the name it had. */
+let named: string | null = null;
 /** By id, in arrival order. More than one entry under an id is a conflict;
  *  the same bytes arriving twice under one id collapse to one. */
 const candidates = new Map<string, Staged[]>();
@@ -184,6 +189,7 @@ export function sweep(): Promise<void> {
 function forget(): void {
   workspace = null;
   unreadable = null;
+  named = null;
   candidates.clear();
   shadowed.clear();
   seen = null;
@@ -254,6 +260,7 @@ function view(): StageView {
       origin: workspace.origin,
       listed: listed.length,
     },
+    title: named ?? workspace?.manifest.name ?? null,
     unreadable,
     rows: rows().map(({ docId, status, own }): StageRow => ({
       docId,
@@ -452,8 +459,12 @@ async function stageGroup(
       },
     );
     if (!manifest) continue;
-    // A workspace with no name of its own takes the one it arrived under.
-    if (manifest.name === undefined && arrivedAs) manifest.name = arrivedAs;
+    // A workspace with no name of its own takes the one it arrived under --
+    // less what an export adds to it, so one exported unnamed comes back so.
+    if (manifest.name === undefined && arrivedAs) {
+      const unexported = cleanName(exportedName(arrivedAs));
+      if (unexported) manifest.name = unexported;
+    }
     arriving = { name, origin: "upload", manifest };
     const sources = root ? `${root}/${SOURCES}` : SOURCES;
     for (const item of inside) {
@@ -691,6 +702,8 @@ export function discardWorkspace(): Promise<StageView> {
       await guarded(() => opfs.clearWorkspace());
     unreadable = null;
     if (!workspace) return view();
+    // A name given here was given to what is being thrown away.
+    named = null;
     const loose = (copies: Staged[] | undefined) =>
       (copies ?? []).filter((c) => c.from === "loose");
     for (const docId of new Set([...candidates.keys(), ...shadowed.keys()])) {
@@ -705,6 +718,20 @@ export function discardWorkspace(): Promise<StageView> {
       else shadowed.delete(docId);
     }
     workspace = null;
+    return view();
+  });
+}
+
+/** Name what will be committed: the workspace being continued, or the one
+ *  the loose files will make. Nothing is written -- the commit writes it,
+ *  with the rest of the stage. */
+export function nameStage(name: string): Promise<StageView> {
+  return exclusive(async () => {
+    await seed();
+    if (unreadable) throw new Error(unreadable);
+    const kept = cleanName(name);
+    if (!kept) throw new Error("A workspace's name cannot be empty.");
+    named = kept;
     return view();
   });
 }
@@ -876,6 +903,7 @@ export function commit(): Promise<{ docs: string[] }> {
     const base = workspace?.manifest ?? emptyManifest();
     const pending = copyManifest(base);
     const final = copyManifest(base);
+    if (named) pending.name = final.name = named;
     // Whatever else an entry carries -- the decisions an export packed into
     // it -- travels through as it arrived, as `parseManifest` promises.
     // Nothing here reads it yet: the editor, when it lands, is what takes
@@ -941,4 +969,55 @@ export function commit(): Promise<{ docs: string[] }> {
  * empty, and what the editor lists is the workspace, not an upload. */
 export function docs(): Promise<string[]> {
   return locked(opfs.docs);
+}
+
+/** The committed workspace's name, or null when it has none -- or no
+ *  manifest that reads, which the landing is where to say. */
+export function workspaceName(): Promise<string | null> {
+  return locked(async () => {
+    const text = await opfs.manifestText();
+    if (text === null) return null;
+    try {
+      return parseManifest(text).name ?? null;
+    } catch {
+      return null;
+    }
+  });
+}
+
+/** Name the committed workspace, and answer the name as kept.
+ *
+ * The one write to the manifest from the editor's side. It goes through
+ * `exclusive` because the stage may hold a look at the manifest it is about
+ * to change: the landing seeded it, and the person came here without
+ * committing. That look is moved on past this write, since this tab made it
+ * -- left as it was, the stage's next commit would find the manifest changed
+ * and blame another tab. A look that was already stale stays stale. */
+export function renameWorkspace(name: string): Promise<string> {
+  const kept = cleanName(name);
+  if (!kept)
+    return Promise.reject(new Error("A workspace's name cannot be empty."));
+  return exclusive(() =>
+    locked(async () => {
+      const before = await look();
+      if (before.manifest === null && before.docs.length === 0) {
+        throw new Error("There is no workspace in this browser to name.");
+      }
+      const manifest =
+        before.manifest === null
+          ? emptyManifest()
+          : parseManifest(before.manifest);
+      manifest.name = kept;
+      await opfs.writeManifest(manifest);
+      // The latest name given wins, wherever it was given: one typed on the
+      // landing and not yet committed would otherwise undo this one. Unless
+      // it was given to an upload, which is another workspace than this.
+      if (workspace?.origin !== "upload") named = null;
+      if (same(before, seen)) {
+        seen = await look();
+        if (workspace?.origin === "browser") workspace.manifest.name = kept;
+      }
+      return kept;
+    }),
+  );
 }

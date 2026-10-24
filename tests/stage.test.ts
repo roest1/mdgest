@@ -387,6 +387,27 @@ describe("a zip", () => {
     expect((await stored())?.name).toBe("drop");
   });
 
+  test("an unnamed workspace's export comes back unnamed, and a named one by its manifest", async () => {
+    await stage("stage", [
+      zipped("mdgest-project-2026-10-20.zip", {
+        [MANIFEST_NAME]: EMPTY,
+        "sources/a.pdf": "a",
+      }),
+    ]);
+    await stage("commit");
+    expect((await stored())?.name).toBeUndefined();
+
+    await opfs("clearWorkspace");
+    await stage("stage", [
+      zipped("renamed-since.zip", {
+        [MANIFEST_NAME]: manifest({}, "Papers"),
+        "sources/a.pdf": "a",
+      }),
+    ]);
+    await stage("commit");
+    expect((await stored())?.name).toBe("Papers");
+  });
+
   test("that is not one takes only itself out of the drop", async () => {
     const { view, rejected } = await stage("stage", [
       new File(["not a zip"], "bad.zip"),
@@ -510,6 +531,68 @@ describe("commit", () => {
     // Nothing of this page's went down.
     expect(await opfs("docs")).toEqual(["a"]);
     expect((await stored())?.name).toBe("elsewhere");
+  });
+});
+
+describe("naming", () => {
+  test("loose files are named before they are a workspace, and the commit writes it", async () => {
+    expect((await stage("stage", [dropped("a.pdf")])).view.title).toBeNull();
+    const view = await stage("nameStage", "  Field  notes ");
+    expect(view.title).toBe("Field notes");
+    // Nothing is written until the commit.
+    expect(await opfs("manifestText")).toBeNull();
+    await stage("commit");
+    expect((await stored())?.name).toBe("Field notes");
+    expect((await stage("stageView")).title).toBe("Field notes");
+  });
+
+  test("a workspace shows its manifest's name until it is given another", async () => {
+    const { view } = await stage("stage", [
+      zipped("drop.zip", {
+        [MANIFEST_NAME]: manifest({}, "Papers"),
+        "sources/a.pdf": "a",
+      }),
+    ]);
+    expect(view.title).toBe("Papers");
+    expect(view.workspace?.name).toBe("drop");
+    expect((await stage("nameStage", "Reports")).title).toBe("Reports");
+    await stage("commit");
+    expect((await stored())?.name).toBe("Reports");
+  });
+
+  test("an empty name is refused, and discarding forgets the one given", async () => {
+    await stage("stage", [dropped("a.pdf")]);
+    await stage("commit");
+    await stage("stageView");
+    await expect(stage("nameStage", " \u200b ")).rejects.toThrow(
+      "cannot be empty",
+    );
+    expect((await stage("nameStage", "Old")).title).toBe("Old");
+    await stage("stage", [dropped("b.pdf")]);
+    expect((await stage("discardWorkspace")).title).toBeNull();
+  });
+
+  test("a rename in the editor wins over a name given here and not committed", async () => {
+    await stage("stage", [dropped("a.pdf")]);
+    await stage("commit");
+    await stage("nameStage", "From the landing");
+    expect(await stage("renameWorkspace", "From the editor")).toBe(
+      "From the editor",
+    );
+    expect((await stage("stageView")).title).toBe("From the editor");
+    await stage("commit");
+    expect((await stored())?.name).toBe("From the editor");
+  });
+
+  test("a rename in the editor leaves the name given to a staged upload", async () => {
+    await stage("stage", [
+      zipped("drop.zip", { [MANIFEST_NAME]: EMPTY, "sources/a.pdf": "a" }),
+    ]);
+    await stage("nameStage", "Q3");
+    // Another tab commits a workspace, and this one's editor names it.
+    await opfs("writeManifest", JSON.parse(manifest({}, "elsewhere")));
+    await stage("renameWorkspace", "Old");
+    expect((await stage("stageView")).title).toBe("Q3");
   });
 });
 
