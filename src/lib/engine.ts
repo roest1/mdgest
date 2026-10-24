@@ -105,4 +105,5 @@ export const engine = {
   docs: () => call("docs", undefined),
   workspaceName: () => call("workspaceName", undefined),
   renameWorkspace: (name: string) => call("renameWorkspace", { name }),
+  source: (docId: string) => call("source", { docId }),
 };

@@ -1021,3 +1021,14 @@ export function renameWorkspace(name: string): Promise<string> {
     }),
   );
 }
+
+/** One committed document's bytes, for the editor to render. Under the lock
+ *  for the same reason as `docs`: a commit in another tab writes sources one
+ *  at a time, and this should see one either before it or after. */
+export function source(docId: string): Promise<Uint8Array<ArrayBuffer>> {
+  return locked(async () => {
+    const bytes = await opfs.readFile(sourcePath(docId));
+    if (!bytes) throw new Error(`${docId} is not in this workspace.`);
+    return bytes;
+  });
+}

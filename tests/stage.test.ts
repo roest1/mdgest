@@ -451,6 +451,15 @@ describe("commit", () => {
     ]);
   });
 
+  test("hands a committed document's bytes back by id, and refuses one it does not hold", async () => {
+    await stage("stage", [dropped("deep/b.pdf")]);
+    await stage("commit");
+    expect(await stage("source", "deep/b")).toEqual(bytes("deep/b.pdf"));
+    await expect(stage("source", "deep/c")).rejects.toThrow(
+      "deep/c is not in this workspace.",
+    );
+  });
+
   test("is refused while a conflict stands, and with nothing staged", async () => {
     await expect(stage("commit")).rejects.toThrow("Nothing staged.");
     await stage("stage", [dropped("a.pdf", "x"), dropped("A.PDF", "y")]);

@@ -116,6 +116,9 @@ export interface Engine {
   workspaceName: { params: void; result: string | null };
   /** Name the committed workspace; answers the name as kept. */
   renameWorkspace: { params: { name: string }; result: string };
+  /** One committed document's bytes, for the editor to render. Moved to the
+   *  page rather than copied, so a large PDF is not held twice. */
+  source: { params: { docId: string }; result: Uint8Array<ArrayBuffer> };
 }
 
 export type Method = keyof Engine;
