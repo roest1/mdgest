@@ -99,7 +99,10 @@ export const engine = {
   renameCandidate: (docId: string, sha256: string, name: string) =>
     call("renameCandidate", { docId, sha256, name }),
   discardWorkspace: () => call("discardWorkspace", undefined),
+  nameStage: (name: string) => call("nameStage", { name }),
   stageView: () => call("stageView", undefined),
   commit: () => call("commit", undefined),
   docs: () => call("docs", undefined),
+  workspaceName: () => call("workspaceName", undefined),
+  renameWorkspace: (name: string) => call("renameWorkspace", { name }),
 };

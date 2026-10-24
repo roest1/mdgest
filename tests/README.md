@@ -27,6 +27,10 @@ page, what commit and discard ask first, and what each leaves on screen.
 The decisions are the engine's and tested there; this checks that the page
 shows them and that every button comes back as the next view.
 
+**The editor.** `editor.test.ts` opens the editor at an address over the
+real engine: a document the workspace holds opens as a tab, and one it does
+not is let go of, in place, with a word on why.
+
 `worker.ts` runs `opfs.ts` and `stage.ts` where they run in the app, since a
 synchronous file handle exists only in a worker; `harness.ts` is the wire
 between it and a test. Nothing under `tests/` is imported from `src/`, so

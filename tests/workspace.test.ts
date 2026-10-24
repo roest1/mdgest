@@ -14,6 +14,8 @@ import {
   copyManifest,
   docIdFor,
   emptyManifest,
+  exportedName,
+  exportName,
   FIGURE_NAME,
   figureName,
   isDocId,
@@ -258,6 +260,34 @@ describe("cleanName", () => {
       "a".repeat(79) + "क\u093f",
     );
     expect(cleanName("a".repeat(80) + "क\u093f")).toBe("a".repeat(80));
+  });
+});
+
+describe("an export's name", () => {
+  const on = new Date(2026, 9, 3);
+
+  test("is the workspace's, what it holds, and the day", () => {
+    expect(exportName("Papers", false, on)).toBe(
+      "Papers-project-2026-10-03.zip",
+    );
+    expect(exportName("Papers", true, on)).toBe(
+      "Papers-markdown-2026-10-03.zip",
+    );
+    // Safe for a file, as the name a person typed is not.
+    expect(exportName("Q3/Q4: plans", false, on)).toBe(
+      "Q3-Q4- plans-project-2026-10-03.zip",
+    );
+    expect(exportName(null, false, on)).toBe("mdgest-project-2026-10-03.zip");
+  });
+
+  test("comes back as the name it was made from", () => {
+    expect(exportedName(stem(exportName("Papers", false, on)))).toBe("Papers");
+    expect(exportedName("my-notes-markdown-2026-10-03")).toBe("my-notes");
+    // An unnamed workspace's export comes back unnamed, not named for its day.
+    expect(exportedName(stem(exportName(null, false, on)))).toBe("");
+    // Anything else is its own name.
+    expect(exportedName("Papers")).toBe("Papers");
+    expect(exportedName("report-2026-10-03")).toBe("report-2026-10-03");
   });
 });
 

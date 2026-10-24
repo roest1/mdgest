@@ -97,6 +97,7 @@ export default function Landing() {
                   onRename={(docId, sha256, name) =>
                     engine.renameCandidate(docId, sha256, name).then(setView)
                   }
+                  onName={(name) => engine.nameStage(name).then(setView)}
                   onDiscard={() => engine.discardWorkspace().then(setView)}
                   onCommit={async () => {
                     await engine.commit();

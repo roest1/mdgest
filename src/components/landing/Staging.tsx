@@ -2,6 +2,7 @@ import { ArrowRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Spinner } from "src/components/shared/Spinner";
 import { FileTree } from "src/components/shared/FileTree";
+import { WorkspaceName } from "src/components/shared/WorkspaceName";
 import type { Candidate, StageRow, StageView, Status } from "src/lib/protocol";
 import type { Entry, Mark } from "src/lib/tree";
 import { human, messageOf, plural } from "src/lib/words";
@@ -181,6 +182,7 @@ export function Staging({
   onRemove,
   onKeep,
   onRename,
+  onName,
   onDiscard,
   onCommit,
 }: {
@@ -188,6 +190,7 @@ export function Staging({
   onRemove: (docId: string, sha256: string) => Promise<void>;
   onKeep: (docId: string, sha256: string) => Promise<void>;
   onRename: (docId: string, sha256: string, name: string) => Promise<void>;
+  onName: (name: string) => Promise<void>;
   onDiscard: () => Promise<void>;
   onCommit: () => Promise<void>;
 }) {
@@ -277,26 +280,30 @@ export function Staging({
 
   return (
     <>
-      {(workspace || unreadable) && (
-        <div className="flex items-center gap-2 px-1 font-mono text-xs text-muted">
-          {unreadable ? (
-            <span className="min-w-0 flex-1 text-amber-400/90">
-              {unreadable}
-            </span>
-          ) : (
-            workspace && (
-              <span className="min-w-0 flex-1 truncate">
+      {/* What is being made or continued, by the name it will have -- the
+          one its export will go out under -- and where it came from. */}
+      <div className="flex items-center gap-2 px-1 font-mono text-xs text-muted">
+        {unreadable ? (
+          <span className="min-w-0 flex-1 text-amber-400/90">{unreadable}</span>
+        ) : (
+          <span className="flex min-w-0 flex-1 items-center">
+            <WorkspaceName
+              name={view.title}
+              onRename={onName}
+              className="-ml-2 max-w-full min-w-0 text-left"
+            />
+            {workspace && (
+              <span className="shrink-0 truncate text-faint">
                 {workspace.origin === "browser"
-                  ? "Workspace in this browser"
-                  : `${workspace.name}/`}
-                <span className="text-faint">
-                  {" "}
-                  · {plural(workspace.listed, "document")}
-                </span>
+                  ? "in this browser"
+                  : `from ${workspace.name}/`}{" "}
+                · {plural(workspace.listed, "document")}
               </span>
-            )
-          )}
-          {confirming ? (
+            )}
+          </span>
+        )}
+        {(workspace || unreadable) &&
+          (confirming ? (
             <span className="flex shrink-0 items-center gap-2">
               <span className="text-amber-400/90">
                 Discard it from this browser?
@@ -324,9 +331,8 @@ export function Staging({
             >
               discard
             </button>
-          )}
-        </div>
-      )}
+          ))}
+      </div>
 
       {/* A workspace that could not be read has nothing to list and nothing
           to continue: the line above, and its discard, are all there is. */}

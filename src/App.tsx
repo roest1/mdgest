@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { ErrorBoundary } from "src/components/shared/ErrorBoundary";
 import { Spinner } from "src/components/shared/Spinner";
 import Landing from "src/routes/Landing";
+import { Tooltips } from "src/components/shared/Tooltip";
 
 const Editor = lazy(() => import("src/routes/Editor"));
 
@@ -28,6 +29,7 @@ function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
+        <Tooltips />
       </ErrorBoundary>
     </BrowserRouter>
   );
