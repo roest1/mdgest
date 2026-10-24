@@ -19,10 +19,12 @@ import {
   readOutline,
   readProperties,
   resolve,
+  targetTop,
   type OutlineNode,
   type PDFDocumentProxy,
   type PDFPageProxy,
   type Properties,
+  type Target,
 } from "src/lib/pdf";
 import { human, messageOf } from "src/lib/words";
 import { sourcePath } from "src/lib/workspace";
@@ -433,21 +435,13 @@ export function PdfPane({ docId }: { docId: string }) {
     frame.current = requestAnimationFrame(measure);
   };
 
-  /** Scroll to a page, or to a point on it given in PDF coordinates. */
+  /** Scroll to a page, or to where a target points on it. */
   const goTo = useCallback(
-    (page: number, top: number | null = null) => {
+    (page: number, target: Target | null = null) => {
       const el = scroller.current;
       const row = rows[rowOf(page)];
       if (!el || !row || !loaded) return;
-      const y =
-        top === null
-          ? 0
-          : Math.max(
-              0,
-              loaded.pages[page - 1]
-                .getViewport({ scale })
-                .convertToViewportPoint(0, top)[1],
-            );
+      const y = target ? targetTop(loaded.pages[page - 1], scale, target) : 0;
       el.scrollTop = row.top + y - GAP / 2;
     },
     [rows, rowOf, loaded, scale],
@@ -464,7 +458,7 @@ export function PdfPane({ docId }: { docId: string }) {
     (node: OutlineNode) => {
       if (!loaded) return;
       resolve(loaded.doc, node.dest).then(
-        (target) => target && goToRef.current(target.page, target.top),
+        (target) => target && goToRef.current(target.page, target),
         (cause: unknown) => console.warn(cause),
       );
     },

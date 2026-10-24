@@ -153,11 +153,13 @@ export async function readOutline(
   return outlineNodes((await doc.getOutline()) ?? []);
 }
 
-/** Where a destination points: a 1-based page, and a height on it in PDF
- *  coordinates where the destination names one. Only the height: the pane
- *  scrolls a heading to the top of the view, never sideways. */
+/** Where a destination points: a 1-based page, and the left edge and the
+ *  height on it in PDF coordinates where the destination names them. The
+ *  pane scrolls only up and down, but on a page turned a quarter the left
+ *  edge is what runs down the screen -- see `targetTop`. */
 export interface Target {
   page: number;
+  left: number | null;
   top: number | null;
 }
 
@@ -195,18 +197,45 @@ export async function resolve(
 
   const num = (v: unknown) =>
     typeof v === "number" && Number.isFinite(v) ? v : null;
+  let left: number | null = null;
   let top: number | null = null;
   switch (kind?.name) {
     case "XYZ":
+      left = num(args[0]);
       top = num(args[1]);
       break;
     case "FitH":
     case "FitBH":
       top = num(args[0]);
       break;
+    case "FitV":
+    case "FitBV":
+      left = num(args[0]);
+      break;
     case "FitR":
+      left = num(args[0]);
       top = num(args[3]);
       break;
   }
-  return { page: index + 1, top };
+  return { page: index + 1, left, top };
+}
+
+/** How far down `page`, drawn at `scale`, a target lies, in CSS px from the
+ *  page's top edge: 0 where the target names nothing that runs down the
+ *  screen. Which of its coordinates does depends on the page's /Rotate --
+ *  the height on an upright or upturned page, the left edge on one turned
+ *  a quarter. */
+export function targetTop(
+  page: PDFPageProxy,
+  scale: number,
+  { left, top }: Target,
+): number {
+  const viewport = page.getViewport({ scale });
+  const sideways = viewport.rotation % 180 !== 0;
+  const at = sideways ? left : top;
+  if (at === null) return 0;
+  const [, y] = sideways
+    ? viewport.convertToViewportPoint(at, 0)
+    : viewport.convertToViewportPoint(0, at);
+  return Math.max(0, y);
 }

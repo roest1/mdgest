@@ -3,7 +3,13 @@
  *  document besides its pages. */
 
 import { expect, test } from "vitest";
-import { openPdf, readOutline, readProperties, resolve } from "src/lib/pdf";
+import {
+  openPdf,
+  readOutline,
+  readProperties,
+  resolve,
+  targetTop,
+} from "src/lib/pdf";
 import { pdfOf } from "./harness";
 
 const LETTER: [number, number] = [612, 792];
@@ -69,10 +75,36 @@ test("an outline entry resolves to its page, and the height it names", async () 
   const doc = await task.promise;
   const outline = await readOutline(doc);
   expect(outline.map((n) => n.title)).toEqual(["Intake", "Outlet (rear)"]);
-  expect(await resolve(doc, outline[0].dest)).toEqual({ page: 2, top: null });
-  expect(await resolve(doc, outline[1].dest)).toEqual({ page: 3, top: 400 });
+  expect(await resolve(doc, outline[0].dest)).toEqual({
+    page: 2,
+    left: null,
+    top: null,
+  });
+  expect(await resolve(doc, outline[1].dest)).toEqual({
+    page: 3,
+    left: null,
+    top: 400,
+  });
   // Somewhere the document does not go.
   expect(await resolve(doc, null)).toBeNull();
   expect(await resolve(doc, [99, { name: "Fit" }])).toBeNull();
   await task.destroy();
+});
+
+test("a target's place down the page follows the page's /Rotate", async () => {
+  const at = { page: 1, left: 100, top: 400 };
+  const down = async (rotate: number) => {
+    const task = openPdf(pdfOf([LETTER], { rotate }));
+    const page = await (await task.promise).getPage(1);
+    const y = targetTop(page, 1, at);
+    const none = targetTop(page, 1, { page: 1, left: null, top: null });
+    await task.destroy();
+    return [y, none];
+  };
+  // Upright, the height counts from the bottom; upturned, from the top.
+  expect(await down(0)).toEqual([792 - 400, 0]);
+  expect(await down(180)).toEqual([400, 0]);
+  // A quarter turn: the left edge runs down the screen.
+  expect(await down(90)).toEqual([100, 0]);
+  expect(await down(270)).toEqual([612 - 100, 0]);
 });

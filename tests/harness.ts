@@ -105,11 +105,13 @@ export const zipOf = (files: Record<string, string>): Uint8Array<ArrayBuffer> =>
   ) as Uint8Array<ArrayBuffer>;
 
 /** What `pdfOf` writes besides the pages: an info dictionary of plain
- *  strings, and a flat outline whose entries each point at the top of a
- *  page, or a height on it in points from the bottom. */
+ *  strings, a flat outline whose entries each point at the top of a page,
+ *  or at a left edge and a height on it in points from the bottom-left
+ *  corner, and a /Rotate for every page. */
 export interface PdfExtras {
   info?: Record<string, string>;
-  outline?: { title: string; page: number; top?: number }[];
+  outline?: { title: string; page: number; left?: number; top?: number }[];
+  rotate?: number;
 }
 
 /** A PDF of blank pages, one per size given, in points, each with its number
@@ -118,7 +120,7 @@ export interface PdfExtras {
  *  tests need no PDF library and no document of anyone's. */
 export function pdfOf(
   sizes: [number, number][],
-  { info, outline = [] }: PdfExtras = {},
+  { info, outline = [], rotate }: PdfExtras = {},
 ): Uint8Array<ArrayBuffer> {
   const objects: string[] = [];
   /** Reserve an object's number now and write its body later, so objects
@@ -150,7 +152,7 @@ export function pdfOf(
     const text = `BT /F1 24 Tf 36 ${h - 60} Td (Page ${i + 1}) Tj ET`;
     set(
       pageRefs[i],
-      `<< /Type /Page /Parent ${pages} 0 R /MediaBox [0 0 ${w} ${h}] /Resources << /Font << /F1 ${font} 0 R >> >> /Contents ${contents[i]} 0 R >>`,
+      `<< /Type /Page /Parent ${pages} 0 R /MediaBox [0 0 ${w} ${h}]${rotate ? ` /Rotate ${rotate}` : ""} /Resources << /Font << /F1 ${font} 0 R >> >> /Contents ${contents[i]} 0 R >>`,
     );
     set(
       contents[i],
@@ -162,14 +164,14 @@ export function pdfOf(
       outlines,
       `<< /Type /Outlines /First ${entries[0]} 0 R /Last ${entries.at(-1)} 0 R /Count ${entries.length} >>`,
     );
-    outline.forEach(({ title, page, top }, i) => {
+    outline.forEach(({ title, page, left, top }, i) => {
       const links = [
         i > 0 ? `/Prev ${entries[i - 1]} 0 R` : "",
         i < entries.length - 1 ? `/Next ${entries[i + 1]} 0 R` : "",
       ].join(" ");
       set(
         entries[i],
-        `<< /Title ${literal(title)} /Parent ${outlines} 0 R ${links} /Dest [${pageRefs[page - 1]} 0 R /XYZ null ${top ?? "null"} null] >>`,
+        `<< /Title ${literal(title)} /Parent ${outlines} 0 R ${links} /Dest [${pageRefs[page - 1]} 0 R /XYZ ${left ?? "null"} ${top ?? "null"} null] >>`,
       );
     });
   }
