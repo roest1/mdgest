@@ -8,7 +8,7 @@
  * discarded after each test, so the next starts from nothing. */
 
 import { afterEach, beforeAll, expect, test } from "vitest";
-import { page } from "vitest/browser";
+import { page, userEvent } from "vitest/browser";
 import { createRoot, type Root } from "react-dom/client";
 import { createElement } from "react";
 import { RouterProvider, createMemoryRouter } from "react-router";
@@ -167,6 +167,66 @@ test("fitted, two-page view fits both pages in the pane", async () => {
     .querySelector("[data-paper]")!
     .closest(".overflow-auto")!;
   expect(column.scrollWidth).toBeLessThanOrEqual(column.clientWidth);
+});
+
+test("two-page view goes back to fitting, whatever zoom was picked", async () => {
+  await workspace(pdf(4));
+  mount("/edit/a");
+  await pagesDrawn();
+  await page.getByTitle("Zoom in").click();
+  await page.getByTitle("Zoom in").click();
+  await pdfMenu().click();
+  await page.getByRole("menuitemcheckbox", { name: "Two page view" }).click();
+  const column = () =>
+    document.querySelector("[data-paper]")!.closest(".overflow-auto")!;
+  await expect
+    .poll(() => column().scrollWidth <= column().clientWidth)
+    .toBe(true);
+});
+
+test("dragging the split moves the pages with it, and draws them once, after", async () => {
+  await workspace(pdf(4));
+  mount("/edit/a");
+  await pagesDrawn();
+  const paper = () => document.querySelector<HTMLElement>("[data-paper]")!;
+  // Every canvas put into the first page's slot is one drawing of it.
+  let drawings = 0;
+  new MutationObserver(() => drawings++).observe(paper().firstElementChild!, {
+    childList: true,
+  });
+  const frame = () => new Promise((r) => requestAnimationFrame(r));
+  const divider = document.querySelector('[role="separator"]')!;
+  const widths: number[] = [paper().offsetWidth];
+  // A step a frame, as a drag moves it: each one re-lays the page by the
+  // frame after, well inside the beat a drawing waits for.
+  for (let i = 0; i < 4; i++) {
+    divider.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }),
+    );
+    await frame();
+    await frame();
+    widths.push(paper().offsetWidth);
+  }
+  for (let i = 1; i < widths.length; i++)
+    expect(widths[i]).toBeLessThan(widths[i - 1]);
+  expect(drawings).toBe(0);
+  await expect.poll(() => drawings).toBe(1);
+});
+
+test("a long document holds only the pages near the view", async () => {
+  await workspace(pdf(60));
+  mount("/edit/a");
+  await pagesDrawn();
+  expect(laidOut()).toBeLessThan(10);
+  const input = page.getByLabelText("Page");
+  await input.fill("45");
+  await userEvent.keyboard("{Enter}");
+  await onPage(45);
+  await expect
+    .poll(() => document.querySelector('[data-paper="45"] canvas'))
+    .not.toBeNull();
+  expect(document.querySelector('[data-paper="1"]')).toBeNull();
+  expect(laidOut()).toBeLessThan(10);
 });
 
 test("a file that is not a PDF opens to a word on why, not a spinner", async () => {

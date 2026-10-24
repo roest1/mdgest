@@ -11,6 +11,7 @@ import {
   useState,
   ViewTransition,
 } from "react";
+import { flushSync } from "react-dom";
 import { Spinner } from "src/components/shared/Spinner";
 import { engine } from "src/lib/engine";
 import {
@@ -129,6 +130,26 @@ function useDocument(docId: string): {
 
   return { loaded, problem };
 }
+
+/** The zoom that fits the first row -- the first page, or the first two side
+ *  by side -- to a pane `width` CSS px wide, or null with nothing to fit. To
+ *  the first row rather than the widest: one landscape fold-out would
+ *  otherwise shrink every portrait page around it. */
+function fitZoom(
+  sizes: { w: number; h: number }[],
+  twoPage: boolean,
+  width: number,
+): number | null {
+  const first = sizes.slice(0, twoPage ? 2 : 1);
+  if (first.length === 0 || width === 0) return null;
+  const room = width - 2 * PAD - GAP * (first.length - 1);
+  const points = first.reduce((sum, s) => sum + s.w, 0);
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, room / (points * PX_PER_PT)));
+}
+
+/** How long the pane's width holds still before the pages are drawn again
+ *  at it, in ms. */
+const SETTLE = 150;
 
 /** What `sizes` is before a document has loaded: one value, so nothing
  *  downstream recomputes for a fresh empty array each render. */
@@ -284,36 +305,40 @@ export function PdfPane({ docId }: { docId: string }) {
   // One per document -- the pane is keyed by it -- fed by every finished
   // render and read by the thumbnails.
   const [snapshots] = useState(() => new Snapshots(THUMB_WIDTH));
-  // The zoom fits the first row to the pane's width -- the first page, or
-  // the first two side by side -- and keeps fitting it as the pane changes
-  // size, until one is picked with the buttons. To the first row rather
-  // than the widest: one landscape fold-out would otherwise shrink every
-  // portrait page around it.
+  // The zoom fits the first row to the pane's width, and keeps fitting it
+  // as the pane changes size, until one is picked with the buttons.
   const [picked, setPicked] = useState<number | null>(null);
+  // The pane's width as it is, and as it was when it last held still. The
+  // first places the pages, every frame of a drag; the second is what they
+  // are drawn at, once the drag is over -- see the observer below.
   const [paneWidth, setPaneWidth] = useState(0);
+  const [settledWidth, setSettledWidth] = useState(0);
   const [range, setRange] = useState({ first: 0, last: -1, current: 1 });
   const scroller = useRef<HTMLDivElement>(null);
 
   const sizes = loaded?.sizes ?? NO_SIZES;
-  const first = sizes.slice(0, twoPage ? 2 : 1);
-  const fit =
-    first.length && paneWidth
-      ? Math.min(
-          MAX_ZOOM,
-          Math.max(
-            MIN_ZOOM,
-            (paneWidth - 2 * PAD - GAP * (first.length - 1)) /
-              (first.reduce((sum, s) => sum + s.w, 0) * PX_PER_PT),
-          ),
-        )
-      : null;
-  const zoom = picked ?? fit;
+  const zoom = picked ?? fitZoom(sizes, twoPage, paneWidth);
   const ready = loaded !== null && zoom !== null;
+  // Where the pages are laid out, and what they are drawn at. The same but
+  // while the pane is being resized with the zoom on fit: then the boxes
+  // follow the pane and the last drawing stretches to fill them.
   const scale = (zoom ?? 1) * PX_PER_PT;
+  const drawScale =
+    (picked ?? fitZoom(sizes, twoPage, settledWidth) ?? 1) * PX_PER_PT;
   const rows = useMemo(
     () => layout(sizes, scale, twoPage),
     [sizes, scale, twoPage],
   );
+  // The column's extent: as tall as every row, and as wide as the pane or
+  // the widest row, whichever is wider.
+  const column = useMemo(() => {
+    const last = rows.at(-1);
+    const widest = rows.reduce((w, row) => Math.max(w, row.width), 0);
+    return {
+      width: Math.max(paneWidth, widest + 2 * PAD),
+      height: last ? last.top + last.height + PAD : 0,
+    };
+  }, [rows, paneWidth]);
   // The row a page sits in follows from the pairing alone: `layout` takes
   // the pages strictly in order, one or two at a time.
   const rowOf = useCallback(
@@ -368,28 +393,32 @@ export function PdfPane({ docId }: { docId: string }) {
     measureRef.current = measure;
   });
 
-  // The view changes size with the window and the sidebars, not only with
-  // scrolling. Read once here as well as observed: an observer's first
-  // report waits for a rendering step, which a background tab does not take,
-  // and the fit should not wait for the tab to be looked at. `clientWidth`
-  // leaves out the scrollbar, whose gutter is always kept.
+  // The view changes size with the window, the split and both sidebars,
+  // not only with scrolling. Read once here as well as observed: an
+  // observer's first report waits for a rendering step, which a background
+  // tab does not take, and the fit should not wait for the tab to be looked
+  // at. `clientWidth` leaves out the scrollbar, whose gutter is always kept.
   //
-  // One observer for the pane's whole life, and its reports settle for a
-  // beat before landing: dragging the split divider resizes the pane on
-  // every pointer move, and in fit mode each width would otherwise re-lay
-  // the column and rasterise every visible page, only to be thrown away by
-  // the next move. CSS stretches the pages meanwhile.
+  // One observer for the pane's whole life. Each report re-lays the column
+  // before the frame is painted, so the pages follow a dragged divider or a
+  // sliding sidebar exactly; that is arithmetic and box sizes, no drawing.
+  // Drawing waits for the width to hold still: in fit mode every width is a
+  // new zoom, and rasterising every visible page for each would be thrown
+  // away by the next.
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
     setPaneWidth(el.clientWidth);
+    setSettledWidth(el.clientWidth);
     let settle = 0;
     const ro = new ResizeObserver(() => {
+      const width = el.clientWidth;
+      // Synchronously, so this frame paints the new layout rather than the
+      // old one squeezed into the new width.
+      flushSync(() => setPaneWidth(width));
+      measureRef.current();
       clearTimeout(settle);
-      settle = window.setTimeout(() => {
-        setPaneWidth(el.clientWidth);
-        measureRef.current();
-      }, 150);
+      settle = window.setTimeout(() => setSettledWidth(width), SETTLE);
     });
     ro.observe(el);
     return () => {
@@ -482,7 +511,12 @@ export function PdfPane({ docId }: { docId: string }) {
             {
               label: "Two page view",
               checked: twoPage,
-              onPick: () => setTwoPage((t) => !t),
+              // Back to fitting, so the pages land side by side in the
+              // pane -- or one alone across it -- whatever zoom was picked.
+              onPick: () => {
+                setTwoPage((t) => !t);
+                setPicked(null);
+              },
             },
             "divider",
             {
@@ -535,27 +569,30 @@ export function PdfPane({ docId }: { docId: string }) {
                 <Spinner className="h-5 w-5 text-muted" />
               </div>
             ) : (
+              // The whole column's size, and in it only the rows near the
+              // view, each where `layout` puts it: a re-lay -- every frame of
+              // a drag -- touches a handful of rows however long the
+              // document is, and a row that leaves takes its canvas with it.
+              //
               // Each row centered in the pane, not in the column: a landscape
               // page wider than the pane widens the column, and centering in
               // that would push every portrait page off to the right. A row
               // too wide to center starts at the left edge instead, so all of
               // its overflow is to the right, where it can be scrolled to.
               <div
-                className="flex w-max min-w-full flex-col"
-                style={{ padding: PAD, gap: GAP }}
+                className="relative"
+                style={{ width: column.width, height: column.height }}
               >
-                {rows.map((row, i) => (
+                {rows.slice(range.first, range.last + 1).map((row) => (
                   <PageRow
                     key={row.pages[0].n}
                     row={row}
                     pages={loaded.pages}
-                    scale={scale}
+                    drawScale={drawScale}
                     snapshots={snapshots}
-                    active={i >= range.first && i <= range.last}
-                    marginLeft={Math.max(
-                      0,
-                      (paneWidth - 2 * PAD - row.width) / 2,
-                    )}
+                    left={
+                      PAD + Math.max(0, (paneWidth - 2 * PAD - row.width) / 2)
+                    }
                   />
                 ))}
               </div>
@@ -574,28 +611,27 @@ export function PdfPane({ docId }: { docId: string }) {
   );
 }
 
-/** One row of the column. Memoised: scrolling moves `range` every page or
- *  so, and only the rows whose `active` flipped should pay for it -- not
- *  every row of a thousand-page document. */
+/** One row of the column, placed where `layout` put it. Memoised: a
+ *  scroll that brings a row in should not re-render the rows already there.
+ *  The row's boxes come from `row`; `drawScale` is what the pages are drawn
+ *  at, which lags the boxes while the pane is resized. */
 const PageRow = memo(function PageRow({
   row,
   pages,
-  scale,
+  drawScale,
   snapshots,
-  active,
-  marginLeft,
+  left,
 }: {
   row: Row;
   pages: PDFPageProxy[];
-  scale: number;
+  drawScale: number;
   snapshots: Snapshots;
-  active: boolean;
-  marginLeft: number;
+  left: number;
 }) {
   return (
     <div
-      className="flex items-start"
-      style={{ gap: GAP, height: row.height, marginLeft }}
+      className="absolute flex items-start"
+      style={{ gap: GAP, top: row.top, left, height: row.height }}
     >
       {row.pages.map((p) => (
         <div
@@ -606,8 +642,8 @@ const PageRow = memo(function PageRow({
         >
           <PageCanvas
             page={pages[p.n - 1]}
-            scale={scale}
-            active={active}
+            scale={drawScale}
+            active
             snapshots={snapshots}
           />
         </div>
