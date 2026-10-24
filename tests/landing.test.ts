@@ -15,7 +15,7 @@
  * `revisit` is a second visit to the landing, not a second engine. */
 
 import { afterEach, expect, test, vi } from "vitest";
-import { page } from "vitest/browser";
+import { page, userEvent } from "vitest/browser";
 import { createRoot, type Root } from "react-dom/client";
 import { createElement } from "react";
 import { RouterProvider, createMemoryRouter } from "react-router";
@@ -201,7 +201,7 @@ test("a revised source is asked about before it is replaced", async () => {
   // A later visit is where the committed workspace is seen listed, and
   // where a revision of it is dropped.
   revisit();
-  await expect.element(text(/Workspace in this browser/)).toBeVisible();
+  await expect.element(text(/in this browser/)).toBeVisible();
   await expect.element(text(/1 document/)).toBeVisible();
   await expect.poll(rows).toEqual(["a"]);
   await expect.element(button("Continue workspace")).toBeVisible();
@@ -269,11 +269,25 @@ test("an uploaded workspace is forgotten without a question", async () => {
     file(`ws/${MANIFEST_NAME}`, JSON.stringify({ format: 1, documents: {} })),
     file("ws/sources/one.pdf"),
   );
-  await expect.element(text(/^ws\//)).toBeVisible();
+  await expect.element(text(/^from ws\//)).toBeVisible();
   // The count is what the manifest lists, not what arrived beside it.
   await expect.element(text(/0 documents/)).toBeVisible();
   await expect.poll(rows).toEqual(["one [new]"]);
   await button("discard").click();
   await expect.poll(rows).toEqual([]);
-  await expect.element(text(/^ws\//)).not.toBeInTheDocument();
+  await expect.element(text(/^from ws\//)).not.toBeInTheDocument();
+});
+
+test("the workspace is named before it is made, and made under that name", async () => {
+  mount();
+  await drop(file("a.pdf"));
+  await expect.poll(rows).toEqual(["a"]);
+  await button("untitled workspace").click();
+  const field = page.getByLabelText("Workspace name");
+  await field.fill("Field notes");
+  await userEvent.keyboard("{Enter}");
+  await expect.element(button("Field notes")).toBeVisible();
+  await button("Create new workspace").click();
+  await left();
+  expect(await engine.workspaceName()).toBe("Field notes");
 });
