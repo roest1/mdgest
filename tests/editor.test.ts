@@ -13,6 +13,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { createElement } from "react";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { engine } from "src/lib/engine";
+import { inView, layout } from "src/components/editor/column";
 import Editor from "src/routes/Editor";
 import { pdfOf } from "./harness";
 
@@ -114,6 +115,21 @@ test("the zoom steps from the fit, and two-page view pairs the pages", async () 
         document.querySelector("[data-page]")!.parentElement!.children.length,
     )
     .toBe(2);
+});
+
+test("a page typed into the bar is the one it shows, however short the pages", () => {
+  // Twelve Letter pages at 25%: rows about 264px tall, and a 900px view
+  // whose probe, a third of the way down, falls in the row after the top one.
+  const rows = layout(
+    Array(12).fill({ w: 612, h: 792 }),
+    0.25 * (96 / 72),
+    false,
+  );
+  const top = rows[4].top - 8; // where `goTo(5)` scrolls
+  expect(inView(rows, top, 900, false).current).toBe(5);
+  // A tall page holding the probe, with the next starting below it, stays.
+  const tall = layout(Array(3).fill({ w: 612, h: 792 }), 1.5, false);
+  expect(inView(tall, tall[0].top + 200, 900, false).current).toBe(1);
 });
 
 test("a file that is not a PDF opens to a word on why, not a spinner", async () => {
