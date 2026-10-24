@@ -1,6 +1,7 @@
 import { RenderingCancelledException } from "pdfjs-dist";
 import { useEffect, useRef } from "react";
 import type { PDFPageProxy } from "src/lib/pdf";
+import type { Snapshots } from "./snapshots";
 
 /** The most device pixels one canvas is given, as pdf.js's own viewer caps
  *  it. Past this a page at high zoom stops getting sharper and starts costing
@@ -26,15 +27,27 @@ function blank(width: number, height: number): HTMLCanvasElement {
  * pdf.js the page's operator list and decoded images, which it would
  * otherwise keep for every page ever drawn. A redraw at a new scale goes
  * into a fresh canvas that replaces the old one when it is done, so zooming
- * stretches the last picture instead of flashing white. */
+ * stretches the last picture instead of flashing white.
+ *
+ * With `snapshots`, every finished render is published there, and with
+ * `preview` a published one is drawn in place of rendering: right for a
+ * thumbnail, whose resolution a snapshot already matches, so a page the
+ * column has drawn costs the strip one `drawImage` -- and wrong for the
+ * column, which needs the page at its real size. */
 export function PageCanvas({
   page,
   scale,
   active,
+  snapshots,
+  preview = false,
 }: {
   page: PDFPageProxy;
   scale: number;
   active: boolean;
+  /** Where this document's finished renders are kept for the thumbnails. */
+  snapshots?: Snapshots;
+  /** Draw from a kept snapshot when there is one, render only otherwise. */
+  preview?: boolean;
 }) {
   const slot = useRef<HTMLDivElement>(null);
   // The scale the canvas in the slot was drawn at; 0 for an empty slot.
@@ -50,6 +63,17 @@ export function PageCanvas({
       return;
     }
     if (drawn.current === scale) return;
+
+    if (preview && snapshots) {
+      const shot = snapshots.get(page.pageNumber);
+      if (shot) {
+        const canvas = blank(shot.width, shot.height);
+        canvas.getContext("2d")?.drawImage(shot, 0, 0);
+        el.replaceChildren(canvas);
+        drawn.current = scale;
+        return;
+      }
+    }
 
     const viewport = page.getViewport({ scale });
     const fit = Math.sqrt(MAX_PIXELS / (viewport.width * viewport.height));
@@ -68,6 +92,7 @@ export function PageCanvas({
       () => {
         el.replaceChildren(canvas);
         drawn.current = scale;
+        snapshots?.put(page.pageNumber, canvas);
       },
       (cause: unknown) => {
         // Canceled is this effect's own cleanup. Anything else is a page
@@ -78,7 +103,7 @@ export function PageCanvas({
       },
     );
     return () => task.cancel();
-  }, [page, scale, active]);
+  }, [page, scale, active, snapshots, preview]);
 
   return <div ref={slot} className="absolute inset-0" />;
 }

@@ -31,12 +31,18 @@ shows them and that every button comes back as the next view.
 **The editor.** `editor.test.ts` opens the editor at an address over the
 real engine: a document the workspace holds opens as a tab, and one it does
 not is let go of, in place, with a word on why. An open document's pages are
-laid out and drawn, the zoom and two-page view re-lay them, and a file that
-is not a PDF says so. `pdf.test.ts` covers pdf.js as `pdf.ts` sets it up:
-one worker for every document, so letting one go never refuses the next.
+laid out and drawn, the zoom and two-page view re-lay them, the sidebar's
+thumbnails and outline go where they point, the properties dialog shows
+what the file says, and a file that is not a PDF says so. These tests load
+the app's stylesheet, so what is hidden is hidden and what scrolls scrolls.
+`pdf.test.ts` covers pdf.js as `pdf.ts` sets it up: one worker for every
+document, so letting one go never refuses the next; and what is read out of
+a document besides its pages -- its properties, its outline and where each
+entry points.
 
 The PDFs are built by `pdfOf` in `harness.ts`, by hand: blank pages with a
-number on each, so no document of anyone's is needed.
+number on each, and an info dictionary and outline when a test asks, so no
+document of anyone's is needed.
 
 `worker.ts` runs `opfs.ts` and `stage.ts` where they run in the app, since a
 synchronous file handle exists only in a worker; `harness.ts` is the wire

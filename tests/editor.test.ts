@@ -7,7 +7,7 @@
  * workspace is committed through the engine, and the browser's copy of it
  * discarded after each test, so the next starts from nothing. */
 
-import { afterEach, expect, test } from "vitest";
+import { afterEach, beforeAll, expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { createRoot, type Root } from "react-dom/client";
 import { createElement } from "react";
@@ -15,7 +15,9 @@ import { RouterProvider, createMemoryRouter } from "react-router";
 import { engine } from "src/lib/engine";
 import { inView, layout } from "src/components/editor/column";
 import Editor from "src/routes/Editor";
-import { pdfOf } from "./harness";
+// The app's own layout: which panes are hidden, and what scrolls.
+import "src/index.css";
+import { pdfOf, type PdfExtras } from "./harness";
 
 let root: Root | null = null;
 let host: HTMLElement | null = null;
@@ -35,6 +37,10 @@ function mount(path: string): void {
   );
   root.render(createElement(RouterProvider, { router }));
 }
+
+// Wide enough for the explorer, both panes and the PDF pane's sidebar, as
+// on the desktops and tablets the editor is for.
+beforeAll(() => page.viewport(1280, 800));
 
 afterEach(async () => {
   root?.unmount();
@@ -58,9 +64,25 @@ async function workspace(...files: (string | File)[]): Promise<void> {
 /** US Letter, in points. */
 const LETTER: [number, number] = [612, 792];
 
+/** `a.pdf`, of `pages` letter pages, with `extras`. */
+const pdf = (pages: number, extras?: PdfExtras) =>
+  new File([pdfOf(Array(pages).fill(LETTER), extras)], "a.pdf");
+
+/** The page the PDF pane says is current, once it says `n`. */
+const onPage = (n: number) =>
+  expect.element(page.getByLabelText("Page")).toHaveValue(String(n));
+
+/** The PDF pane's three dots: the first of the two panes' menus. */
+const pdfMenu = () => page.getByTitle("More").first();
+
 /** The pages laid out in the PDF pane, and how many of them are drawn. */
-const laidOut = () => document.querySelectorAll("[data-page]").length;
-const drawn = () => document.querySelectorAll("[data-page] canvas").length;
+const laidOut = () => document.querySelectorAll("[data-paper]").length;
+const drawn = () => document.querySelectorAll("[data-paper] canvas").length;
+
+/** Until the PDF pane has drawn a page. Longer than a poll's own second:
+ *  the first document a test run opens starts pdf.js's worker. */
+const pagesDrawn = () =>
+  expect.poll(drawn, { timeout: 15_000 }).toBeGreaterThan(0);
 
 /** The open tabs, by the id each one's title carries. */
 const tabs = () =>
@@ -87,32 +109,31 @@ test("an address the workspace does not hold opens nothing, and says so", async 
 });
 
 test("an open document's pages are laid out, and the ones in view drawn", async () => {
-  await workspace(new File([pdfOf(LETTER, LETTER, LETTER)], "a.pdf"));
+  await workspace(new File([pdfOf([LETTER, LETTER, LETTER])], "a.pdf"));
   mount("/edit/a");
   await expect.element(page.getByText("/ 3")).toBeVisible();
   expect(laidOut()).toBe(3);
-  await expect.poll(drawn).toBeGreaterThan(0);
+  await pagesDrawn();
   await expect.element(page.getByLabelText("Page")).toHaveValue("1");
 });
 
 test("the zoom steps from the fit, and two-page view pairs the pages", async () => {
-  await workspace(new File([pdfOf(LETTER, LETTER, LETTER)], "a.pdf"));
+  await workspace(new File([pdfOf([LETTER, LETTER, LETTER])], "a.pdf"));
   mount("/edit/a");
-  await expect.poll(drawn).toBeGreaterThan(0);
+  await pagesDrawn();
   const width = () =>
-    document.querySelector<HTMLElement>("[data-page]")!.offsetWidth;
+    document.querySelector<HTMLElement>("[data-paper]")!.offsetWidth;
   const before = width();
   await page.getByTitle("Zoom in").click();
   await expect.poll(width).toBeGreaterThan(before);
 
-  // The PDF pane's, the first of the two panes' menus.
-  await page.getByTitle("More").first().click();
+  await pdfMenu().click();
   await page.getByRole("menuitemcheckbox", { name: "Two page view" }).click();
   // Three pages in two rows: the first two side by side, the third alone.
   await expect
     .poll(
       () =>
-        document.querySelector("[data-page]")!.parentElement!.children.length,
+        document.querySelector("[data-paper]")!.parentElement!.children.length,
     )
     .toBe(2);
 });
@@ -132,6 +153,22 @@ test("a page typed into the bar is the one it shows, however short the pages", (
   expect(inView(tall, tall[0].top + 200, 900, false).current).toBe(1);
 });
 
+test("fitted, two-page view fits both pages in the pane", async () => {
+  await workspace(pdf(4));
+  mount("/edit/a");
+  await pagesDrawn();
+  const zoom = () => document.querySelector("[data-paper]")!.clientWidth;
+  const single = zoom();
+  await pdfMenu().click();
+  await page.getByRole("menuitemcheckbox", { name: "Two page view" }).click();
+  await expect.poll(zoom).toBeLessThan(single);
+  // Nothing to scroll sideways to.
+  const column = document
+    .querySelector("[data-paper]")!
+    .closest(".overflow-auto")!;
+  expect(column.scrollWidth).toBeLessThanOrEqual(column.clientWidth);
+});
+
 test("a file that is not a PDF opens to a word on why, not a spinner", async () => {
   await workspace("a.pdf");
   mount("/edit/a");
@@ -143,4 +180,68 @@ test("a file that is not a PDF opens to a word on why, not a spinner", async () 
     )
     .toBeVisible();
   expect(laidOut()).toBe(0);
+});
+
+test("document properties are the file's own, and close again", async () => {
+  await workspace(pdf(2, { info: { Title: "Pump manual", Author: "Acme" } }));
+  mount("/edit/a");
+  await pagesDrawn();
+  await pdfMenu().click();
+  await page.getByRole("menuitem", { name: "Document properties" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect.element(dialog.getByText("Pump manual")).toBeVisible();
+  await expect.element(dialog.getByText("Acme")).toBeVisible();
+  await expect.element(dialog.getByText("a.pdf")).toBeVisible();
+  await expect
+    .element(dialog.getByText("8.50 × 11.00 in (portrait)"))
+    .toBeVisible();
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect.element(dialog).not.toBeInTheDocument();
+});
+
+test("the thumbnails are drawn when shown, follow the page, and go to one", async () => {
+  await workspace(pdf(10));
+  mount("/edit/a");
+  await pagesDrawn();
+  const thumbs = () =>
+    document.querySelectorAll('[role="tabpanel"] [data-page] canvas').length;
+  // Hidden, none is drawn.
+  expect(thumbs()).toBe(0);
+
+  await page.getByTitle("Show sidebar").click();
+  await expect.poll(thumbs).toBeGreaterThan(0);
+  await page.getByTitle("Page 6").click();
+  await onPage(6);
+  await expect
+    .element(page.getByTitle("Page 6"))
+    .toHaveAttribute("aria-current", "page");
+});
+
+test("an outline entry goes to where it points", async () => {
+  await workspace(
+    pdf(10, {
+      outline: [
+        { title: "Intake", page: 4 },
+        { title: "Outlet", page: 7 },
+      ],
+    }),
+  );
+  mount("/edit/a");
+  await pagesDrawn();
+  await page.getByTitle("Show sidebar").click();
+  await page.getByRole("tab", { name: "Outline" }).click();
+  await page.getByRole("button", { name: "Outlet" }).click();
+  await onPage(7);
+  await page.getByRole("button", { name: "Intake" }).click();
+  await onPage(4);
+});
+
+test("a document with no outline has its tab, disabled", async () => {
+  await workspace(pdf(2));
+  mount("/edit/a");
+  await pagesDrawn();
+  await page.getByTitle("Show sidebar").click();
+  await expect
+    .element(page.getByTitle("This document has no outline"))
+    .toBeDisabled();
 });

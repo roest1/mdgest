@@ -13,13 +13,31 @@ import {
 } from "react";
 import { Spinner } from "src/components/shared/Spinner";
 import { engine } from "src/lib/engine";
-import { openPdf, type PDFPageProxy } from "src/lib/pdf";
-import { messageOf } from "src/lib/words";
+import {
+  openPdf,
+  readOutline,
+  readProperties,
+  resolve,
+  type OutlineNode,
+  type PDFDocumentProxy,
+  type PDFPageProxy,
+  type Properties,
+} from "src/lib/pdf";
+import { human, messageOf } from "src/lib/words";
+import { sourcePath } from "src/lib/workspace";
 import { iconButton } from "./controls";
 import { GAP, inView, layout, PAD, type Row } from "./column";
 import { MoreMenu } from "./MoreMenu";
 import { PageCanvas } from "./PageCanvas";
 import { Pane } from "./Pane";
+import {
+  PdfSidebar,
+  PdfSidebarPlaceholder,
+  THUMB_WIDTH,
+  type SidebarView,
+} from "./PdfSidebar";
+import { PropertiesDialog, type PropertyGroups } from "./PropertiesDialog";
+import { Snapshots } from "./snapshots";
 
 /** CSS px per PDF point at 100%: a point is 1/72 in, a CSS px 1/96. */
 const PX_PER_PT = 96 / 72;
@@ -36,10 +54,13 @@ const MAX_ZOOM = ZOOMS.at(-1)!;
 const SIDEBAR = "pdf-sidebar";
 
 interface Loaded {
+  doc: PDFDocumentProxy;
   pages: PDFPageProxy[];
   /** Each page's size at scale 1, in PDF points -- read once here, for the
-   *  column's layout. */
+   *  column's layout and the thumbnails both. */
   sizes: { w: number; h: number }[];
+  outline: OutlineNode[];
+  properties: Properties;
 }
 
 /** Why a document would not open, in words for the pane. pdf.js names its
@@ -56,9 +77,9 @@ function whyNot(cause: unknown): string {
 }
 
 /** Open `docId` from the workspace: its bytes from the engine, then parsed,
- *  and every page's size, all before the first page is laid out. A page's
- *  size is what places every page after it, so the column is not drawn
- *  until all of them are known. */
+ *  every page's size, the outline and the properties, all before the first
+ *  page is laid out. A page's size is what places every page after it, so
+ *  the column is not drawn until all of them are known. */
 function useDocument(docId: string): {
   loaded: Loaded | null;
   problem: string | null;
@@ -72,16 +93,30 @@ function useDocument(docId: string): {
     (async () => {
       const bytes = await engine.source(docId);
       if (!live) return;
+      // Taken before `openPdf`, which hands the buffer to pdf.js and leaves
+      // this view of it empty.
+      const size = bytes.byteLength;
       task = openPdf(bytes);
       const doc = await task.promise;
-      const pages = await Promise.all(
-        Array.from({ length: doc.numPages }, (_, i) => doc.getPage(i + 1)),
+      // The pages and the outline depend on nothing but the document, so
+      // their round trips to pdf.js's worker overlap.
+      const [pages, outline] = await Promise.all([
+        Promise.all(
+          Array.from({ length: doc.numPages }, (_, i) => doc.getPage(i + 1)),
+        ),
+        readOutline(doc),
+      ]);
+      const properties = await readProperties(
+        doc,
+        sourcePath(docId).at(-1)!,
+        size,
+        pages[0],
       );
       const sizes = pages.map((p) => {
         const { width, height } = p.getViewport({ scale: 1 });
         return { w: width, h: height };
       });
-      if (live) setLoaded({ pages, sizes });
+      if (live) setLoaded({ doc, pages, sizes, outline, properties });
     })().catch((cause: unknown) => live && setProblem(whyNot(cause)));
 
     return () => {
@@ -98,6 +133,47 @@ function useDocument(docId: string): {
 /** What `sizes` is before a document has loaded: one value, so nothing
  *  downstream recomputes for a fresh empty array each render. */
 const NO_SIZES: { w: number; h: number }[] = [];
+
+const when = (d: Date | null) =>
+  d
+    ? d.toLocaleString(undefined, { dateStyle: "short", timeStyle: "medium" })
+    : null;
+
+/** Points to inches, which is what a page size is read in where the
+ *  documents this is for are printed. */
+function pageSize({ width, height }: Properties["pageSize"]): string {
+  const inches = (pt: number) => (pt / 72).toFixed(2);
+  const shape = width > height ? "landscape" : "portrait";
+  return `${inches(width)} × ${inches(height)} in (${shape})`;
+}
+
+/** The document's own description of itself, as pdf.js reads it. Every value
+ *  but the file name, size and page count is whatever the file claims, and is
+ *  rendered as text. */
+function pdfProperties(p: Properties): PropertyGroups {
+  return [
+    [
+      ["File name", p.fileName],
+      ["File size", human(p.bytes)],
+    ],
+    [
+      ["Title", p.title],
+      ["Author", p.author],
+      ["Subject", p.subject],
+      ["Keywords", p.keywords],
+      ["Created", when(p.created)],
+      ["Modified", when(p.modified)],
+      ["Application", p.application],
+    ],
+    [
+      ["PDF producer", p.producer],
+      ["PDF version", p.version],
+      ["Page count", String(p.pages)],
+      ["Page size", pageSize(p.pageSize)],
+    ],
+    [["Fast web view", p.fastWebView ? "Yes" : "No"]],
+  ];
+}
 
 function Hamburger({
   sidebar,
@@ -202,22 +278,33 @@ export function PdfPane({ docId }: { docId: string }) {
   const { loaded, problem } = useDocument(docId);
   // The bar sets these and the body draws them, so they live here.
   const [sidebar, setSidebar] = useState(false);
+  const [sidebarView, setSidebarView] = useState<SidebarView>("thumbnails");
   const [twoPage, setTwoPage] = useState(false);
-  // The zoom fits the first page to the pane's width, and keeps fitting it as
-  // the pane changes size, until one is picked with the buttons. To the
-  // first page rather than the widest: one landscape fold-out would
-  // otherwise shrink every portrait page around it.
+  const [properties, setProperties] = useState(false);
+  // One per document -- the pane is keyed by it -- fed by every finished
+  // render and read by the thumbnails.
+  const [snapshots] = useState(() => new Snapshots(THUMB_WIDTH));
+  // The zoom fits the first row to the pane's width -- the first page, or
+  // the first two side by side -- and keeps fitting it as the pane changes
+  // size, until one is picked with the buttons. To the first row rather
+  // than the widest: one landscape fold-out would otherwise shrink every
+  // portrait page around it.
   const [picked, setPicked] = useState<number | null>(null);
   const [paneWidth, setPaneWidth] = useState(0);
   const [range, setRange] = useState({ first: 0, last: -1, current: 1 });
   const scroller = useRef<HTMLDivElement>(null);
 
   const sizes = loaded?.sizes ?? NO_SIZES;
+  const first = sizes.slice(0, twoPage ? 2 : 1);
   const fit =
-    sizes.length && paneWidth
+    first.length && paneWidth
       ? Math.min(
           MAX_ZOOM,
-          Math.max(MIN_ZOOM, (paneWidth - 2 * PAD) / (sizes[0].w * PX_PER_PT)),
+          Math.max(
+            MIN_ZOOM,
+            (paneWidth - 2 * PAD - GAP * (first.length - 1)) /
+              (first.reduce((sum, s) => sum + s.w, 0) * PX_PER_PT),
+          ),
         )
       : null;
   const zoom = picked ?? fit;
@@ -317,12 +404,43 @@ export function PdfPane({ docId }: { docId: string }) {
     frame.current = requestAnimationFrame(measure);
   };
 
-  /** Scroll a page to the top of the view. */
-  const goTo = (page: number) => {
-    const el = scroller.current;
-    const row = rows[rowOf(page)];
-    if (el && row) el.scrollTop = row.top - GAP / 2;
-  };
+  /** Scroll to a page, or to a point on it given in PDF coordinates. */
+  const goTo = useCallback(
+    (page: number, top: number | null = null) => {
+      const el = scroller.current;
+      const row = rows[rowOf(page)];
+      if (!el || !row || !loaded) return;
+      const y =
+        top === null
+          ? 0
+          : Math.max(
+              0,
+              loaded.pages[page - 1]
+                .getViewport({ scale })
+                .convertToViewportPoint(0, top)[1],
+            );
+      el.scrollTop = row.top + y - GAP / 2;
+    },
+    [rows, rowOf, loaded, scale],
+  );
+  // What the thumbnails are handed: one function for the pane's life, so a
+  // zoom or a scroll does not re-render every thumbnail in a long strip.
+  const goToRef = useRef(goTo);
+  useLayoutEffect(() => {
+    goToRef.current = goTo;
+  });
+  const goToPage = useCallback((page: number) => goToRef.current(page), []);
+
+  const followOutline = useCallback(
+    (node: OutlineNode) => {
+      if (!loaded) return;
+      resolve(loaded.doc, node.dest).then(
+        (target) => target && goToRef.current(target.page, target.top),
+        (cause: unknown) => console.warn(cause),
+      );
+    },
+    [loaded],
+  );
 
   // The next step either way, or undefined at that end of `ZOOMS` -- which
   // is also what disables the button, so "can zoom" and "do zoom" cannot
@@ -350,7 +468,7 @@ export function PdfPane({ docId }: { docId: string }) {
           pages={loaded?.pages.length ?? 0}
           current={range.current}
           zoom={zoom}
-          onPage={goTo}
+          onPage={goToPage}
           onZoomIn={zoomIn === undefined ? undefined : () => setPicked(zoomIn)}
           onZoomOut={
             zoomOut === undefined ? undefined : () => setPicked(zoomOut)
@@ -367,8 +485,10 @@ export function PdfPane({ docId }: { docId: string }) {
               onPick: () => setTwoPage((t) => !t),
             },
             "divider",
-            // TODO: PropertiesDialog, once ported.
-            { label: "Document properties", disabled: true },
+            {
+              label: "Document properties",
+              onPick: () => setProperties(true),
+            },
           ]}
         />
       }
@@ -382,10 +502,22 @@ export function PdfPane({ docId }: { docId: string }) {
           default="none"
           update={{ [SIDEBAR]: "explorer", default: "none" }}
         >
-          {/* TODO: PdfSidebar (thumbnails / outline), once ported. */}
-          <div
-            className={`w-40 shrink-0 border-r border-edge ${sidebar ? "" : "hidden"}`}
-          />
+          {loaded ? (
+            <PdfSidebar
+              shown={sidebar}
+              view={sidebarView}
+              onView={setSidebarView}
+              pages={loaded.pages}
+              sizes={loaded.sizes}
+              snapshots={snapshots}
+              current={range.current}
+              outline={loaded.outline}
+              onPage={goToPage}
+              onOutline={followOutline}
+            />
+          ) : (
+            <PdfSidebarPlaceholder shown={sidebar} />
+          )}
         </ViewTransition>
         <ViewTransition
           default="none"
@@ -418,6 +550,7 @@ export function PdfPane({ docId }: { docId: string }) {
                     row={row}
                     pages={loaded.pages}
                     scale={scale}
+                    snapshots={snapshots}
                     active={i >= range.first && i <= range.last}
                     marginLeft={Math.max(
                       0,
@@ -430,6 +563,13 @@ export function PdfPane({ docId }: { docId: string }) {
           </div>
         </ViewTransition>
       </div>
+
+      {properties && loaded && (
+        <PropertiesDialog
+          groups={pdfProperties(loaded.properties)}
+          onClose={() => setProperties(false)}
+        />
+      )}
     </Pane>
   );
 }
@@ -441,12 +581,14 @@ const PageRow = memo(function PageRow({
   row,
   pages,
   scale,
+  snapshots,
   active,
   marginLeft,
 }: {
   row: Row;
   pages: PDFPageProxy[];
   scale: number;
+  snapshots: Snapshots;
   active: boolean;
   marginLeft: number;
 }) {
@@ -458,11 +600,16 @@ const PageRow = memo(function PageRow({
       {row.pages.map((p) => (
         <div
           key={p.n}
-          data-page={p.n}
+          data-paper={p.n}
           className="relative bg-white shadow-lg shadow-black/50"
           style={{ width: p.w, height: p.h }}
         >
-          <PageCanvas page={pages[p.n - 1]} scale={scale} active={active} />
+          <PageCanvas
+            page={pages[p.n - 1]}
+            scale={scale}
+            active={active}
+            snapshots={snapshots}
+          />
         </div>
       ))}
     </div>
