@@ -225,6 +225,12 @@
   }
 }
 
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
 @keyframes march {
   to {
     stroke-dashoffset: -10;
@@ -254,6 +260,11 @@
   }
   .animate-fade-in {
     animation: fade-in 0.15s ease-out;
+  }
+  /* No drift: a tip can open above its anchor as well as below, and a slide
+     would carry it into the control it names. */
+  .animate-fade {
+    animation: fade 0.1s ease-out;
   }
 }
 
