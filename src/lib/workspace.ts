@@ -364,6 +364,48 @@ export function cleanName(name: string): string | null {
   return kept || null;
 }
 
+/** What an export of an unnamed workspace is called in place of a name. */
+const UNNAMED_EXPORT = "mdgest";
+
+/** A date as an export's file name carries it: `2026-10-23`, in local time,
+ *  since the day a person exported on is the day they will look for. */
+function day(on: Date): string {
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${on.getFullYear()}-${two(on.getMonth() + 1)}-${two(on.getDate())}`;
+}
+
+/** An export's file name: the workspace's name made safe for a file, what
+ *  the export holds, and the day, so exports sort by when they were made
+ *  and a second one the same day reads as the same thing again. An unnamed
+ *  workspace goes out as mdgest's. */
+export function exportName(
+  name: string | null,
+  markdownOnly: boolean,
+  on = new Date(),
+): string {
+  const kind = markdownOnly ? "markdown" : "project";
+  const named = name ? `${cleanSegment(name)}-` : `${UNNAMED_EXPORT}-`;
+  return `${named}${kind}-${day(on)}.zip`;
+}
+
+/** The export's name with its file-name parts taken off. */
+const EXPORTED = /^(.*)-(?:project|markdown)-\d{4}-\d{2}-\d{2}$/;
+
+/** The name a folder or zip stem stands for, as a workspace's name: what an
+ *  export was named after, with the kind and the day `exportName` added
+ *  taken back off, and nothing for an unnamed workspace's. Anything else is
+ *  its own name.
+ *
+ * Only ever the fallback. An export's manifest carries the workspace's name,
+ *  and that is the name it comes back under, whatever the file was renamed
+ *  to since -- this is for one whose manifest has none, so that it comes
+ *  back unnamed rather than named for the day it left. */
+export function exportedName(stem: string): string {
+  const named = EXPORTED.exec(stem)?.[1];
+  if (named === undefined) return stem;
+  return named === UNNAMED_EXPORT ? "" : named;
+}
+
 /** A manifest with nothing in it, for a workspace created from loose PDFs. */
 export function emptyManifest(): Manifest {
   return { format: FORMAT, documents: noPrototype() };
