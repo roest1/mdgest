@@ -22,9 +22,11 @@ function blank(width: number, height: number): HTMLCanvasElement {
  *  sizes it, and should be positioned and white.
  *
  * Only drawn while `active`, and dropped when not, so a long document holds
- * canvases for the pages near the view rather than for all of them. A redraw
- * at a new scale goes into a fresh canvas that replaces the old one when it
- * is done, so zooming stretches the last picture instead of flashing white. */
+ * canvases for the pages near the view rather than for all of them -- and
+ * pdf.js the page's operator list and decoded images, which it would
+ * otherwise keep for every page ever drawn. A redraw at a new scale goes
+ * into a fresh canvas that replaces the old one when it is done, so zooming
+ * stretches the last picture instead of flashing white. */
 export function PageCanvas({
   page,
   scale,
@@ -42,6 +44,7 @@ export function PageCanvas({
     const el = slot.current;
     if (!el) return;
     if (!active) {
+      page.cleanup();
       el.replaceChildren();
       drawn.current = 0;
       return;
