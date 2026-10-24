@@ -268,6 +268,162 @@
   }
 }
 
+/* ── view transitions ─────────────────────────────────────────────────
+   The tab bar drops out from under the header as the editor's frame moves
+   down to make room; closing the last tab plays it back. The explorer does
+   the same from the left edge. The browser runs these on snapshots, so
+   whatever the panes do meanwhile cannot stall them. Class names come from
+   the <ViewTransition>s in routes/Editor.tsx. */
+:root {
+  --shift-ease: cubic-bezier(0.2, 0, 0, 1);
+  --shift-time: 220ms;
+}
+
+::view-transition-group(.surface) {
+  animation-duration: var(--shift-time);
+  animation-timing-function: var(--shift-ease);
+}
+::view-transition-old(.surface),
+::view-transition-new(.surface) {
+  animation-duration: var(--shift-time);
+  animation-timing-function: var(--shift-ease);
+  /* Only the frame itself is in this snapshot -- black, its border and
+     corner -- so it can stretch to its new size without showing it. */
+  height: 100%;
+}
+
+/* What the frame holds fades rather than stretching. When it stays mounted
+   and only changes size (the explorer toggling), it moves with the frame,
+   each snapshot drawn at its own size and pinned to the frame's right edge,
+   which is the one that does not move. */
+::view-transition-old(.panes-out) {
+  animation: 90ms ease-out both panes-fade reverse;
+}
+::view-transition-new(.panes-in) {
+  animation: 160ms ease-out 90ms both panes-fade;
+}
+::view-transition-group(.panes-in.panes-out) {
+  animation-duration: var(--shift-time);
+  animation-timing-function: var(--shift-ease);
+}
+::view-transition-image-pair(.panes-in.panes-out) {
+  overflow: clip;
+}
+::view-transition-old(.panes-in.panes-out),
+::view-transition-new(.panes-in.panes-out) {
+  height: 100%;
+  object-fit: none;
+  object-position: right top;
+}
+
+@keyframes panes-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Clipped to its final box as it moves, so it never draws over the header
+   it comes out from under. */
+::view-transition-new(.tabs-in) {
+  animation: tabs-drop var(--shift-time) var(--shift-ease);
+}
+::view-transition-old(.tabs-out) {
+  animation: tabs-drop var(--shift-time) var(--shift-ease) reverse both;
+}
+
+@keyframes tabs-drop {
+  from {
+    transform: translateY(-100%);
+    clip-path: inset(100% 0 0 0);
+  }
+  to {
+    transform: none;
+    clip-path: inset(0);
+  }
+}
+
+/* The explorer is hidden, not unmounted, so it is one snapshot either side
+   of the change: only a new one is it arriving, only an old one leaving. */
+::view-transition-new(.explorer):only-child {
+  animation: explorer-slide var(--shift-time) var(--shift-ease);
+}
+::view-transition-old(.explorer):only-child {
+  animation: explorer-slide var(--shift-time) var(--shift-ease) reverse both;
+}
+
+@keyframes explorer-slide {
+  from {
+    transform: translateX(-100%);
+    clip-path: inset(0 0 0 100%);
+  }
+  to {
+    transform: none;
+    clip-path: inset(0);
+  }
+}
+
+/* The tab bar and the footer span the editor, so the explorer moves their
+   left edge. Their contents ride that edge at their final size; what the
+   snapshot does not yet cover is painted as the strip itself, chrome and
+   the edge line it draws against the frame. */
+::view-transition-group(.strip) {
+  animation-duration: var(--shift-time);
+  animation-timing-function: var(--shift-ease);
+}
+::view-transition-group(.strip-under) {
+  background: linear-gradient(
+    to top,
+    var(--color-edge) 1px,
+    var(--color-chrome) 1px
+  );
+}
+::view-transition-group(.strip-over) {
+  background: linear-gradient(
+    to bottom,
+    var(--color-edge) 1px,
+    var(--color-chrome) 1px
+  );
+}
+::view-transition-image-pair(.strip) {
+  overflow: clip;
+}
+::view-transition-old(.strip) {
+  display: none;
+}
+::view-transition-new(.strip) {
+  animation: none;
+  height: 100%;
+  object-fit: none;
+  object-position: left top;
+}
+
+/* A pane's bar, with its groups of controls lifted out (.slide): left only
+   its line, which stretches to the new width without showing it. */
+::view-transition-group(.bar) {
+  animation-duration: var(--shift-time);
+  animation-timing-function: var(--shift-ease);
+}
+::view-transition-old(.bar) {
+  display: none;
+}
+::view-transition-new(.bar) {
+  animation: none;
+  height: 100%;
+}
+
+/* A group of controls in a bar, and the split's divide: the same either
+   side of the change, so drawn once and moved to where it ends up. */
+::view-transition-group(.slide) {
+  animation-duration: var(--shift-time);
+  animation-timing-function: var(--shift-ease);
+}
+::view-transition-old(.slide) {
+  display: none;
+}
+::view-transition-new(.slide) {
+  animation: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -280,5 +436,12 @@
        arrive, so without this it would still pop in a second after an
        otherwise-instant page. A delay is motion too. */
     animation-delay: 0s !important;
+  }
+
+  /* not matched by * above */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 }
