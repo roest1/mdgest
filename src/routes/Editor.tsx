@@ -42,29 +42,19 @@ function editPath(docId: string): string {
   return `/edit/${docId.split("/").map(encodeURIComponent).join("/")}`;
 }
 
-/** The sidebar: the workspace's documents, read once when the editor opens.
- *  Until the engine answers there is a spinner, and if it refuses, why. */
+/** The sidebar: the workspace's documents. Until the engine answers there
+ *  is a spinner, and if it refuses, why. */
 function Sidebar({
+  docs,
+  problem,
   docId,
   onOpen,
 }: {
+  docs: string[] | null;
+  problem: string | null;
   docId: string;
   onOpen: (doc: string) => void;
 }) {
-  const [docs, setDocs] = useState<string[] | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    engine.docs().then(
-      (d) => live && setDocs(d),
-      (cause: unknown) => live && setProblem(messageOf(cause)),
-    );
-    return () => {
-      live = false;
-    };
-  }, []);
-
   // Memoised so the tree is rebuilt when the listing changes, not each time
   // a document is opened.
   const entries = useMemo<Entry[]>(
@@ -105,8 +95,26 @@ function Sidebar({
 }
 
 /** What fills both panes while no document is open: one surface, not a
- *  split, since there is nothing yet to put side by side. */
-function Empty() {
+ *  split, since there is nothing yet to put side by side. `missing` is an
+ *  id the address asked for that the workspace does not hold. */
+function Empty({ missing }: { missing: string | null }) {
+  if (missing) {
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <div className="max-w-md rounded-2xl border border-edge bg-raised/40 px-10 py-8 text-center">
+          <h2 className="font-serif text-2xl font-semibold text-ink">
+            No such document
+          </h2>
+          <p className="mt-3 font-serif text-sm leading-relaxed break-words text-muted">
+            This workspace holds nothing at{" "}
+            <span className="font-mono text-ink">{missing}</span>. It may have
+            been removed or renamed since the link was made. Pick a document
+            from the explorer.
+          </p>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex h-full items-center justify-center p-6">
       <div className="max-w-md rounded-2xl border border-edge bg-raised/40 px-10 py-8 text-center">
@@ -123,10 +131,31 @@ function Empty() {
 }
 
 export default function Editor() {
-  const docId = useParams()["*"] || "";
+  const asked = useParams()["*"] || "";
   const [sidebar, setSidebar] = useState(true);
   const [workspace, setWorkspace] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  // The workspace's documents, read once when the editor opens: the
+  // explorer lists them, and the address is checked against them.
+  const [docs, setDocs] = useState<string[] | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    engine.docs().then(
+      (d) => live && setDocs(d),
+      (cause: unknown) => live && setProblem(messageOf(cause)),
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // An address is typed, pasted or kept, so it can name a document that is
+  // not there -- or no longer is. Nothing opens for it until the listing
+  // says it is, and one it does not hold is let go of below.
+  const docId = docs?.includes(asked) ? asked : "";
+  const [missing, setMissing] = useState<string | null>(null);
 
   // An unreadable manifest leaves the name blank here: the landing is where
   // that is said, and the editor never reaches one past it.
@@ -144,12 +173,23 @@ export default function Editor() {
   // Every document visited stays open as a tab until its tab is closed, in
   // the order first opened. Adjusted during render, like the tree's reveal,
   // so a document never draws without its tab.
-  const [openDocs, setOpenDocs] = useState<string[]>(() =>
-    docId ? [docId] : [],
-  );
+  const [openDocs, setOpenDocs] = useState<string[]>([]);
   if (docId && !openDocs.includes(docId)) {
     setOpenDocs((prev) => (prev.includes(docId) ? prev : [...prev, docId]));
   }
+
+  // Back to the tab last open, or to none, in place of the address: Back
+  // should not return to it.
+  const unknown = docs !== null && asked !== "" && !docs.includes(asked);
+  useEffect(() => {
+    if (!unknown) return;
+    const back = openDocs.at(-1);
+    navigate(back ? editPath(back) : "/edit", { replace: true });
+  }, [unknown, openDocs, navigate]);
+  // What was asked for is said in the empty editor until a document opens.
+  // Adjusted during render, as the tabs are.
+  if (unknown && missing !== asked) setMissing(asked);
+  if (docId && missing !== null) setMissing(null);
 
   const tabs = openDocs.length > 0;
 
@@ -265,7 +305,12 @@ export default function Editor() {
             className={`w-[260px] shrink-0 bg-chrome ${sidebar ? "" : "hidden"}`}
           >
             <aside className="h-full overflow-hidden rounded-tr-xl border-t border-r border-edge bg-ground">
-              <Sidebar docId={docId} onOpen={openDoc} />
+              <Sidebar
+                docs={docs}
+                problem={problem}
+                docId={docId}
+                onOpen={openDoc}
+              />
             </aside>
           </div>
         </ViewTransition>
@@ -319,7 +364,9 @@ export default function Editor() {
                     the frame's snapshot crossfading between them reads as
                     both at once. Keyed, or React sees one boundary updating
                     rather than one leaving and another arriving. */}
-                {docId ? (
+                {/* Blank while the listing is out, so an address it will
+                    turn down never draws a document first. */}
+                {asked && docs === null && !problem ? null : docId ? (
                   <ViewTransition key="split" {...PANES}>
                     <Split
                       left={
@@ -339,7 +386,7 @@ export default function Editor() {
                 ) : (
                   <ViewTransition key="empty" {...PANES}>
                     <div className="min-w-0 flex-1">
-                      <Empty />
+                      <Empty missing={missing} />
                     </div>
                   </ViewTransition>
                 )}
