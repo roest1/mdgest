@@ -14,6 +14,8 @@ export function PropertiesDialog({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  // Whether the press that ends in a click began on the backdrop.
+  const pressed = useRef(false);
 
   // Modal, so focus is held inside and Escape closes it; both come with
   // `showModal`, which only a mounted element can be asked for.
@@ -26,8 +28,15 @@ export function PropertiesDialog({
       ref={dialog}
       onClose={onClose}
       // A press on the backdrop lands on the dialog itself; one on its
-      // contents lands on them.
-      onClick={(e) => e.target === e.currentTarget && dialog.current?.close()}
+      // contents lands on them. Both ends of the click, not only its
+      // target: a selection dragged out of the contents and let go of over
+      // the backdrop clicks the dialog too.
+      onPointerDown={(e) => (pressed.current = e.target === e.currentTarget)}
+      onClick={(e) =>
+        pressed.current &&
+        e.target === e.currentTarget &&
+        dialog.current?.close()
+      }
       aria-labelledby="properties-title"
       className="m-auto w-[min(30rem,calc(100vw-2rem))] rounded-2xl border border-edge bg-raised p-0 text-ink shadow-2xl shadow-black/60 backdrop:bg-black/60"
     >

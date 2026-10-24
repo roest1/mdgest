@@ -259,6 +259,26 @@ test("document properties are the file's own, and close again", async () => {
   await expect.element(dialog).not.toBeInTheDocument();
 });
 
+test("document properties close from the backdrop, not from a selection dragged onto it", async () => {
+  await workspace(pdf(1, { info: { Title: "Pump manual" } }));
+  mount("/edit/a");
+  await pagesDrawn();
+  await pdfMenu().click();
+  await page.getByRole("menuitem", { name: "Document properties" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect.element(dialog).toBeVisible();
+  const box = dialog.element() as HTMLDialogElement;
+  const title = dialog.getByText("Pump manual").element();
+  // Pressed on the title, let go of over the backdrop: the click is the
+  // dialog's own, as a backdrop click is.
+  title.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  box.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  expect(box.open).toBe(true);
+  box.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  box.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await expect.element(dialog).not.toBeInTheDocument();
+});
+
 test("the thumbnails are drawn when shown, follow the page, and go to one", async () => {
   await workspace(pdf(10));
   mount("/edit/a");
