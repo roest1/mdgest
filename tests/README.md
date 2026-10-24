@@ -34,15 +34,17 @@ not is let go of, in place, with a word on why. An open document's pages are
 laid out and drawn -- only those near the view in a long one -- the zoom and
 two-page view re-lay them, dragging the split moves the pages every frame
 and draws them once it stops, the sidebar's thumbnails and outline go where
-they point, the properties dialog shows what the file says, and a file that
-is not a PDF says so. These tests load the app's stylesheet, so what is
+they point, the properties dialog shows what the file says and closes from
+its backdrop, and a file that is not a PDF says so. These tests load the app's stylesheet, so what is
 hidden is hidden and what scrolls scrolls. `pdf.test.ts` covers pdf.js as
 `pdf.ts` sets it up: one worker for every document, so letting one go never
 refuses the next; and what is read out of a document besides its pages --
-its properties, its outline and where each entry points.
+its properties, its outline and where each entry points, on a page turned
+any way, and what is left when pdf.js cannot read the outline or the
+properties.
 
 The PDFs are built by `pdfOf` in `harness.ts`, by hand: blank pages with a
-number on each, and an info dictionary and outline when a test asks, so no
+number on each, and an info dictionary, outline and /Rotate when a test asks, so no
 document of anyone's is needed.
 
 `worker.ts` runs `opfs.ts` and `stage.ts` where they run in the app, since a

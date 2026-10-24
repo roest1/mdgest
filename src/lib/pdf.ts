@@ -92,14 +92,23 @@ function date(info: Record<string, unknown>, key: string): Date | null {
 }
 
 /** `first` is the first page, which every caller has already asked for --
- *  handed in rather than fetched again here. */
+ *  handed in rather than fetched again here.
+ *
+ * A document whose info dictionary or XMP pdf.js cannot read still has its
+ * name, size and pages: the rest are read as missing, rather than the whole
+ * document refused for a description of itself. */
 export async function readProperties(
   doc: PDFDocumentProxy,
   fileName: string,
   bytes: number,
   first: PDFPageProxy,
 ): Promise<Properties> {
-  const { info: raw, metadata } = await doc.getMetadata();
+  const { info: raw, metadata } = await doc
+    .getMetadata()
+    .catch((cause: unknown) => {
+      console.warn(cause);
+      return { info: {}, metadata: null };
+    });
   const info = raw as Record<string, unknown>;
   const { width, height } = first.getViewport({ scale: 1 });
   return {
@@ -147,10 +156,17 @@ function outlineNodes(items: RawOutline): OutlineNode[] {
   }));
 }
 
+/** The document's outline, or none where pdf.js cannot read it: a damaged
+ *  outline costs the sidebar its tab, not the reader the pages. */
 export async function readOutline(
   doc: PDFDocumentProxy,
 ): Promise<OutlineNode[]> {
-  return outlineNodes((await doc.getOutline()) ?? []);
+  try {
+    return outlineNodes((await doc.getOutline()) ?? []);
+  } catch (cause) {
+    console.warn(cause);
+    return [];
+  }
 }
 
 /** Where a destination points: a 1-based page, and the left edge and the

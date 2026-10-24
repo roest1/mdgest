@@ -2,7 +2,7 @@
  *  letting one document go leaves for the next, and what is read out of a
  *  document besides its pages. */
 
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   openPdf,
   readOutline,
@@ -60,6 +60,27 @@ test("properties are what the file says, beside what is known of it", async () =
     pageSize: { width: 792, height: 612 },
     fastWebView: false,
   });
+  await task.destroy();
+});
+
+test("an outline or a description pdf.js cannot read is read as none", async () => {
+  const task = openPdf(pdfOf([LETTER], { info: { Title: "Pump manual" } }));
+  const doc = await task.promise;
+  const first = await doc.getPage(1);
+  const broken = Object.create(doc, {
+    getOutline: { value: () => Promise.reject(new Error("bad /Outlines")) },
+    getMetadata: { value: () => Promise.reject(new Error("bad XMP")) },
+  }) as typeof doc;
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  expect(await readOutline(broken)).toEqual([]);
+  const properties = await readProperties(broken, "a.pdf", 1000, first);
+  expect(properties).toMatchObject({
+    fileName: "a.pdf",
+    title: null,
+    pages: 1,
+  });
+  expect(warn).toHaveBeenCalledTimes(2);
+  warn.mockRestore();
   await task.destroy();
 });
 
