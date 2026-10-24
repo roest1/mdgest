@@ -103,3 +103,38 @@ export const zipOf = (files: Record<string, string>): Uint8Array<ArrayBuffer> =>
       Object.entries(files).map(([path, text]) => [path, strToU8(text)]),
     ),
   ) as Uint8Array<ArrayBuffer>;
+
+/** A PDF of blank pages, one per size given, in points, each with its number
+ *  written on it in Helvetica -- so opening it fetches a standard font the
+ *  way a real document does. Assembled by hand, offsets and all, so the
+ *  tests need no PDF library and no document of anyone's. */
+export function pdfOf(...sizes: [number, number][]): Uint8Array<ArrayBuffer> {
+  const objects: string[] = [];
+  const add = (body: string) => objects.push(body);
+  const page = (i: number) => 4 + 2 * i;
+
+  add("<< /Type /Catalog /Pages 2 0 R >>");
+  add(
+    `<< /Type /Pages /Count ${sizes.length} /Kids [${sizes.map((_, i) => `${page(i)} 0 R`).join(" ")}] >>`,
+  );
+  add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  sizes.forEach(([w, h], i) => {
+    const text = `BT /F1 24 Tf 36 ${h - 60} Td (Page ${i + 1}) Tj ET`;
+    add(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${page(i) + 1} 0 R >>`,
+    );
+    add(`<< /Length ${text.length} >>\nstream\n${text}\nendstream`);
+  });
+
+  let out = "%PDF-1.7\n";
+  const offsets = objects.map((body, i) => {
+    const at = out.length;
+    out += `${i + 1} 0 obj\n${body}\nendobj\n`;
+    return at;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const at of offsets) out += `${String(at).padStart(10, "0")} 00000 n \n`;
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return bytes(out);
+}
