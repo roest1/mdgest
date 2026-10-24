@@ -1,6 +1,7 @@
 /** The editor over the real engine, at the address it is opened on: one
  *  the workspace holds opens as a tab, and one it does not -- mistyped, or
- *  kept from before a document went -- is let go of rather than opened.
+ *  kept from before a document went -- is let go of rather than opened. An
+ *  open document's pages are drawn in the PDF pane, through pdf.js.
  *
  * As in `landing.test.ts`, nothing is mocked between the page and OPFS. The
  * workspace is committed through the engine, and the browser's copy of it
@@ -13,6 +14,7 @@ import { createElement } from "react";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { engine } from "src/lib/engine";
 import Editor from "src/routes/Editor";
+import { pdfOf } from "./harness";
 
 let root: Root | null = null;
 let host: HTMLElement | null = null;
@@ -43,11 +45,21 @@ afterEach(async () => {
   await engine.discardWorkspace();
 });
 
-/** A workspace of `names`, committed. */
-async function workspace(...names: string[]): Promise<void> {
-  await engine.stage(names.map((n) => new File([n], n)));
+/** A workspace of `files`, committed. A name alone is a file whose bytes
+ *  are its name: enough to list and open, not to draw. */
+async function workspace(...files: (string | File)[]): Promise<void> {
+  await engine.stage(
+    files.map((f) => (typeof f === "string" ? new File([f], f) : f)),
+  );
   await engine.commit();
 }
+
+/** US Letter, in points. */
+const LETTER: [number, number] = [612, 792];
+
+/** The pages laid out in the PDF pane, and how many of them are drawn. */
+const laidOut = () => document.querySelectorAll("[data-page]").length;
+const drawn = () => document.querySelectorAll("[data-page] canvas").length;
 
 /** The open tabs, by the id each one's title carries. */
 const tabs = () =>
@@ -71,4 +83,48 @@ test("an address the workspace does not hold opens nothing, and says so", async 
   expect(tabs()).toEqual([]);
   // In place of the address, so Back does not return to it.
   expect(router!.state.historyAction).toBe("REPLACE");
+});
+
+test("an open document's pages are laid out, and the ones in view drawn", async () => {
+  await workspace(new File([pdfOf(LETTER, LETTER, LETTER)], "a.pdf"));
+  mount("/edit/a");
+  await expect.element(page.getByText("/ 3")).toBeVisible();
+  expect(laidOut()).toBe(3);
+  await expect.poll(drawn).toBeGreaterThan(0);
+  await expect.element(page.getByLabelText("Page")).toHaveValue("1");
+});
+
+test("the zoom steps from the fit, and two-page view pairs the pages", async () => {
+  await workspace(new File([pdfOf(LETTER, LETTER, LETTER)], "a.pdf"));
+  mount("/edit/a");
+  await expect.poll(drawn).toBeGreaterThan(0);
+  const width = () =>
+    document.querySelector<HTMLElement>("[data-page]")!.offsetWidth;
+  const before = width();
+  await page.getByTitle("Zoom in").click();
+  await expect.poll(width).toBeGreaterThan(before);
+
+  // The PDF pane's, the first of the two panes' menus.
+  await page.getByTitle("More").first().click();
+  await page.getByRole("menuitemcheckbox", { name: "Two page view" }).click();
+  // Three pages in two rows: the first two side by side, the third alone.
+  await expect
+    .poll(
+      () =>
+        document.querySelector("[data-page]")!.parentElement!.children.length,
+    )
+    .toBe(2);
+});
+
+test("a file that is not a PDF opens to a word on why, not a spinner", async () => {
+  await workspace("a.pdf");
+  mount("/edit/a");
+  await expect
+    .element(
+      page.getByText(
+        "This file is damaged or is not a PDF, and could not be opened.",
+      ),
+    )
+    .toBeVisible();
+  expect(laidOut()).toBe(0);
 });
