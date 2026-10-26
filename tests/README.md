@@ -17,7 +17,8 @@ gives up and what it is refused for; `tree.test.ts`, the order a listing
 folds into; `opfs.test.ts`, the file layer: truncating writes, replacing ones
 and what a write cut short leaves, `walk`'s order, `sha256`, and what
 `removeDerived` may touch; `stage.test.ts`, what a drop stages, how a conflict
-is settled, what a commit writes and what it refuses; `engine.test.ts`, what
+is settled, what a commit writes and what it refuses, and the bytes the editor
+reads back; `engine.test.ts`, what
 the engine worker does with a call it has no method for; `words.test.ts`, the
 counting the UI phrases with.
 
@@ -29,7 +30,13 @@ shows them and that every button comes back as the next view.
 
 **The editor.** `editor.test.ts` opens the editor at an address over the
 real engine: a document the workspace holds opens as a tab, and one it does
-not is let go of, in place, with a word on why.
+not is let go of, in place, with a word on why. An open document's pages are
+laid out and drawn, the zoom and two-page view re-lay them, and a file that
+is not a PDF says so. `pdf.test.ts` covers pdf.js as `pdf.ts` sets it up:
+one worker for every document, so letting one go never refuses the next.
+
+The PDFs are built by `pdfOf` in `harness.ts`, by hand: blank pages with a
+number on each, so no document of anyone's is needed.
 
 `worker.ts` runs `opfs.ts` and `stage.ts` where they run in the app, since a
 synchronous file handle exists only in a worker; `harness.ts` is the wire

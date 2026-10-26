@@ -26,7 +26,7 @@ import {
  *  program -- and two members is all this file uses. */
 declare const self: {
   onmessage: ((event: MessageEvent) => void) | null;
-  postMessage(message: unknown): void;
+  postMessage(message: unknown, transfer?: Transferable[]): void;
 };
 
 type Handlers = { [M in Method]: (params: Params<M>) => Promise<Result<M>> };
@@ -44,6 +44,15 @@ const handlers: Handlers = {
   docs: () => stage.docs(),
   workspaceName: () => stage.workspaceName(),
   renameWorkspace: ({ name }) => stage.renameWorkspace(name),
+  source: ({ docId }) => stage.source(docId),
+};
+
+/** Which buffers of a method's result are handed over rather than cloned.
+ *  Part of the method's contract, next to its handler: `source` gives up a
+ *  document's bytes, since the worker has no further use for them and a
+ *  clone would hold a large PDF twice. */
+const transfers: { [M in Method]?: (result: Result<M>) => Transferable[] } = {
+  source: (bytes) => [bytes.buffer],
 };
 
 function failure(cause: unknown): Failure {
@@ -62,10 +71,14 @@ self.onmessage = async (event: MessageEvent) => {
   try {
     const handle = handlers[call.method];
     if (!handle) throw new Error(`no such engine method: ${call.method}`);
-    // The one cast in the file: looking a handler up by a runtime
+    // The casts in the file. Each handler and transfer entry is checked
+    // against its own `Result<M>` above, but looking one up by a runtime
     // `call.method` erases which M this is, and no assertion can put it back.
     const result = await handle(call.params as never);
-    self.postMessage({ id, ok: true, result } as Reply);
+    const transfer = (
+      transfers[call.method] as ((r: unknown) => Transferable[]) | undefined
+    )?.(result);
+    self.postMessage({ id, ok: true, result } as Reply, transfer ?? []);
   } catch (cause) {
     self.postMessage({
       id,
