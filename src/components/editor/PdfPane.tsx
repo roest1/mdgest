@@ -1,15 +1,12 @@
 import { Menu, Minus, Plus } from "lucide-react";
 import {
-  addTransitionType,
   memo,
-  startTransition,
   useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  ViewTransition,
 } from "react";
 import { flushSync } from "react-dom";
 import { Spinner } from "src/components/shared/Spinner";
@@ -35,7 +32,7 @@ import { PageCanvas } from "./PageCanvas";
 import { Pane } from "./Pane";
 import {
   PdfSidebar,
-  PdfSidebarPlaceholder,
+  SidebarFrame,
   THUMB_WIDTH,
   type SidebarView,
 } from "./PdfSidebar";
@@ -51,10 +48,6 @@ const ZOOMS = [
 ];
 const MIN_ZOOM = ZOOMS[0];
 const MAX_ZOOM = ZOOMS.at(-1)!;
-
-/** The Transition type for the sidebar being shown or hidden. Its own, not
- *  the explorer's, so only this pane's boundaries answer it. */
-const SIDEBAR = "pdf-sidebar";
 
 interface Loaded {
   doc: PDFDocumentProxy;
@@ -475,15 +468,7 @@ export function PdfPane({ docId }: { docId: string }) {
   return (
     <Pane
       left={
-        <Hamburger
-          sidebar={sidebar}
-          onSidebar={() =>
-            startTransition(() => {
-              addTransitionType(SIDEBAR);
-              setSidebar((s) => !s);
-            })
-          }
-        />
+        <Hamburger sidebar={sidebar} onSidebar={() => setSidebar((s) => !s)} />
       }
       center={
         <PdfNav
@@ -521,78 +506,68 @@ export function PdfPane({ docId }: { docId: string }) {
         />
       }
     >
-      {/* As the editor does the explorer (routes/Editor.tsx): the sidebar
-          slides in from the pane's edge, and the pages ride the edge that
-          stays put while they fade to their new width. Hidden rather than
-          unmounted, so it is one snapshot either side of the change. */}
+      {/* The sidebar slides in from the pane's edge and the pages follow
+          it, re-laid every frame -- see SidebarFrame. */}
       <div className="flex h-full">
-        <ViewTransition
-          default="none"
-          update={{ [SIDEBAR]: "explorer", default: "none" }}
+        <SidebarFrame open={sidebar}>
+          {(state) =>
+            loaded && (
+              <PdfSidebar
+                state={state}
+                view={sidebarView}
+                onView={setSidebarView}
+                pages={loaded.pages}
+                sizes={loaded.sizes}
+                snapshots={snapshots}
+                current={range.current}
+                outline={loaded.outline}
+                onPage={goToPage}
+                onOutline={followOutline}
+              />
+            )
+          }
+        </SidebarFrame>
+        <div
+          ref={scroller}
+          onScroll={onScroll}
+          className="relative min-w-0 flex-1 overflow-auto bg-ground [scrollbar-gutter:stable]"
         >
-          {loaded ? (
-            <PdfSidebar
-              shown={sidebar}
-              view={sidebarView}
-              onView={setSidebarView}
-              pages={loaded.pages}
-              sizes={loaded.sizes}
-              snapshots={snapshots}
-              current={range.current}
-              outline={loaded.outline}
-              onPage={goToPage}
-              onOutline={followOutline}
-            />
+          {problem ? (
+            <p className="p-6 text-center text-sm text-red-300">{problem}</p>
+          ) : !ready ? (
+            <div className="flex h-full items-center justify-center">
+              <Spinner className="h-5 w-5 text-muted" />
+            </div>
           ) : (
-            <PdfSidebarPlaceholder shown={sidebar} />
+            // The whole column's size, and in it only the rows near the
+            // view, each where `layout` puts it: a re-lay -- every frame of
+            // a drag -- touches a handful of rows however long the
+            // document is, and a row that leaves takes its canvas with it.
+            //
+            // Each row centered in the pane, not in the column: a landscape
+            // page wider than the pane widens the column, and centering in
+            // that would push every portrait page off to the right. A row
+            // too wide to center starts at the left edge instead, so all of
+            // its overflow is to the right, where it can be scrolled to.
+            <div
+              className="relative"
+              style={{ width: column.width, height: column.height }}
+            >
+              {rows.slice(range.first, range.last + 1).map((row) => (
+                <PageRow
+                  key={row.pages[0].n}
+                  row={row}
+                  pages={loaded.pages}
+                  drawScale={drawScale}
+                  snapshots={snapshots}
+                  left={
+                    PAD + Math.max(0, (paneWidth - 2 * PAD - row.width) / 2)
+                  }
+                />
+              ))}
+            </div>
           )}
-        </ViewTransition>
-        <ViewTransition
-          default="none"
-          update={{ [SIDEBAR]: "panes-out panes-in", default: "none" }}
-        >
-          <div
-            ref={scroller}
-            onScroll={onScroll}
-            className="relative min-w-0 flex-1 overflow-auto bg-ground [scrollbar-gutter:stable]"
-          >
-            {problem ? (
-              <p className="p-6 text-center text-sm text-red-300">{problem}</p>
-            ) : !ready ? (
-              <div className="flex h-full items-center justify-center">
-                <Spinner className="h-5 w-5 text-muted" />
-              </div>
-            ) : (
-              // The whole column's size, and in it only the rows near the
-              // view, each where `layout` puts it: a re-lay -- every frame of
-              // a drag -- touches a handful of rows however long the
-              // document is, and a row that leaves takes its canvas with it.
-              //
-              // Each row centered in the pane, not in the column: a landscape
-              // page wider than the pane widens the column, and centering in
-              // that would push every portrait page off to the right. A row
-              // too wide to center starts at the left edge instead, so all of
-              // its overflow is to the right, where it can be scrolled to.
-              <div
-                className="relative"
-                style={{ width: column.width, height: column.height }}
-              >
-                {rows.slice(range.first, range.last + 1).map((row) => (
-                  <PageRow
-                    key={row.pages[0].n}
-                    row={row}
-                    pages={loaded.pages}
-                    drawScale={drawScale}
-                    snapshots={snapshots}
-                    left={
-                      PAD + Math.max(0, (paneWidth - 2 * PAD - row.width) / 2)
-                    }
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </ViewTransition>
+        </div>
       </div>
 
       {properties && loaded && (

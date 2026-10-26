@@ -213,6 +213,38 @@ test("dragging the split moves the pages with it, and draws them once, after", a
   await expect.poll(() => drawings).toBe(1);
 });
 
+test("the sidebar slides in, the pages follow it every frame, and both are drawn after", async () => {
+  await workspace(pdf(4));
+  mount("/edit/a");
+  await pagesDrawn();
+  const paper = () => document.querySelector<HTMLElement>("[data-paper]")!;
+  // Every canvas put into the first page's slot is one drawing of it.
+  let drawings = 0;
+  new MutationObserver(() => drawings++).observe(paper().firstElementChild!, {
+    childList: true,
+  });
+  const thumbs = () =>
+    document.querySelectorAll('[role="tabpanel"] canvas').length;
+  const frame = () => new Promise((r) => requestAnimationFrame(r));
+  const widths: number[] = [paper().offsetWidth];
+  await page.getByTitle("Show sidebar").click();
+  for (let i = 0; i < 5; i++) {
+    await frame();
+    widths.push(paper().offsetWidth);
+  }
+  // Narrower a step at a time, not all at once -- each frame's re-lay lands
+  // after that frame's callback, so a reading can repeat -- and nothing
+  // drawn meanwhile.
+  const steps = widths.filter((w, i) => i === 0 || w !== widths[i - 1]);
+  expect(steps.length).toBeGreaterThanOrEqual(4);
+  for (let i = 1; i < steps.length; i++)
+    expect(steps[i]).toBeLessThan(steps[i - 1]);
+  expect(drawings).toBe(0);
+  expect(thumbs()).toBe(0);
+  await expect.poll(() => drawings).toBe(1);
+  await expect.poll(thumbs).toBeGreaterThan(0);
+});
+
 test("a picked zoom is drawn again on a screen of another pixel density", async () => {
   // The queries the pane asks the ratio through, so a change of screen can
   // be announced on them; and the ratio itself, put back after.
