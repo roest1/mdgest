@@ -31,12 +31,25 @@ shows them and that every button comes back as the next view.
 **The editor.** `editor.test.ts` opens the editor at an address over the
 real engine: a document the workspace holds opens as a tab, and one it does
 not is let go of, in place, with a word on why. An open document's pages are
-laid out and drawn, the zoom and two-page view re-lay them, and a file that
-is not a PDF says so. `pdf.test.ts` covers pdf.js as `pdf.ts` sets it up:
-one worker for every document, so letting one go never refuses the next.
+laid out and drawn -- only those near the view in a long one -- the zoom and
+two-page view re-lay them, dragging the split or sliding either sidebar
+moves the pages every frame and draws them once it stops, the sidebar's
+thumbnails and outline go where they point, the properties dialog shows what
+the file says and closes from its backdrop, a picked zoom is drawn again on
+a screen of another pixel density, and a file that is not a PDF says so.
+These tests load the app's stylesheet, so what is hidden is hidden and what
+scrolls scrolls. `pdf.test.ts` covers pdf.js as `pdf.ts` sets it up: one
+worker for every document, so letting one go never refuses the next; and
+what is read out of a document besides its pages -- its properties, its
+outline and where each entry points, on a page turned any way, and what is
+left when pdf.js cannot read the outline or the properties.
+`snapshots.test.ts` covers what the thumbnails are drawn from: one copy of a
+page, not one per render, replaced only when too narrow for the screen, and
+scaled down to an average rather than speckle.
 
 The PDFs are built by `pdfOf` in `harness.ts`, by hand: blank pages with a
-number on each, so no document of anyone's is needed.
+number on each, and an info dictionary, outline and /Rotate when a test
+asks, so no document of anyone's is needed.
 
 `worker.ts` runs `opfs.ts` and `stage.ts` where they run in the app, since a
 synchronous file handle exists only in a worker; `harness.ts` is the wire

@@ -16,10 +16,9 @@ import {
   Undo2,
   type LucideIcon,
 } from "lucide-react";
-import { useRef, useState, ViewTransition, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useMenuDismiss } from "src/components/shared/useMenuDismiss";
 import { barButton, iconButton } from "./controls";
-import { SLIDE } from "./transitions";
 
 /** What a document does with one kind of page furniture: keep it as text,
  *  hide it as an HTML comment, or delete it. As `furniture.ts` names it on
@@ -468,50 +467,46 @@ export function Toolbar({ docId: _docId }: { docId: string }) {
         </button>
       </div>
 
-      {/* The bar is drawn from its left edge as the explorer moves that edge,
-          so what is at the right keeps to its own: the edge that stays. */}
-      <ViewTransition update={SLIDE}>
-        <div className="relative ml-auto flex items-center gap-2">
-          {/* Mark done */}
-          {isDone ? (
-            <button
-              type="button"
-              title="Done: locked against edits. Reopen to edit it again"
-              className="group flex cursor-pointer items-center gap-1.5 rounded-md
+      <div className="relative ml-auto flex items-center gap-2">
+        {/* Mark done */}
+        {isDone ? (
+          <button
+            type="button"
+            title="Done: locked against edits. Reopen to edit it again"
+            className="group flex cursor-pointer items-center gap-1.5 rounded-md
           border border-emerald-500/60 bg-emerald-500/10 px-2 py-1 text-emerald-200 transition-colors
           hover:border-edge hover:bg-raised hover:text-ink"
-            >
-              <CheckCheck className="h-4 w-4" />
-              <span className="group-hover:hidden">done</span>
-              <span className="hidden group-hover:inline">reopen</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              title="Mark this document done: it locks, and its markdown goes in the export"
-              className="flex cursor-pointer items-center gap-1.5 rounded-md
+          >
+            <CheckCheck className="h-4 w-4" />
+            <span className="group-hover:hidden">done</span>
+            <span className="hidden group-hover:inline">reopen</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            title="Mark this document done: it locks, and its markdown goes in the export"
+            className="flex cursor-pointer items-center gap-1.5 rounded-md
         border border-edge bg-raised/40 px-2 py-1 text-muted transition-colors
         enabled:hover:border-emerald-500/60 enabled:hover:text-emerald-200
         disabled:cursor-default disabled:opacity-40"
-            >
-              <Check className="h-4 w-4" />
-              mark done
-            </button>
-          )}
-
-          {/* (TODO): ExportMenu.tsx */}
-          <button
-            type="button"
-            title="Export: the one save that survives clearing this browser"
-            aria-haspopup="menu"
-            onClick={() => alert("Export coming soon")}
-            className={barButton()}
           >
-            <Download className="h-4 w-4" />
-            export
+            <Check className="h-4 w-4" />
+            mark done
           </button>
-        </div>
-      </ViewTransition>
+        )}
+
+        {/* (TODO): ExportMenu.tsx */}
+        <button
+          type="button"
+          title="Export: the one save that survives clearing this browser"
+          aria-haspopup="menu"
+          onClick={() => alert("Export coming soon")}
+          className={barButton()}
+        >
+          <Download className="h-4 w-4" />
+          export
+        </button>
+      </div>
     </div>
   );
 }
