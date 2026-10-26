@@ -32,7 +32,7 @@ shows them and that every button comes back as the next view.
 real engine: a document the workspace holds opens as a tab, and one it does
 not is let go of, in place, with a word on why. An open document's pages are
 laid out and drawn -- only those near the view in a long one -- the zoom and
-two-page view re-lay them, dragging the split or sliding the sidebar in
+two-page view re-lay them, dragging the split or sliding either sidebar
 moves the pages every frame and draws them once it stops, the sidebar's
 thumbnails and outline go where they point, the properties dialog shows what
 the file says and closes from its backdrop, a picked zoom is drawn again on

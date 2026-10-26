@@ -1,6 +1,5 @@
 import { GripVertical } from "lucide-react";
-import { type ReactNode, useRef, useState, ViewTransition } from "react";
-import { SLIDE } from "./transitions";
+import { type ReactNode, useRef, useState } from "react";
 
 /** Neither pane may be dragged narrower than this share of the split. */
 const MIN = 0.2;
@@ -59,39 +58,35 @@ export function Split({ left, right }: { left: ReactNode; right: ReactNode }) {
         {left}
       </div>
 
-      {/* Slides with the panes' bars as the explorer resizes the split,
-          rather than fading out and in where the panes do. */}
-      <ViewTransition update={SLIDE}>
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize panes"
+        aria-valuemin={MIN * 100}
+        aria-valuemax={MAX * 100}
+        aria-valuenow={Math.round(share * 100)}
+        tabIndex={0}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onDoubleClick={() => setShare(0.5)}
+        onKeyDown={onKeyDown}
+        title="Drag to resize, double-click to reset"
+        // A 1px line, with a wider hit area laid over it so it is easy to
+        // grab, and a grip at its middle to show that it can be.
+        className="group relative z-10 w-px shrink-0 cursor-col-resize bg-edge outline-none after:absolute after:inset-y-0 after:-left-1 after:-right-1 after:content-['']"
+      >
         <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize panes"
-          aria-valuemin={MIN * 100}
-          aria-valuemax={MAX * 100}
-          aria-valuenow={Math.round(share * 100)}
-          tabIndex={0}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-          onDoubleClick={() => setShare(0.5)}
-          onKeyDown={onKeyDown}
-          title="Drag to resize, double-click to reset"
-          // A 1px line, with a wider hit area laid over it so it is easy to
-          // grab, and a grip at its middle to show that it can be.
-          className="group relative z-10 w-px shrink-0 cursor-col-resize bg-edge outline-none after:absolute after:inset-y-0 after:-left-1 after:-right-1 after:content-['']"
+          className={`absolute top-1/2 left-1/2 z-10 flex h-6 w-3.5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-sm border bg-chrome transition-colors ${
+            dragging
+              ? "border-edge-strong text-ink"
+              : "border-edge text-faint group-hover:border-edge-strong group-hover:text-muted group-focus-visible:border-accent-lit"
+          }`}
         >
-          <div
-            className={`absolute top-1/2 left-1/2 z-10 flex h-6 w-3.5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-sm border bg-chrome transition-colors ${
-              dragging
-                ? "border-edge-strong text-ink"
-                : "border-edge text-faint group-hover:border-edge-strong group-hover:text-muted group-focus-visible:border-accent-lit"
-            }`}
-          >
-            <GripVertical className="h-3 w-3" />
-          </div>
+          <GripVertical className="h-3 w-3" />
         </div>
-      </ViewTransition>
+      </div>
 
       <div className="flex min-w-0 flex-1 flex-col">{right}</div>
     </div>

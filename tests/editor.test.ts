@@ -245,6 +245,31 @@ test("the sidebar slides in, the pages follow it every frame, and both are drawn
   await expect.poll(thumbs).toBeGreaterThan(0);
 });
 
+test("the explorer slides away, and the pages follow it every frame and are drawn after", async () => {
+  await workspace(pdf(4));
+  mount("/edit/a");
+  await pagesDrawn();
+  const paper = () => document.querySelector<HTMLElement>("[data-paper]")!;
+  let drawings = 0;
+  new MutationObserver(() => drawings++).observe(paper().firstElementChild!, {
+    childList: true,
+  });
+  const frame = () => new Promise((r) => requestAnimationFrame(r));
+  const widths: number[] = [paper().offsetWidth];
+  await page.getByTitle("Hide explorer").click();
+  for (let i = 0; i < 5; i++) {
+    await frame();
+    widths.push(paper().offsetWidth);
+  }
+  // Wider a step at a time, as the split widens with the editor.
+  const steps = widths.filter((w, i) => i === 0 || w !== widths[i - 1]);
+  expect(steps.length).toBeGreaterThanOrEqual(4);
+  for (let i = 1; i < steps.length; i++)
+    expect(steps[i]).toBeGreaterThan(steps[i - 1]);
+  expect(drawings).toBe(0);
+  await expect.poll(() => drawings).toBe(1);
+});
+
 test("a picked zoom is drawn again on a screen of another pixel density", async () => {
   // The queries the pane asks the ratio through, so a change of screen can
   // be announced on them; and the ratio itself, put back after.

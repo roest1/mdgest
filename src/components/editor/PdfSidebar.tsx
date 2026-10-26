@@ -3,14 +3,8 @@ import {
   createLucideIcon,
   Image as ImageIcon,
 } from "lucide-react";
-import {
-  memo,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { Slide, type SlideState } from "src/components/shared/Slide";
 import type { OutlineNode, PDFPageProxy } from "src/lib/pdf";
 import { PageCanvas } from "./PageCanvas";
 import type { Snapshots } from "./snapshots";
@@ -48,110 +42,26 @@ const tab = (on: boolean) =>
  *  thumbnail's column. */
 const WIDTH = 232;
 
-/** Where the sidebar is: shown at all, and drawing its thumbnails. */
-export interface SidebarState {
-  /** Open, or sliding either way. */
-  shown: boolean;
-  /** Open and done sliding in, or on its way out from there: thumbnails
-   *  are drawn while it is. */
-  drawing: boolean;
-}
-
-/** The sidebar's frame, whose width slides between nothing and the
- *  sidebar's. The pages beside it follow every frame of the slide, re-laid
- *  by the pane's resize observer as for a dragged split, and are drawn again
- *  once it ends.
- *
- * Its own width, animated, rather than a view transition: one cross-fades a
- * snapshot of the pages at the old width into the pages at the new, which
- * are stretched until they are drawn again partway through the fade. The
- * contents keep the sidebar's full width and are clipped, so only the pages
- * reflow; they ride the frame's moving edge, as the explorer slides out from
- * under the header.
- *
- * Thumbnails wait for a slide in to end before they are drawn: a strip
- * full of them drawn at once costs the slide a frame. Out, they are kept
- * until it ends, so they leave with the rest of the sidebar.
- *
- * The children are there while the frame is closed, only hidden: no
- * thumbnail is near the view then, so none is drawn, and the outline keeps
- * which entries were open. */
+/** The sidebar's frame: it slides in from the pane's edge, and the pages
+ *  follow it every frame -- see Slide. Thumbnails wait for a slide in to
+ *  end before they are drawn: a strip full of them drawn at once costs the
+ *  slide a frame. Out, they are kept until it ends, so they leave with the
+ *  rest of the sidebar. */
 export function SidebarFrame({
   open,
   children,
 }: {
   open: boolean;
-  children?: (state: SidebarState) => ReactNode;
+  children?: (state: SlideState) => ReactNode;
 }) {
-  const frame = useRef<HTMLDivElement>(null);
-  const running = useRef<Animation | null>(null);
-  // Sliding from the render that turns it, not from the effect after: a
-  // render that has it neither open nor sliding hides the strip, and its
-  // thumbnails would be dropped and drawn again.
-  const [turned, setTurned] = useState(open);
-  const [sliding, setSliding] = useState(false);
-  if (turned !== open) {
-    setTurned(open);
-    setSliding(true);
-  }
-  // Set when a slide ends, so a slide out keeps what is drawn and a slide in
-  // turned back before it ends never draws anything.
-  const [drawing, setDrawing] = useState(open);
-  const was = useRef(open);
-
-  useLayoutEffect(() => {
-    const el = frame.current;
-    if (!el || was.current === open) return;
-    was.current = open;
-    const to = open ? WIDTH : 0;
-    // From wherever it is: turned back mid-slide, the width the slide has
-    // reached, which the animation holds over the style until it is
-    // cancelled.
-    const from = running.current
-      ? el.getBoundingClientRect().width
-      : WIDTH - to;
-    running.current?.cancel();
-    // The editor's own timing for things that come and go (index.css).
-    // `--shift-time` is in ms. Without the stylesheet, no slide at all:
-    // `animate` refuses an empty easing or a duration that is not a number.
-    const css = getComputedStyle(el);
-    const still = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const slide = el.animate(
-      { width: [`${from}px`, `${to}px`] },
-      {
-        duration: still.matches
-          ? 0
-          : Number.parseFloat(css.getPropertyValue("--shift-time")) || 0,
-        easing: css.getPropertyValue("--shift-ease").trim() || "linear",
-      },
-    );
-    running.current = slide;
-    slide.finished.then(
-      () => {
-        if (running.current !== slide) return;
-        running.current = null;
-        setSliding(false);
-        setDrawing(open);
-      },
-      // Cancelled: turned back, and the slide that replaced it carries on.
-      () => {},
-    );
-  }, [open]);
-
-  const shown = open || sliding;
   return (
-    <div
-      ref={frame}
-      className="flex shrink-0 justify-end overflow-hidden"
-      style={{ width: open ? WIDTH : 0 }}
+    <Slide
+      open={open}
+      width={WIDTH}
+      className="flex border-r border-edge bg-chrome/50"
     >
-      <div
-        className={`shrink-0 border-r border-edge bg-chrome/50 ${shown ? "flex" : "hidden"}`}
-        style={{ width: WIDTH }}
-      >
-        {children?.({ shown, drawing })}
-      </div>
-    </div>
+      {children}
+    </Slide>
   );
 }
 
@@ -171,7 +81,7 @@ export function PdfSidebar({
   onPage,
   onOutline,
 }: {
-  state: SidebarState;
+  state: SlideState;
   view: SidebarView;
   onView: (view: SidebarView) => void;
   pages: PDFPageProxy[];
@@ -238,14 +148,14 @@ export function PdfSidebar({
 const NONE: ReadonlySet<number> = new Set();
 
 function Thumbnails({
-  state: { shown, drawing },
+  state: { shown, arrived },
   pages,
   sizes,
   snapshots,
   current,
   onPage,
 }: {
-  state: SidebarState;
+  state: SlideState;
   pages: PDFPageProxy[];
   sizes: { w: number; h: number }[];
   snapshots: Snapshots;
@@ -258,11 +168,11 @@ function Thumbnails({
   // Which thumbnails are within a screen of the view, and so worth drawing.
   // One observer for the lot, keyed by `data-page`. The set is copied only
   // when membership changes, so a report that changes nothing does not
-  // re-render the strip. None while the sidebar is not drawing: the set
+  // re-render the strip. None until the sidebar has arrived: the set
   // empties, and the strip's canvases go with it.
   useEffect(() => {
     const root = scroller.current;
-    if (!root || !drawing) return;
+    if (!root || !arrived) return;
     const io = new IntersectionObserver(
       (entries) =>
         setNear((was) => {
@@ -283,7 +193,7 @@ function Thumbnails({
       io.disconnect();
       setNear(NONE);
     };
-  }, [pages, drawing]);
+  }, [pages, arrived]);
 
   // The current page's thumbnail stays in sight as the document scrolls,
   // and is in sight when the sidebar is opened. The strip is scrolled by

@@ -19,20 +19,19 @@ import { WorkspaceName } from "src/components/shared/WorkspaceName";
 import { TabBar } from "src/components/editor/TabBar";
 import { Toolbar } from "src/components/editor/Toolbar";
 import { Split } from "src/components/editor/Split";
-import { SIDEBAR, TABS } from "src/components/editor/transitions";
+import { TABS } from "src/components/editor/transitions";
+import { Slide } from "src/components/shared/Slide";
 import { engine } from "src/lib/engine";
 import { messageOf } from "src/lib/words";
 import type { Entry } from "src/lib/tree";
 import { MarkdownPane } from "src/components/editor/MarkdownPane";
 import { PdfPane } from "src/components/editor/PdfPane";
 
-/** The editor's contents as the tab bar or the explorer comes or goes: what
- *  was there fades out, what replaces it fades in once the frame has nearly
- *  arrived. */
+/** The editor's contents as the tab bar comes or goes: what was there
+ *  fades out, what replaces it fades in once the frame has nearly arrived. */
 const PANES = {
   enter: { [TABS]: "panes-in", default: "none" },
   exit: { [TABS]: "panes-out", default: "none" },
-  update: { [SIDEBAR]: "panes-out panes-in", default: "none" },
 } as const;
 
 /** A document's address. Ids may hold spaces and any script's letters, so
@@ -224,12 +223,7 @@ export default function Editor() {
         <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
-            onClick={() =>
-              startTransition(() => {
-                addTransitionType(SIDEBAR);
-                setSidebar((open) => !open);
-              })
-            }
+            onClick={() => setSidebar((open) => !open)}
             title={sidebar ? "Hide explorer" : "Show explorer"}
             className="cursor-pointer rounded p-1 text-muted transition-colors hover:text-ink"
           >
@@ -296,31 +290,28 @@ export default function Editor() {
         </div>
       </header>
       <div className="flex min-h-0 flex-1">
-        {/* Hidden rather than unmounted, so closing the sidebar keeps which
-            folders were open and does not read the listing again. The column
-            behind the explorer carries the header's color, so what the
-            curved corner cuts away reads as the header continuing down. */}
-        <ViewTransition update={{ [SIDEBAR]: "explorer", default: "none" }}>
-          <div
-            className={`w-[260px] shrink-0 bg-chrome ${sidebar ? "" : "hidden"}`}
-          >
-            <aside className="h-full overflow-hidden rounded-tr-xl border-t border-r border-edge bg-ground">
-              <Sidebar
-                docs={docs}
-                problem={problem}
-                docId={docId}
-                onOpen={openDoc}
-              />
-            </aside>
-          </div>
-        </ViewTransition>
+        {/* Slides in from the window's edge, and the editor follows it every
+            frame -- see Slide. Hidden rather than unmounted, so closing the
+            sidebar keeps which folders were open and does not read the
+            listing again. The column behind the explorer carries the
+            header's color, so what the curved corner cuts away reads as the
+            header continuing down. */}
+        <Slide open={sidebar} width={260} className="bg-chrome">
+          <aside className="h-full overflow-hidden rounded-tr-xl border-t border-r border-edge bg-ground">
+            <Sidebar
+              docs={docs}
+              problem={problem}
+              docId={docId}
+              onOpen={openDoc}
+            />
+          </aside>
+        </Slide>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {tabs && (
             <ViewTransition
               enter={{ [TABS]: "tabs-in", default: "none" }}
               exit={{ [TABS]: "tabs-out", default: "none" }}
-              update={{ [SIDEBAR]: "strip strip-under", default: "none" }}
             >
               <TabBar
                 docs={openDocs}
@@ -331,26 +322,14 @@ export default function Editor() {
             </ViewTransition>
           )}
 
-          {docId && (
-            <ViewTransition
-              update={{ [SIDEBAR]: "strip strip-over", default: "none" }}
-            >
-              <Toolbar key={docId} docId={docId} />
-            </ViewTransition>
-          )}
+          {docId && <Toolbar key={docId} docId={docId} />}
 
           {/* One frame whether or not a document is open, so there is one
               thing to move when the tab bar pushes it down. Its curved
               corner belongs to the empty editor only: under a tab bar that
               corner is the markdown pane header's. The column behind it
               carries the header's color, as the explorer's does. */}
-          <ViewTransition
-            update={{
-              [TABS]: "surface",
-              [SIDEBAR]: "surface",
-              default: "none",
-            }}
-          >
+          <ViewTransition update={{ [TABS]: "surface", default: "none" }}>
             <div
               className={`flex min-h-0 min-w-0 flex-1 bg-chrome ${!tabs && sidebar ? "-ml-px" : ""}`}
             >
