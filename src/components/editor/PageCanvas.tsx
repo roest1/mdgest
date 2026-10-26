@@ -1,5 +1,6 @@
 import { RenderingCancelledException } from "pdfjs-dist";
 import { useEffect, useRef } from "react";
+import { useDevicePixelRatio } from "src/hooks/useDevicePixelRatio";
 import type { PDFPageProxy } from "src/lib/pdf";
 import type { Snapshots } from "./snapshots";
 
@@ -25,8 +26,8 @@ function blank(width: number, height: number): HTMLCanvasElement {
  * Only drawn while `active`, and dropped when not, so a long document holds
  * canvases for the pages near the view rather than for all of them -- and
  * pdf.js the page's operator list and decoded images, which it would
- * otherwise keep for every page ever drawn. A redraw at a new scale goes
- * into a fresh canvas that replaces the old one when it is done, so zooming
+ * otherwise keep for every page ever drawn. A redraw at a new scale, or on
+ * a screen of another pixel density, goes into a fresh canvas that replaces the old one when it is done, so zooming
  * stretches the last picture instead of flashing white.
  *
  * With `snapshots`, every finished render is published there, and with
@@ -50,8 +51,10 @@ export function PageCanvas({
   preview?: boolean;
 }) {
   const slot = useRef<HTMLDivElement>(null);
-  // The scale the canvas in the slot was drawn at; 0 for an empty slot.
-  const drawn = useRef(0);
+  const dpr = useDevicePixelRatio();
+  // The scale and device pixel ratio the canvas in the slot was drawn at;
+  // null for an empty slot.
+  const drawn = useRef<{ scale: number; dpr: number } | null>(null);
 
   useEffect(() => {
     const el = slot.current;
@@ -59,10 +62,10 @@ export function PageCanvas({
     if (!active) {
       page.cleanup();
       el.replaceChildren();
-      drawn.current = 0;
+      drawn.current = null;
       return;
     }
-    if (drawn.current === scale) return;
+    if (drawn.current?.scale === scale && drawn.current.dpr === dpr) return;
 
     if (preview && snapshots) {
       const shot = snapshots.get(page.pageNumber);
@@ -70,14 +73,14 @@ export function PageCanvas({
         const canvas = blank(shot.width, shot.height);
         canvas.getContext("2d")?.drawImage(shot, 0, 0);
         el.replaceChildren(canvas);
-        drawn.current = scale;
+        drawn.current = { scale, dpr };
         return;
       }
     }
 
     const viewport = page.getViewport({ scale });
     const fit = Math.sqrt(MAX_PIXELS / (viewport.width * viewport.height));
-    const out = Math.min(window.devicePixelRatio || 1, fit);
+    const out = Math.min(dpr, fit);
     const canvas = blank(
       Math.floor(viewport.width * out),
       Math.floor(viewport.height * out),
@@ -91,7 +94,7 @@ export function PageCanvas({
     task.promise.then(
       () => {
         el.replaceChildren(canvas);
-        drawn.current = scale;
+        drawn.current = { scale, dpr };
         snapshots?.put(page.pageNumber, canvas);
       },
       (cause: unknown) => {
@@ -103,7 +106,7 @@ export function PageCanvas({
       },
     );
     return () => task.cancel();
-  }, [page, scale, active, snapshots, preview]);
+  }, [page, scale, dpr, active, snapshots, preview]);
 
   return <div ref={slot} className="absolute inset-0" />;
 }
