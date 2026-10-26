@@ -7,7 +7,7 @@
  * workspace is committed through the engine, and the browser's copy of it
  * discarded after each test, so the next starts from nothing. */
 
-import { afterEach, beforeAll, expect, test } from "vitest";
+import { afterEach, beforeAll, expect, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { createRoot, type Root } from "react-dom/client";
 import { createElement } from "react";
@@ -211,6 +211,41 @@ test("dragging the split moves the pages with it, and draws them once, after", a
     expect(widths[i]).toBeLessThan(widths[i - 1]);
   expect(drawings).toBe(0);
   await expect.poll(() => drawings).toBe(1);
+});
+
+test("a picked zoom is drawn again on a screen of another pixel density", async () => {
+  // The queries the pane asks the ratio through, so a change of screen can
+  // be announced on them; and the ratio itself, put back after.
+  const queries: MediaQueryList[] = [];
+  const matchMedia = window.matchMedia.bind(window);
+  const spy = vi.spyOn(window, "matchMedia").mockImplementation((q: string) => {
+    const mql = matchMedia(q);
+    if (q.includes("dppx")) queries.push(mql);
+    return mql;
+  });
+  const ratio = Object.getOwnPropertyDescriptor(window, "devicePixelRatio");
+  try {
+    await workspace(pdf(1));
+    mount("/edit/a");
+    await pagesDrawn();
+    await page.getByTitle("Zoom in").click();
+    const backing = () =>
+      document.querySelector<HTMLCanvasElement>("[data-paper] canvas")!.width;
+    const css = () =>
+      document.querySelector<HTMLElement>("[data-paper]")!.clientWidth;
+    await expect.poll(() => Math.abs(backing() - css())).toBeLessThan(2);
+
+    Object.defineProperty(window, "devicePixelRatio", {
+      value: 2,
+      configurable: true,
+    });
+    for (const mql of [...queries]) mql.dispatchEvent(new Event("change"));
+    await expect.poll(() => Math.abs(backing() - 2 * css())).toBeLessThan(3);
+  } finally {
+    spy.mockRestore();
+    if (ratio) Object.defineProperty(window, "devicePixelRatio", ratio);
+    else delete (window as { devicePixelRatio?: number }).devicePixelRatio;
+  }
 });
 
 test("a long document holds only the pages near the view", async () => {
