@@ -13,8 +13,8 @@ What this code decides, not what the language or the browser guarantees.
 
 **The reader.** `reader.test.ts` runs every case through the app's own path
 -- pdf.js opens the fixture, `readPage` reads each page, `structure` makes
-the blocks -- and asserts that the installed pdf.js is the version `READER`
-was made with (`src/lib/analysis.ts`). The reader is almost all decisions:
+the blocks, `emit` writes the markdown -- and asserts that the installed
+pdf.js is the version `READER` was made with (`src/lib/analysis.ts`). The reader is almost all decisions:
 every threshold in `read.ts` and `structure.ts` is a guess about how a page
 is read, so most cases sit a known distance either side of one. The cases
 live in `cases/`, one file per area its name says: headings, lists, blocks,
@@ -24,6 +24,11 @@ name that tells the page to read the document again. `read.test.ts` drives `read
 document cannot be made to show: a font still loading when the text is read
 is waited for, not read as regular; and a picture whose pixels pdf.js cannot
 hand over is the page under it, cut from one render in the right place.
+`emit.test.ts` covers the map beside the markdown: each block's number on
+its page and the line it went on, which the numbered boxes will read.
+`convert.test.ts` reads a document over the real engine: off its pages
+once and kept, from the cache after, one reading for two asks at once, and
+read again when the cached analysis cannot be used.
 
 **The workspace.** `workspace.test.ts` covers ids, the places a document has,
 and what `parseManifest` refuses; `upload.test.ts`, the file-type policy and
@@ -32,8 +37,8 @@ gives up and what it is refused for; `tree.test.ts`, the order a listing
 folds into; `opfs.test.ts`, the file layer: truncating writes, replacing ones
 and what a write cut short leaves, `walk`'s order, `sha256`, and what
 `removeDerived` may touch; `stage.test.ts`, what a drop stages, how a conflict
-is settled, what a commit writes and what it refuses, and the bytes the editor
-reads back; `engine.test.ts`, what
+is settled, what a commit writes and what it refuses, the bytes the editor
+reads back, and a document's read kept, replaced and refused; `engine.test.ts`, what
 the engine worker does with a call it has no method for; `words.test.ts`, the
 counting the UI phrases with.
 
