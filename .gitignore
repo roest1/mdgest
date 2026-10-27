@@ -23,5 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 
-# Test runs: failure screenshots
+# Test runs: failure screenshots, and the fixture PDFs `bun run fixtures` writes
 .vitest/
+tests/out/
