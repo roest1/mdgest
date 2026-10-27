@@ -7,12 +7,48 @@
  * never embedded, so there is nothing to wait for -- so that one runs over
  * a stand-in page. */
 
-import { expect, test } from "vitest";
+import { OPS } from "pdfjs-dist";
+import { expect, test, vi } from "vitest";
 import { openPdf, type PDFPageProxy } from "src/lib/pdf";
 import { readPage } from "src/lib/read";
 import { buildPdf } from "./fixtures/pdf";
 
 const H = 792;
+
+/** pdf.js's store of decoded things, holding nothing, ever: what a page
+ *  whose objects never arrive looks like. */
+const nothing = {
+  has: () => false,
+  get: (id: string, callback?: (data: unknown) => void) => {
+    if (!callback) throw new Error(`${id} has not resolved yet`);
+  },
+};
+
+/** A letter page with nothing on it, standing in for pdf.js's, with any
+ *  of its parts replaced. */
+function standIn(over: Record<string, unknown>): PDFPageProxy {
+  const viewport = ({ scale = 1 }: { scale?: number } = {}) => ({
+    width: 612 * scale,
+    height: H * scale,
+    transform: [scale, 0, 0, -scale, 0, H * scale],
+    convertToViewportPoint: (x: number, y: number) => [
+      x * scale,
+      (H - y) * scale,
+    ],
+  });
+  return {
+    pageNumber: 1,
+    commonObjs: nothing,
+    objs: nothing,
+    getViewport: viewport,
+    getOperatorList: async () => ({ fnArray: [], argsArray: [] }),
+    getTextContent: async () => ({ items: [], styles: {} }),
+    getAnnotations: async () => [],
+    render: () => ({ promise: Promise.resolve() }),
+    cleanup: () => true,
+    ...over,
+  } as unknown as PDFPageProxy;
+}
 
 /** A page of one line, "Safety Rules", in a bold face whose name says
  *  nothing about its weight -- only the font object does -- and which pdf.js
@@ -34,20 +70,8 @@ function pageWithLateFont(delay: number): PDFPageProxy {
       return font;
     },
   };
-  const viewport = {
-    width: 612,
-    height: H,
-    transform: [1, 0, 0, -1, 0, H],
-    convertToViewportPoint: (x: number, y: number) => [x, H - y],
-  };
-  return {
-    pageNumber: 1,
+  return standIn({
     commonObjs,
-    objs: commonObjs,
-    getViewport: () => viewport,
-    getOperatorList: async () => ({ fnArray: [], argsArray: [] }),
-    getAnnotations: async () => [],
-    cleanup: () => true,
     getTextContent: async () => ({
       items: [
         {
@@ -64,7 +88,7 @@ function pageWithLateFont(delay: number): PDFPageProxy {
         g_d0_f1: { ascent: 0.9, descent: -0.2, vertical: false },
       },
     }),
-  } as unknown as PDFPageProxy;
+  });
 }
 
 test("a font still loading is waited for, not read as regular", async () => {
@@ -110,4 +134,37 @@ test("a picture with no pixels of its own is the page under it, in place", async
   } finally {
     await task.destroy();
   }
+});
+
+test("images that never arrive are waited for together, not in turn", async () => {
+  // Three images, each a box of the page, whose pixels pdf.js never sends.
+  const ids = ["img_p0_1", "img_p0_2", "img_p0_3"];
+  const page = standIn({
+    getOperatorList: async () => ({
+      fnArray: ids.flatMap(() => [
+        OPS.save,
+        OPS.transform,
+        OPS.paintImageXObject,
+        OPS.restore,
+      ]),
+      argsArray: ids.flatMap((id, i) => [
+        null,
+        [100, 0, 0, 100, 72 + i * 150, 500],
+        [id, 64, 64],
+        null,
+      ]),
+    }),
+  });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  let read: Awaited<ReturnType<typeof readPage>> | null = null;
+  try {
+    void readPage(page).then((r) => (read = r));
+    // One wait's length: enough for all three, if they are waited for at
+    // once, and for the first alone if one after another.
+    await vi.advanceTimersByTimeAsync(15_000);
+  } finally {
+    vi.useRealTimers();
+  }
+  await vi.waitFor(() => expect(read).not.toBeNull(), { timeout: 2000 });
+  expect(read!.page.pictures).toHaveLength(3);
 });

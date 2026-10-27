@@ -346,6 +346,22 @@ function cut(
   return canvas;
 }
 
+/** A drawn image's decoded pixels, or null when pdf.js has none to give. */
+async function imageOf(
+  page: PDFPageProxy,
+  source: Drawn["source"],
+): Promise<ImageObj | null> {
+  let got: unknown;
+  if (source.kind === "object") got = await resolveObject(page, source.id);
+  else if (source.kind === "inline") got = source.data;
+  else {
+    const { arg } = source;
+    got =
+      typeof arg.data === "string" ? await resolveObject(page, arg.data) : arg;
+  }
+  return isImageObj(got) ? got : null;
+}
+
 async function readPictures(
   page: PDFPageProxy,
 ): Promise<{ pictures: Picture[]; figures: Figure[] }> {
@@ -356,7 +372,10 @@ async function readPictures(
   const clip = { x: 0, y: 0, w: viewport.width, h: viewport.height };
   let whole: Promise<{ canvas: HTMLCanvasElement; s: number }> | null = null;
 
-  for (const drawn of await findDrawn(page)) {
+  // Where each image lands, and its pixels asked for: every one at once, so
+  // a page naming images pdf.js is slow to send waits for the slowest, not
+  // for each in turn.
+  const placed = (await findDrawn(page)).flatMap((drawn) => {
     // The unit square under the transform is where the image lands.
     const m = mul(toPage, drawn.ctm);
     const corners = (
@@ -380,25 +399,13 @@ async function readPictures(
       w: Math.min(box.x + box.w, clip.w) - x,
       h: Math.min(box.y + box.h, clip.h) - y,
     };
-    if (box.w < MIN_PICTURE_PT || box.h < MIN_PICTURE_PT) continue;
+    if (box.w < MIN_PICTURE_PT || box.h < MIN_PICTURE_PT) return [];
+    const mask = drawn.source.kind === "mask";
+    return [{ m, box, mask, image: imageOf(page, drawn.source) }];
+  });
 
-    let img: ImageObj | null = null;
-    let mask = false;
-    const { source } = drawn;
-    if (source.kind === "object") {
-      const got = await resolveObject(page, source.id);
-      img = isImageObj(got) ? got : null;
-    } else if (source.kind === "inline") {
-      img = isImageObj(source.data) ? source.data : null;
-    } else {
-      mask = true;
-      const { arg } = source;
-      const got =
-        typeof arg.data === "string"
-          ? await resolveObject(page, arg.data)
-          : arg;
-      img = isImageObj(got) ? got : null;
-    }
+  for (const { m, box, mask, image } of placed) {
+    const img = await image;
     if (img) {
       if (img.width * img.height <= 1) continue;
       const few = img.width < MIN_PICTURE_PX || img.height < MIN_PICTURE_PX;
