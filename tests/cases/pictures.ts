@@ -124,4 +124,11 @@ export const pictures: Case[] = [
     ],
     blocks: Array.from({ length: 10 }, (_, i) => `image p1-i${i}.png`),
   },
+  {
+    name: "pictures-undecodable",
+    about:
+      "An image pdf.js cannot decode is still a figure: the page under it, rendered.",
+    pages: [(pen) => pen.undecodable(X, TOP, 100, 100)],
+    blocks: ["image p1-i0.png"],
+  },
 ];

@@ -22,7 +22,8 @@ style, links, pictures, pages. `analysis.test.ts` covers the gate on a
 stored read: what `parseAnalysis` refuses, and that it refuses under the one
 name that tells the page to read the document again. `read.test.ts` drives `readPage` over a stand-in page, for the timing a real
 document cannot be made to show: a font still loading when the text is read
-is waited for, not read as regular.
+is waited for, not read as regular; and a picture whose pixels pdf.js cannot
+hand over is the page under it, cut from one render in the right place.
 
 **The workspace.** `workspace.test.ts` covers ids, the places a document has,
 and what `parseManifest` refuses; `upload.test.ts`, the file-type policy and

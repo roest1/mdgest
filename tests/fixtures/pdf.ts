@@ -54,6 +54,7 @@ type Op =
       px: [number, number];
     }
   | { kind: "link"; x: number; y: number; w: number; h: number; url: string }
+  | { kind: "undecodable"; x: number; y: number; w: number; h: number }
   | {
       kind: "inline";
       x: number;
@@ -129,6 +130,14 @@ export class Pen {
     px: [number, number],
   ): void {
     this.ops.push({ kind: "image", x, y, w, h, px });
+  }
+
+  /** An image whose data is not a JPEG though it says it is, drawn into the
+   *  box at (`x`, `y`), top-left: one pdf.js cannot hand over the pixels of,
+   *  so the reader renders the page under it instead. Drawn after
+   *  everything else on the page, as inline images are. */
+  undecodable(x: number, y: number, w: number, h: number): void {
+    this.ops.push({ kind: "undecodable", x, y, w, h });
   }
 
   /** An inline image (`BI … EI`) of `px` × `px` pixels, drawn into the box
@@ -208,6 +217,20 @@ export async function buildPdf(
         });
       } else if (op.kind === "inline") {
         inline += inlineImage(op);
+      } else if (op.kind === "undecodable") {
+        const image = doc.context.register(
+          doc.context.stream(new Uint8Array(400).fill(7), {
+            Type: "XObject",
+            Subtype: "Image",
+            Width: 64,
+            Height: 64,
+            ColorSpace: "DeviceRGB",
+            BitsPerComponent: 8,
+            Filter: "DCTDecode",
+          }),
+        );
+        const name = page.node.newXObject("Im", image).toString();
+        inline += `q ${op.w} 0 0 ${op.h} ${op.x} ${PAGE_H - op.y - op.h} cm ${name} Do Q\n`;
       } else {
         const annot = doc.context.register(
           doc.context.obj({
