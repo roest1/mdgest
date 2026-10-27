@@ -83,4 +83,45 @@ export const pictures: Case[] = [
       "image p1-i3.png",
     ],
   },
+  {
+    name: "pictures-inline-run",
+    about:
+      "Ten inline images in a row are ten figures. Drawing them, pdf.js merges such a run into one operator; the list read.ts asks for is unmerged, and this fails if that changes.",
+    pages: [
+      (pen) => {
+        for (let i = 0; i < 10; i++)
+          pen.inline(X + (i % 5) * 60, TOP + Math.floor(i / 5) * 60, 30, 30);
+      },
+    ],
+    blocks: Array.from({ length: 10 }, (_, i) => `image p1-i${i}.png`),
+  },
+  {
+    name: "pictures-mask-run",
+    about:
+      "Ten different masks in a row are ten figures, though pdf.js groups such a run when it draws them.",
+    pages: [
+      (pen) => {
+        for (let i = 0; i < 10; i++)
+          pen.inline(X + (i % 5) * 60, TOP + Math.floor(i / 5) * 60, 30, 30, {
+            mask: true,
+            shade: i,
+          });
+      },
+    ],
+    blocks: Array.from({ length: 10 }, (_, i) => `image p1-i${i}.png`),
+  },
+  {
+    name: "pictures-mask-repeated",
+    about:
+      "One mask stamped ten times at one size is ten figures, though pdf.js repeats one operator when it draws them.",
+    pages: [
+      (pen) => {
+        for (let i = 0; i < 10; i++)
+          pen.inline(X + (i % 5) * 60, TOP + Math.floor(i / 5) * 60, 30, 30, {
+            mask: true,
+          });
+      },
+    ],
+    blocks: Array.from({ length: 10 }, (_, i) => `image p1-i${i}.png`),
+  },
 ];

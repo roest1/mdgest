@@ -149,7 +149,11 @@ interface Drawn {
 /** Walk the page's operators with the transform pdf.js's canvas would
  *  have at each, and note every image painted. Forms are inlined in the
  *  list between begin and end operators, which save and restore around
- *  their matrix; transparency groups save and restore too. */
+ *  their matrix; transparency groups save and restore too.
+ *
+ * The list is pdf.js's unoptimized one: what drawing a page merges -- runs
+ * of inline images or masks into one group or repeat operator -- comes
+ * here one image at a time (`pictures-inline-run` and the two after it). */
 async function findDrawn(page: PDFPageProxy): Promise<Drawn[]> {
   const { fnArray, argsArray } = await page.getOperatorList({
     annotationMode: AnnotationMode.DISABLE,

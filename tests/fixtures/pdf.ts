@@ -53,7 +53,17 @@ type Op =
       h: number;
       px: [number, number];
     }
-  | { kind: "link"; x: number; y: number; w: number; h: number; url: string };
+  | { kind: "link"; x: number; y: number; w: number; h: number; url: string }
+  | {
+      kind: "inline";
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      px: number;
+      mask: boolean;
+      shade: number;
+    };
 
 /** The body size every case sets its paragraphs in, unless it says otherwise. */
 export const BODY = 10;
@@ -121,6 +131,22 @@ export class Pen {
     this.ops.push({ kind: "image", x, y, w, h, px });
   }
 
+  /** An inline image (`BI … EI`) of `px` × `px` pixels, drawn into the box
+   *  at (`x`, `y`), top-left, between its own save and restore: the shape
+   *  pdf.js merges into one operator when ten or more come in a row. A
+   *  `mask` is a stencil painted black, which the same `shade` makes the
+   *  same image -- pdf.js then repeats one mask rather than group several.
+   *  Drawn after everything else on the page. */
+  inline(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    { px = 16, mask = false, shade = 0 } = {},
+  ): void {
+    this.ops.push({ kind: "inline", x, y, w, h, px, mask, shade });
+  }
+
   /** A link annotation over the box at (`x`, `y`), top-left. */
   link(x: number, y: number, w: number, h: number, url: string): void {
     this.ops.push({ kind: "link", x, y, w, h, url });
@@ -138,6 +164,23 @@ async function fonts(doc: PDFDocument): Promise<Record<Face, PDFFont>> {
   return Object.fromEntries(entries) as Record<Face, PDFFont>;
 }
 
+const hex = (n: number) => n.toString(16).padStart(2, "0");
+
+/** The content-stream operators for one inline image, in hex. A mask's
+ *  rows are bits padded to a byte, a clear bit painted; its `shade` sets
+ *  which bits are, so that two shades are two images. */
+function inlineImage(op: Extract<Op, { kind: "inline" }>): string {
+  const { x, y, w, h, px, mask, shade } = op;
+  const row = mask
+    ? hex(shade & 0xff).repeat(Math.ceil(px / 8))
+    : [90, 120, 160].map(hex).join("").repeat(px);
+  const kind = mask ? "/IM true" : "/CS /RGB /BPC 8";
+  return (
+    `q ${w} 0 0 ${h} ${x} ${PAGE_H - y - h} cm\n` +
+    `BI /W ${px} /H ${px} ${kind} /F /AHx ID\n${row.repeat(px)}>\nEI Q\n`
+  );
+}
+
 export async function buildPdf(
   pages: Draw[],
 ): Promise<Uint8Array<ArrayBuffer>> {
@@ -148,6 +191,7 @@ export async function buildPdf(
     draw(pen);
     const page = doc.addPage([PAGE_W, PAGE_H]);
     let end = 0;
+    let inline = "";
     for (const op of pen.ops) {
       if (op.kind === "text") {
         const font = faces[op.face];
@@ -162,6 +206,8 @@ export async function buildPdf(
           width: op.w,
           height: op.h,
         });
+      } else if (op.kind === "inline") {
+        inline += inlineImage(op);
       } else {
         const annot = doc.context.register(
           doc.context.obj({
@@ -175,6 +221,10 @@ export async function buildPdf(
         page.node.addAnnot(annot);
       }
     }
+    if (inline)
+      page.node.addContentStream(
+        doc.context.register(doc.context.stream(inline)),
+      );
   }
   const bytes = await doc.save();
   return new Uint8Array(bytes);
