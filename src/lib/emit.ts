@@ -301,6 +301,16 @@ export function emit(read: Analysis, assets: string, edits?: Edits): Markdown {
             : "keep";
       if (furniture === "delete") block.deleted = true;
       if (furniture === "hide") block.hidden = true;
+      /** Which setting hid or deleted it, when one did rather than a hand. */
+      const setting =
+        furniture === "keep"
+          ? {}
+          : {
+              furniture:
+                printed !== null
+                  ? ("page_numbers" as const)
+                  : ("headers_footers" as const),
+            };
       if (block.deleted) {
         blocks[block.id] = {
           id: block.id,
@@ -310,6 +320,7 @@ export function emit(read: Analysis, assets: string, edits?: Edits): Markdown {
           to: 0,
           hidden: false,
           deleted: true,
+          ...setting,
         };
         order.push(block.id);
         return;
@@ -356,12 +367,7 @@ export function emit(read: Analysis, assets: string, edits?: Edits): Markdown {
           to: at,
           hidden: true,
           deleted: false,
-          ...(furniture !== "keep"
-            ? {
-                furniture:
-                  printed !== null ? "page_numbers" : "headers_footers",
-              }
-            : {}),
+          ...setting,
         };
         order.push(block.id);
         return;

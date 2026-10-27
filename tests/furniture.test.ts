@@ -131,6 +131,12 @@ describe("page numbers", () => {
     expect(md.blocks.p1b1.deleted).toBe(false);
   });
 
+  test("a number the setting deletes is marked as the setting's, as a hidden one is", () => {
+    const md = emit(doc, "a/", withSetting("delete"));
+    expect(md.blocks.p1b2.furniture).toBe("page_numbers");
+    expect(md.blocks.p1b1.furniture).toBeUndefined();
+  });
+
   test("a block deleted by hand stays deleted under hide", () => {
     const edits = setFurniture(
       { ...blankEdits(), blocks: { p1b2: { deleted: true } } },
