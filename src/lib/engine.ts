@@ -90,7 +90,14 @@ async function call<M extends Method>(
   const id = ++sequence;
   return new Promise<Result<M>>((resolve, reject) => {
     pending.set(id, { resolve: resolve as (value: never) => void, reject });
-    worker!.postMessage({ id, method, params } satisfies Call<M>, transfer);
+    try {
+      worker!.postMessage({ id, method, params } satisfies Call<M>, transfer);
+    } catch (cause) {
+      // A call that cannot be sent -- a buffer already handed over -- has
+      // no answer coming, so nothing should wait for one.
+      pending.delete(id);
+      reject(cause as Error);
+    }
   });
 }
 
