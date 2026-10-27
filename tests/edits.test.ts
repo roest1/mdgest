@@ -11,6 +11,7 @@ import {
   type Role,
 } from "src/lib/analysis";
 import {
+  addInsert,
   apply,
   blankEdits,
   checkEdits,
@@ -120,6 +121,23 @@ describe("emit", () => {
         "---",
         "",
         "<!-- Third paragraph. -->",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("text inserted after a block since joined away goes at the page's end", () => {
+    const joined = join(blankEdits(), ["p1b1", "p1b2"]);
+    const edits = addInsert(joined, 1, "p1b2", "A note.");
+    expect(emit(doc, "a/", edits).text).toBe(
+      [
+        "## Title",
+        "",
+        "First paragraph. Second paragraph.",
+        "",
+        "Third paragraph.",
+        "",
+        "A note.",
         "",
       ].join("\n"),
     );

@@ -452,10 +452,14 @@ export function emit(read: Analysis, assets: string, edits?: Edits): Markdown {
       inList = false;
       inQuote = false;
     };
-    const here = new Set(page.blocks.map((b) => b.id));
+    // A block joined away stands where its head does, not here.
+    const here = new Set(
+      page.blocks.filter((b) => !joined.has(b.id)).map((b) => b.id),
+    );
     for (const ins of mine) if (ins.after === null) put1(ins);
     for (const raw of page.blocks) {
       one(raw);
+      if (!here.has(raw.id)) continue;
       for (const ins of mine) if (ins.after === raw.id) put1(ins);
     }
     for (const ins of mine)
