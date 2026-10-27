@@ -27,6 +27,7 @@ export const blocks: Case[] = [
     about: "Lines set at the paragraph's leading are one paragraph.",
     pages: [(pen) => pen.lines(X, TOP, prose(4))],
     blocks: [`p ${joined(prose(4))}`],
+    markdown: `${joined(prose(4))}\n`,
   },
   {
     name: "blocks-gap-threshold",

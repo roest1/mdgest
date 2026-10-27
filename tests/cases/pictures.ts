@@ -37,6 +37,15 @@ export const pictures: Case[] = [
       "p Figure 1. Pump cross-section, from the intake side.",
       ...prose(3, 1).map((l) => `p ${l}`),
     ],
+    markdown: [
+      prose(1, 0)[0],
+      "",
+      "![page 1 figure 1](doc.assets/p1-i0.png)",
+      "",
+      "Figure 1. Pump cross-section, from the intake side.",
+      "",
+      ...prose(3, 1).flatMap((l) => [l, ""]),
+    ].join("\n"),
   },
   {
     name: "pictures-label-beside",

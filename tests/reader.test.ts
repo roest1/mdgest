@@ -1,11 +1,12 @@
 /** Every reader case, through the app's own path: pdf.js opens the fixture,
- *  `readPage` reads each page, and `structure` makes the blocks. Runs in a
- *  real browser, because `read.ts` draws figures into a canvas and pdf.js
- *  parses in a worker. */
+ *  `readPage` reads each page, `structure` makes the blocks, and `emit`
+ *  writes the markdown. Runs in a real browser, because `read.ts` draws
+ *  figures into a canvas and pdf.js parses in a worker. */
 
 import { version } from "pdfjs-dist";
 import { describe, expect, test } from "vitest";
 import { READ_WITH } from "src/lib/analysis";
+import { emit } from "src/lib/emit";
 import { openPdf } from "src/lib/pdf";
 import { readPage } from "src/lib/read";
 import { structure, type ReadPage } from "src/lib/structure";
@@ -51,6 +52,8 @@ for (const [group, list] of Object.entries(cases)) {
       run(`${c.name}: ${c.about}`, async () => {
         const analysis = await read(await buildPdf(c.pages));
         expect(summarize(analysis)).toEqual(c.blocks);
+        if (c.markdown !== undefined)
+          expect(emit(analysis, "doc.assets/").text).toBe(c.markdown);
       });
     }
   });
