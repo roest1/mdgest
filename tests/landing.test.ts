@@ -23,6 +23,8 @@ import type * as Opfs from "src/lib/opfs";
 import { engine } from "src/lib/engine";
 import { MANIFEST as MANIFEST_NAME } from "src/lib/workspace";
 import Landing from "src/routes/Landing";
+// The app's own styles: which element a drag at a point lands on.
+import "src/index.css";
 import { Client } from "./harness";
 
 /** Writes beside the engine, into the same OPFS, the way another tab would. */
@@ -88,18 +90,23 @@ afterEach(async () => {
 /** A file as the drop zone hands it on: its name is its path in the drop. */
 const file = (path: string, text = path) => new File([text], path);
 
-/** A drop on the zone. Synthetic items carry no entry, so the zone takes
- *  each as a plain file, which is the path a picked file takes too. */
-async function drop(...files: File[]): Promise<void> {
-  // The first render is not synchronous with `mount`.
-  const zone = await vi.waitFor(() => {
+/** The drop zone, once drawn: the first render is not synchronous with
+ *  `mount`. */
+function zone(): Promise<Element> {
+  return vi.waitFor(() => {
     const el = document.querySelector(".upload-zone");
     if (!el) throw new Error("no drop zone on the page");
     return el;
   });
+}
+
+/** A drop on the zone. Synthetic items carry no entry, so the zone takes
+ *  each as a plain file, which is the path a picked file takes too. */
+async function drop(...files: File[]): Promise<void> {
+  const target = await zone();
   const dataTransfer = new DataTransfer();
   for (const f of files) dataTransfer.items.add(f);
-  zone.dispatchEvent(
+  target.dispatchEvent(
     new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }),
   );
 }
@@ -290,4 +297,32 @@ test("the workspace is named before it is made, and made under that name", async
   await button("Create new workspace").click();
   await left();
   expect(await engine.workspaceName()).toBe("Field notes");
+});
+
+test("a drag in over the icon and back out leaves the zone unlit", async () => {
+  mount();
+  const halo = (await zone()).querySelector("div.rounded-full");
+  if (!halo) throw new Error("no icon in the drop zone");
+  const box = halo.getBoundingClientRect();
+  // What the browser hands a drag at the icon's middle to. Lighting the zone
+  // swaps the icon, and a target removed mid-drag never gets its dragleave,
+  // so a drag that entered on the icon would leave the zone lit.
+  const at = document.elementFromPoint(
+    box.x + box.width / 2,
+    box.y + box.height / 2,
+  );
+  if (!at) throw new Error("nothing under the icon");
+  const drag = (type: string) =>
+    at.dispatchEvent(
+      new DragEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: new DataTransfer(),
+      }),
+    );
+
+  drag("dragenter");
+  await expect.element(text("Drop PDFs, a zip, or a folder")).toBeVisible();
+  drag("dragleave");
+  await expect.element(text("Drag and drop, or pick:")).toBeVisible();
 });
