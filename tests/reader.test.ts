@@ -11,7 +11,7 @@ import { readPage } from "src/lib/read";
 import { structure, type ReadPage } from "src/lib/structure";
 import { cases } from "./cases";
 import { summarize } from "./cases/case";
-import { buildPdf } from "./fixtures/pdf";
+import { buildPdf, Pen } from "./fixtures/pdf";
 
 async function read(bytes: Uint8Array<ArrayBuffer>) {
   const task = openPdf(bytes);
@@ -32,6 +32,16 @@ test("pdf.js is the version READER was made with", () => {
     `pdf.js is ${version}, READER was made with ${READ_WITH}: bump READER in ` +
       `src/lib/analysis.ts and set READ_WITH to ${version}, together`,
   ).toBe(READ_WITH);
+});
+
+test("the pen sets a run after a raised one back on the baseline", () => {
+  const pen = new Pen();
+  pen.text(72, 100, "E = mc");
+  pen.then(0, "2", { size: 6, rise: 3 });
+  pen.then(1, "and more");
+  expect(pen.ops.map((op) => op.kind === "text" && op.y)).toEqual([
+    100, 97, 100,
+  ]);
 });
 
 for (const [group, list] of Object.entries(cases)) {

@@ -37,7 +37,10 @@ type Op =
   | {
       kind: "text";
       x: number | { gap: number };
+      /** Where the run is drawn: its baseline, raised. */
       y: number;
+      /** The baseline it is raised off, which a run after it continues. */
+      base: number;
       text: string;
       size: number;
       face: Face;
@@ -70,6 +73,7 @@ export class Pen {
       kind: "text",
       x,
       y: y - (style.rise ?? 0),
+      base: y,
       text,
       size: style.size ?? BODY,
       face: style.face ?? "regular",
@@ -85,7 +89,8 @@ export class Pen {
     this.ops.push({
       kind: "text",
       x: { gap },
-      y: last.y - (style.rise ?? 0),
+      y: last.base - (style.rise ?? 0),
+      base: last.base,
       text,
       size: style.size ?? BODY,
       face: style.face ?? "regular",
