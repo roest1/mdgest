@@ -403,6 +403,7 @@ export function apply(
  *  heading a group brings its children with it, so a join of joined
  *  blocks is one group, never a chain. */
 export function join(edits: Edits, ids: string[]): Edits {
+  if (ids.length === 0) return edits;
   const whole = rejoin(edits, ids);
   if (whole) return whole;
   const [head, ...rest] = ids.map((id) => edits.joins[id] ?? id);

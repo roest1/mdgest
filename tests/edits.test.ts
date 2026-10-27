@@ -146,6 +146,13 @@ describe("edits.json", () => {
   });
 });
 
+describe("join", () => {
+  test("joining nothing leaves the edits as they are", () => {
+    const edits = blankEdits();
+    expect(join(edits, [])).toBe(edits);
+  });
+});
+
 describe("unjoin", () => {
   test("a correction written over a joined block comes off with the join", () => {
     const read = analysis([block("p1b0", "A words"), block("p1b1", "B words")]);
