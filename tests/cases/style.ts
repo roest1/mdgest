@@ -3,7 +3,7 @@
  * Emphasis is applied to a whole block, and only when every line of it is
  * set that way; a line's own style is its majority by character, so one
  * italic word does not make a line italic. What the page printed is what
- * the block holds: markup characters in the text are kept as they are. */
+ * the pane shows: markup characters in the text are escaped. */
 
 import { LEADING, PARAGRAPH } from "../fixtures/pdf";
 import type { Case } from "./case";
@@ -13,7 +13,7 @@ export const style: Case[] = [
   {
     name: "style-whole-block",
     about:
-      "A sentence set bold, italic or both at the body size is a paragraph, not a heading; a larger bold line is one.",
+      "A block set all bold, all italic or both is written **so**, *so* or ***so***; a heading carries no emphasis of its own.",
     pages: [
       (pen) => {
         pen.text(X, TOP, "Never run a pump dry.", { face: "bold" });
@@ -37,6 +37,17 @@ export const style: Case[] = [
       "h1 Safety Rules",
       ...prose(4).map((l) => `p ${l}`),
     ],
+    markdown: [
+      "**Never run a pump dry.**",
+      "",
+      "*Readings are taken at the gauge.*",
+      "",
+      "***Shut the supply valve first.***",
+      "",
+      "# Safety Rules",
+      "",
+      ...prose(4).flatMap((l) => [l, ""]),
+    ].join("\n"),
   },
   {
     name: "style-partial",
@@ -59,11 +70,18 @@ export const style: Case[] = [
       `p ${prose(1, 0)[0]} ${prose(1, 1)[0]}`,
       ...prose(3, 2).map((l) => `p ${l}`),
     ],
+    markdown: [
+      "Grease the bearings every quarter with the approved lithium type.",
+      "",
+      `${prose(1, 0)[0]} ${prose(1, 1)[0]}`,
+      "",
+      ...prose(3, 2).flatMap((l) => [l, ""]),
+    ].join("\n"),
   },
   {
     name: "style-escapes",
     about:
-      "Lines that start the way markdown opens a heading, quote, list or rule, or carry inline markup, are paragraphs of what was printed.",
+      "Characters that would open a heading, quote, list or rule, or mark up inline text, are escaped so the markdown shows what was printed.",
     pages: [
       (pen) =>
         pen.lines(
@@ -90,5 +108,21 @@ export const style: Case[] = [
       "p Pressure < 40 & rising is a warning sign.",
       "p A back\\slash and a ~tilde~ are kept.",
     ],
+    markdown: [
+      "\\# Not a heading",
+      "",
+      "\\> Not a quote",
+      "",
+      "\\+ Not a list",
+      "",
+      "\\---",
+      "",
+      "Use \\*stars\\*, \\_lines\\_, \\`ticks\\` and \\[brackets\\] as printed.",
+      "",
+      "Pressure \\< 40 \\& rising is a warning sign.",
+      "",
+      "A back\\\\slash and a \\~tilde\\~ are kept.",
+      "",
+    ].join("\n"),
   },
 ];

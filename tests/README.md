@@ -13,17 +13,27 @@ What this code decides, not what the language or the browser guarantees.
 
 **The reader.** `reader.test.ts` runs every case through the app's own path
 -- pdf.js opens the fixture, `readPage` reads each page, `structure` makes
-the blocks -- and asserts that the installed pdf.js is the version `READER`
-was made with (`src/lib/analysis.ts`). The reader is almost all decisions:
-every threshold in `read.ts` and `structure.ts` is a guess about how a page
-is read, so most cases sit a known distance either side of one. The cases
-live in `cases/`, one file per area its name says: headings, lists, blocks,
-style, links, pictures, pages. `analysis.test.ts` covers the gate on a
-stored read: what `parseAnalysis` refuses, and that it refuses under the one
-name that tells the page to read the document again. `read.test.ts` drives `readPage` over a stand-in page, for the timing a real
-document cannot be made to show: a font still loading when the text is read
-is waited for, not read as regular; and a picture whose pixels pdf.js cannot
-hand over is the page under it, cut from one render in the right place.
+the blocks, `emit` writes the markdown -- and asserts that the installed
+pdf.js is the version `READER` was made with (`src/lib/analysis.ts`). The
+reader is almost all decisions: every threshold in `read.ts` and
+`structure.ts` is a guess about how a page is read, so most cases sit a
+known distance either side of one. The cases live in `cases/`, one file per
+area its name says: headings, lists, blocks, style, links, pictures, pages.
+`analysis.test.ts` covers the gate on a stored read: what `parseAnalysis`
+refuses, and that it refuses under the one name that tells the page to read
+the document again. `read.test.ts` drives `readPage` where the drawn cases
+cannot: a font still loading when the text is read is waited for, not read
+as regular; images pdf.js never sends are waited for together; and a
+picture whose pixels pdf.js cannot hand over is the page under it, cut from
+one render in the right place.
+
+**Editing.** Every edit is a decision about what a person meant.
+`edits.test.ts` covers hide and delete, the numbering blocks keep or give
+up, and that a decision comes back from `edits.json` as it went in;
+`divide.test.ts`, cuts, the pieces they make, and join putting a divided
+block back; `furniture.test.ts`, what counts as a page number or a running
+header or footer, and what each setting writes. What each file asserts in
+full is its own test names.
 
 **The workspace.** `workspace.test.ts` covers ids, the places a document has,
 and what `parseManifest` refuses; `upload.test.ts`, the file-type policy and
@@ -78,8 +88,8 @@ none of it reaches a build.
 
 ## Adding a reader case
 
-A case is pages drawn with exact positions, sizes and faces, and the blocks
-they should read as, in brief. Document-wide decisions -- the body size,
+A case is pages drawn with exact positions, sizes and faces, the blocks they
+should read as, in brief, and optionally the whole markdown. Document-wide decisions -- the body size,
 whether bold means anything, heading levels -- are made over the whole PDF,
 which is why each case is its own file rather than one page of a shared
 test document.

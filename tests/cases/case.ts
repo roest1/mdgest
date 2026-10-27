@@ -11,7 +11,9 @@
  *   image p1-i0.png            a picture
  *   ---                        a page break
  *
- * and a block that links ends ` -> ` and where it points. */
+ * and a block that links ends ` -> ` and where it points.
+ *
+ * `markdown`, when given, is the whole emitted file. */
 
 import type { Analysis, Block } from "src/lib/analysis";
 import type { Draw } from "../fixtures/pdf";
@@ -23,6 +25,7 @@ export interface Case {
   about: string;
   pages: Draw[];
   blocks: string[];
+  markdown?: string;
   /** Set when the reader gets this case wrong today: why, in a sentence.
    *  The expectation stays what is right; the test is marked as failing
    *  until the reader is fixed, and then says so. */
