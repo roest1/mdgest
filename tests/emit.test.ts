@@ -106,3 +106,11 @@ test("each source line names its block, and the rule is the next page's", () => 
     ["p2b0", 2],
   ]);
 });
+
+test("a heading keeps a # it ends with, which markdown would close it with", () => {
+  const md = emit(
+    { ...doc, pages: [page(1, [block("p1b0", "Pump No. #", "heading")])] },
+    "doc.assets/",
+  );
+  expect(md.text).toBe("# Pump No. \\#\n");
+});

@@ -107,6 +107,9 @@ function inline(block: Block): string {
   let text = block.text.trim();
   if (!text) return text;
   text = escapeText(text);
+  // A heading's own words ending in ` #` would read as the `#`s that may
+  // close one, and be dropped.
+  if (block.role === "heading") text = text.replace(/(\s)(#+)$/, "$1\\$2");
   if (block.href) text = `[${text}](${linkTarget(block.href)})`;
   if (block.role === "heading") return text;
   if (block.bold) text = `**${text}**`;
