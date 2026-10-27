@@ -9,7 +9,7 @@ import { Spinner } from "src/components/shared/Spinner";
 import type { Analysis } from "src/lib/analysis";
 import { useAssetUrl } from "src/lib/assets";
 import type { Markdown } from "src/lib/emit";
-import { useEditor } from "src/lib/store";
+import { useEditor, type Reading } from "src/lib/store";
 import { assetsPrefix } from "src/lib/workspace";
 import { barButton } from "./controls";
 import { MoreMenu } from "./MoreMenu";
@@ -146,8 +146,8 @@ function kindOf(line: string): Kind {
 
 /** The markdown characters, one row a line, numbered in the gutter. The
  *  numbers are CSS counters rather than text, so a copy of the view is the
- *  markdown alone. A blank line holds a space: with `pre-wrap` that is what
- *  gives an empty row its height. The look is `.source` in index.css. */
+ *  markdown alone; a blank line is empty, and its number gives it its
+ *  height. The look is `.source` in index.css. */
 function Raw({ markdown }: { markdown: Markdown }) {
   return (
     <ol
@@ -158,7 +158,7 @@ function Raw({ markdown }: { markdown: Markdown }) {
     >
       {markdown.lines.map((line, i) => (
         <li key={i} data-kind={kindOf(line.text)}>
-          {line.text || " "}
+          {line.text}
         </li>
       ))}
     </ol>
@@ -166,6 +166,17 @@ function Raw({ markdown }: { markdown: Markdown }) {
 }
 
 // ---- the pane -------------------------------------------------------------
+
+/** What the pane says while a reading goes. `page` is how many pages are
+ *  done, so the one being read is the next; with all done, what is left is
+ *  writing it down. Nothing about pages before the first is done, which is
+ *  also all a reading from the cache ever shows. */
+function progress(reading: Reading | undefined): string {
+  if (!reading || reading.status !== "reading" || reading.page === 0)
+    return "Reading…";
+  if (reading.page >= reading.pages) return "Writing the markdown…";
+  return `Reading page ${reading.page + 1} of ${reading.pages}…`;
+}
 
 export function MarkdownPane({ docId }: { docId: string }) {
   const [view, setView] = useState<View>("rendered");
@@ -214,9 +225,7 @@ export function MarkdownPane({ docId }: { docId: string }) {
             className="flex items-center justify-center gap-2 p-6 text-sm text-muted"
           >
             <Spinner />
-            {reading && reading.page > 0
-              ? `Reading page ${reading.page} of ${reading.pages}…`
-              : "Reading…"}
+            {progress(reading)}
           </p>
         )}
       </div>

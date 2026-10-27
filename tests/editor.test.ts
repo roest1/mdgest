@@ -475,6 +475,10 @@ test("an open document is read, and its markdown shown as it reads and as its so
 
   await page.getByRole("radio", { name: "raw" }).click();
   await expect.poll(sourceLines).toContain("# Pump Care");
+  // A blank line copies as nothing, not a space.
+  expect(sourceLines()[1]).toBe("");
+  const rows = document.querySelectorAll<HTMLElement>(".source > li");
+  expect(rows[1].offsetHeight).toBe(rows[0].offsetHeight);
   expect(sourceLines()).toContain("![page 1 figure 1](a.assets/p1-i0.png)");
 });
 
