@@ -447,11 +447,16 @@ export function PdfPane({ docId }: { docId: string }) {
   // from the layout rather than measured, since only the rows near the view
   // are in the document. Only blocks the markdown wrote, since only those
   // have somewhere to be on the other side.
-  const reading = useEditor((s) => s.readings[docId]);
+  // The reading once it is ready, and nothing before: selected so, the pane
+  // is not drawn again for every page of a reading in progress.
+  const read = useEditor((s) => {
+    const r = s.readings[docId];
+    return r?.status === "ready" ? r : null;
+  });
   const tops = useCallback(() => {
     const out = new Map<string, number>();
-    if (reading?.status !== "ready") return out;
-    const { analysis, markdown } = reading;
+    if (!read) return out;
+    const { analysis, markdown } = read;
     for (const page of analysis.pages) {
       const row = rows[rowOf(page.n)];
       if (!row) continue;
@@ -461,7 +466,7 @@ export function PdfPane({ docId }: { docId: string }) {
       }
     }
     return out;
-  }, [reading, rows, rowOf, scale]);
+  }, [read, rows, rowOf, scale]);
   const topsRef = useRef(tops);
   useLayoutEffect(() => {
     topsRef.current = tops;
