@@ -14,7 +14,8 @@
     "format:check": "prettier --check .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "fixtures": "bun tests/fixtures/write.ts"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
@@ -35,6 +36,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "@vitest/browser-playwright": "5.0.5",
     "oxlint": "^1.88.0",
+    "pdf-lib": "1.17.1",
     "playwright": "1.63.0",
     "prettier": "3.9.10",
     "tailwindcss": "4.3.3",

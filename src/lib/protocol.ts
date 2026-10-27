@@ -121,6 +121,12 @@ export interface Engine {
   source: { params: { docId: string }; result: Uint8Array<ArrayBuffer> };
 }
 
+/** A figure's PNG, named as it sits in `markdown/<doc>.assets/`. */
+export interface Figure {
+  name: string;
+  bytes: ArrayBuffer;
+}
+
 export type Method = keyof Engine;
 export type Params<M extends Method> = Engine[M]["params"];
 export type Result<M extends Method> = Engine[M]["result"];
