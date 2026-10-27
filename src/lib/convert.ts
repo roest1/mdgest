@@ -5,7 +5,7 @@
  * there already; the engine keeps what comes out. One reading per document
  * at a time: a second ask while one is running is answered by the first. */
 
-import { UNUSABLE_ANALYSIS, type Analysis } from "./analysis";
+import { READER, UNUSABLE_ANALYSIS, type Analysis } from "./analysis";
 import { emit, type Markdown } from "./emit";
 import { engine } from "./engine";
 import type { PDFPageProxy } from "./pdf";
@@ -52,6 +52,10 @@ async function run(
   onPage?: (page: number, pages: number) => void,
 ): Promise<Converted> {
   let analysis = await engine.analysis(docId).catch(rereadable);
+  // One an older reader made is read again, the way a `READER` bump says:
+  // its blocks may not be this reader's. Nothing is lost while there are no
+  // edits; once there are, the edits' feature asks before dropping them.
+  if (analysis && analysis.reader !== READER) analysis = null;
   if (!analysis) {
     const read: ReadPage[] = [];
     const figures: Figure[] = [];

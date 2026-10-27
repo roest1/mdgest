@@ -8,6 +8,7 @@
 
 import { afterEach, expect, test } from "vitest";
 import type * as Opfs from "src/lib/opfs";
+import { READER } from "src/lib/analysis";
 import { convert } from "src/lib/convert";
 import { engine } from "src/lib/engine";
 import { openPdf, type PDFPageProxy } from "src/lib/pdf";
@@ -77,4 +78,20 @@ test("an analysis this build cannot use is read again, not shown", async () => {
   const { markdown } = await convert("pumps/a", pages, () => read++);
   expect(read).toBe(1);
   expect(markdown.text).toBe(MARKDOWN);
+});
+
+test("an analysis an older reader made is read again", async () => {
+  const pages = await committed();
+  const first = await convert("pumps/a", pages);
+  const older = { ...first.analysis, reader: READER - 1 };
+  await opfs(
+    "writeText",
+    [...cacheDir("pumps/a"), "analysis.json"],
+    JSON.stringify(older),
+  );
+  let read = 0;
+  const again = await convert("pumps/a", pages, () => read++);
+  expect(read).toBe(1);
+  expect(again.analysis.reader).toBe(READER);
+  expect((await engine.analysis("pumps/a"))?.reader).toBe(READER);
 });
