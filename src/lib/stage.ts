@@ -1056,9 +1056,7 @@ export function analysis(docId: string): Promise<Analysis | null> {
 
 /** Keep a document's read and write its markdown. The figures replace
  *  whatever was in the assets folder: a re-read names them from scratch,
- *  and a stale one would otherwise sit beside the new set. The markdown is
- *  written last, so a document with markdown is one whose analysis and
- *  figures are all there. */
+ *  and a stale one would otherwise sit beside the new set. */
 export function convert(
   docId: string,
   analysis: Analysis,
@@ -1093,12 +1091,17 @@ export function convert(
       );
     }
 
+    // `analysis.json` is what says a document has been read, so it goes
+    // first and comes back last: a write cut short anywhere between leaves
+    // no analysis, and the next open reads the document again rather than
+    // trusting a read whose figures or markdown are not all there.
+    await opfs.remove([...cacheDir(docId), ANALYSIS]);
     await opfs.remove(assetsDir(docId), true);
     for (const { name, bytes } of figures) {
       await opfs.writeFile([...assetsDir(docId), name], bytes);
     }
-    await opfs.writeText([...cacheDir(docId), ANALYSIS], json);
     await opfs.writeText(markdownPath(docId), markdown);
+    await opfs.writeText([...cacheDir(docId), ANALYSIS], json);
   });
 }
 

@@ -776,6 +776,19 @@ describe("a document's read", () => {
     expect(await opfs("walk", assetsDir("pumps/a"))).toEqual(["p1-i0.png"]);
   });
 
+  test("cut short, is not kept at all, and takes the read before it with it", async () => {
+    await stage("convert", "pumps/a", read, [figure("p1-i0.png")]);
+    // A folder where the markdown goes: the write after the figures fails.
+    await opfs("remove", markdownPath("pumps/a"));
+    await opfs("writeText", [...markdownPath("pumps/a"), "blocker"], "x");
+    await expect(
+      stage("convert", "pumps/a", read, [figure("p1-i0.png")]),
+    ).rejects.toThrow();
+    // Read again on the next open, rather than trusted without its
+    // markdown, or with the figures the first read's markdown names gone.
+    expect(await stage("analysis", "pumps/a")).toBeNull();
+  });
+
   test("is refused for a document not in the workspace, or a figure not named as one", async () => {
     await expect(stage("convert", "pumps/b", read, [])).rejects.toThrow(
       "pumps/b is not in this workspace.",
