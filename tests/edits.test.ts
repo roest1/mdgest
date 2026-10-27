@@ -102,6 +102,29 @@ describe("emit", () => {
     expect(md.text.trim()).toBe("<!-- a -- > b -->");
   });
 
+  test("a page break set on a block stays when the block is hidden", () => {
+    const edits = withEdits({
+      p1b1: { hidden: true, break_after: "page" },
+      p1b3: { hidden: true, break_before: "page" },
+    });
+    expect(emit(doc, "a/", edits).text).toBe(
+      [
+        "## Title",
+        "",
+        "<!-- First paragraph. -->",
+        "",
+        "---",
+        "",
+        "Second paragraph.",
+        "",
+        "---",
+        "",
+        "<!-- Third paragraph. -->",
+        "",
+      ].join("\n"),
+    );
+  });
+
   test("a hidden list item is indented into the list, which goes on past it", () => {
     const list = analysis([
       block("p1b0", "one", "numbered", "1."),

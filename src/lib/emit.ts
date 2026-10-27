@@ -328,7 +328,9 @@ export function emit(read: Analysis, assets: string, edits?: Edits): Markdown {
       if (block.hidden) {
         // The line it would be, commented out: markup and all, so reading
         // it back is reading any line. A page number hidden by the setting
-        // is the number it prints.
+        // is the number it prints. A break set on it is kept: hiding the
+        // block does not join the pages it parted.
+        if (block.breakBefore) breakHere();
         const words = inline(block);
         const said =
           printed !== null
@@ -370,6 +372,7 @@ export function emit(read: Analysis, assets: string, edits?: Edits): Markdown {
           ...setting,
         };
         order.push(block.id);
+        if (block.breakAfter) breakHere();
         return;
       }
       if (block.breakBefore) breakHere();
