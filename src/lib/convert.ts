@@ -3,7 +3,8 @@
  *
  * Reading runs where the document is open, on the page, since pdf.js has it
  * there already; the engine keeps what comes out. One reading per opening
- * of a document at a time: a second ask while it runs joins it. */
+ * of a document at a time: a second ask while it runs joins it. The panes
+ * see it through the store (`ensureRead`). */
 
 import { READER, UNUSABLE_ANALYSIS, type Analysis } from "./analysis";
 import { emit, type Markdown } from "./emit";
@@ -12,6 +13,8 @@ import type { PDFPageProxy } from "./pdf";
 import type { Figure } from "./protocol";
 import { readPage } from "./read";
 import { structure, type ReadPage } from "./structure";
+import { useEditor, type Reading } from "./store";
+import { messageOf } from "./words";
 import { assetsPrefix } from "./workspace";
 
 export interface Converted {
@@ -89,4 +92,34 @@ async function run(
     await engine.convert(docId, analysis, figures);
   }
   return { analysis, markdown: emit(analysis, assetsPrefix(docId)) };
+}
+
+/** Have `docId` read for the panes, its reading kept in the store as it
+ *  goes: page by page, then ready, or failed and why. Nothing to do when it
+ *  is ready already. Returns what to call when the document closes under a
+ *  reading still going: it stops hearing it and forgets what was shown. */
+export function ensureRead(docId: string, pages: PDFPageProxy[]): () => void {
+  const state = useEditor.getState;
+  if (state().readings[docId]?.status === "ready") return () => {};
+  let live = true;
+  const publish = (reading: Reading) => {
+    if (live) state().setReading(docId, reading);
+  };
+  publish({ status: "reading", page: 0, pages: pages.length });
+  convert(docId, pages, (page, of) =>
+    publish({ status: "reading", page, pages: of }),
+  ).then(
+    ({ analysis, markdown }) =>
+      publish({ status: "ready", analysis, markdown }),
+    (cause: unknown) =>
+      publish({
+        status: "failed",
+        problem: `This document could not be read (${messageOf(cause)}).`,
+      }),
+  );
+  return () => {
+    live = false;
+    if (state().readings[docId]?.status === "reading")
+      state().setReading(docId, undefined);
+  };
 }
