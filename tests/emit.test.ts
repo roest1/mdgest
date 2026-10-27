@@ -114,3 +114,13 @@ test("a heading keeps a # it ends with, which markdown would close it with", () 
   );
   expect(md.text).toBe("# Pump No. \\#\n");
 });
+
+test("a figure's path is a destination markdown reads whole", () => {
+  const md = emit(
+    { ...doc, pages: [page(1, [block("p1i0", "", "image")], 1)] },
+    "My Report (v2).assets/",
+  );
+  expect(md.text).toBe(
+    "![page 1 figure 1](My%20Report%20%28v2%29.assets/p1-i0.png)\n",
+  );
+});

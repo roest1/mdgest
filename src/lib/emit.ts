@@ -157,7 +157,7 @@ export function emit(analysis: Analysis, assets: string): Markdown {
         if (!pic) continue;
         blank(page.n);
         at = put(
-          `![page ${page.n} figure ${block.picture + 1}](${assets}${pic.path})`,
+          `![page ${page.n} figure ${block.picture + 1}](${linkTarget(assets + pic.path)})`,
           block.id,
           page.n,
         );
