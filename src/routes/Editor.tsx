@@ -4,6 +4,7 @@ import {
   useState,
   useEffect,
   useMemo,
+  useRef,
   ViewTransition,
 } from "react";
 import { Link, useNavigate, useParams } from "react-router";
@@ -192,6 +193,21 @@ export default function Editor() {
     setOpenDocs((prev) => (prev.includes(docId) ? prev : [...prev, docId]));
   }
 
+  // What was held of a document goes with its tab: its figures' blobs, and
+  // its reading, which the next open answers from the engine's cache. Once
+  // the tab has gone, not as it is closed: the panes showing the document
+  // are unmounted by then, so neither shows it without its reading on the
+  // way out, nor can a reading still going put one back.
+  const wasOpen = useRef<string[]>([]);
+  useEffect(() => {
+    for (const doc of wasOpen.current) {
+      if (openDocs.includes(doc)) continue;
+      releaseAssets(doc);
+      useEditor.getState().setReading(doc, undefined);
+    }
+    wasOpen.current = openDocs;
+  }, [openDocs]);
+
   // Back to the tab last open, or to none, in place of the address: Back
   // should not return to it.
   const unknown = docs !== null && asked !== "" && !docs.includes(asked);
@@ -218,10 +234,6 @@ export default function Editor() {
   };
 
   const closeTab = (doc: string) => {
-    // What was held of it goes with its tab: its figures' blobs, and its
-    // reading, which the next open answers from the engine's cache.
-    releaseAssets(doc);
-    useEditor.getState().setReading(doc, undefined);
     startTransition(() => {
       const rest = openDocs.filter((d) => d != doc);
       if (rest.length == 0) addTransitionType(TABS);
