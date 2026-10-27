@@ -1,8 +1,9 @@
 /** Lists: which markers make an item, which only look like one, and how
  *  deep an item sits.
  *
- * The role the reader gives an item is what is checked: lettered and
- * numeral markers stay as printed, whatever count they make. */
+ * Every ordered marker is written as a counted decimal in the markdown --
+ * CommonMark has no lettered or numeral lists -- so the role the reader
+ * gave an item is checked in `blocks`, and the markdown checks the count. */
 
 import { LEADING, PARAGRAPH, type Pen } from "../fixtures/pdf";
 import type { Case } from "./case";
@@ -37,6 +38,15 @@ function list(
   );
 }
 
+/** The markdown of a flat list, counted from 1 or bulleted. */
+function md(n: number, ordered: boolean, from = 0): string[] {
+  return Array.from(
+    { length: n },
+    (_, i) =>
+      `${ordered ? `${i + 1}.` : "-"} ${ITEMS[(from + i) % ITEMS.length]}`,
+  );
+}
+
 export const lists: Case[] = [
   // ---- bullets ------------------------------------------------------------
   {
@@ -53,6 +63,7 @@ export const lists: Case[] = [
       `bullet * ${ITEMS[5]}`,
       `bullet • ${ITEMS[6]}`,
     ],
+    markdown: `${md(7, false).join("\n")}\n`,
   },
   {
     name: "lists-dingbat-bullets",
@@ -71,6 +82,7 @@ export const lists: Case[] = [
       `bullet ◆ ${ITEMS[2]}`,
       `bullet ❖ ${ITEMS[3]}`,
     ],
+    markdown: `${md(4, false).join("\n")}\n`,
     known:
       "pdf.js reports a ZapfDingbats glyph by its character code -- `l` for ●, `n` for ■ -- and read.ts remaps only Wingdings and Webdings, so each bullet is read as a letter, stands apart from its text, and the items run together as one paragraph.",
   },
@@ -100,13 +112,25 @@ export const lists: Case[] = [
       "p –40 °C is the coldest it gets.",
       "p ·Grease is applied by hand.",
     ],
+    markdown: [
+      "\\-5 °C is the lowest reading allowed.",
+      "",
+      "\\*Emphasis\\* marks a term defined below.",
+      "",
+      "—and so the pump stops.",
+      "",
+      "–40 °C is the coldest it gets.",
+      "",
+      "·Grease is applied by hand.",
+      "",
+    ].join("\n"),
   },
 
   // ---- numbered ---------------------------------------------------------------
   {
     name: "lists-numbered",
     about:
-      "Numbers of one to three digits with . or ) or in parentheses are numbered items, each marker as printed.",
+      "Numbers of one to three digits with . or ) or in parentheses are numbered items, counted from 1 in the markdown whatever was printed.",
     pages: [
       (pen) => list(pen, ["1. ", "2) ", "(3) ", "10. ", "100. ", "999) "]),
     ],
@@ -118,11 +142,12 @@ export const lists: Case[] = [
       `numbered 100. ${ITEMS[4]}`,
       `numbered 999) ${ITEMS[5]}`,
     ],
+    markdown: `${md(6, true).join("\n")}\n`,
   },
   {
     name: "lists-numbered-lookalikes",
     about:
-      "A four-digit number, a decimal and a year open sentences, not items.",
+      "A four-digit number, a decimal and a year open sentences, not items -- and are escaped so the markdown does not make them items either.",
     pages: [
       (pen) =>
         pen.lines(
@@ -143,6 +168,16 @@ export const lists: Case[] = [
       "p 2024 was a year of many repairs.",
       "p 1.5 hours per pump is typical.",
     ],
+    markdown: [
+      "1000\\. Gaskets were shipped in the spring.",
+      "",
+      "3\\.14 is the ratio used for the piping.",
+      "",
+      "2024 was a year of many repairs.",
+      "",
+      "1\\.5 hours per pump is typical.",
+      "",
+    ].join("\n"),
   },
 
   // ---- lettered -----------------------------------------------------------------
@@ -167,6 +202,9 @@ export const lists: Case[] = [
       `alpha B) ${ITEMS[5]}`,
       `alpha (C) ${ITEMS[6]}`,
     ],
+    markdown: [...md(4, true), "", prose(1)[0], "", ...md(3, true, 4), ""].join(
+      "\n",
+    ),
   },
   {
     name: "lists-lettered-past-h",
@@ -188,6 +226,7 @@ export const lists: Case[] = [
         ]),
     ],
     blocks: "abcdefghij".split("").map((l, i) => `alpha ${l}. ${ITEMS[i]}`),
+    markdown: `${md(10, true).join("\n")}\n`,
     known:
       "Roman numerals are matched before letters so that a numeral list's i. and v. are numerals, with no look at the items around them -- so i. in a lettered list is read as roman, and the markdown count restarts there.",
   },
@@ -231,6 +270,9 @@ export const lists: Case[] = [
       `p ${prose(1)[0]}`,
       ...["I.", "II)", "(III)", "IV."].map((m, i) => `roman ${m} ${ITEMS[i]}`),
     ],
+    markdown: [...md(10, true), "", prose(1)[0], "", ...md(4, true), ""].join(
+      "\n",
+    ),
   },
 
   // ---- markers in a run of their own ----------------------------------------------
@@ -289,6 +331,14 @@ export const lists: Case[] = [
       `  bullet • ${ITEMS[3]}`,
       `bullet • ${ITEMS[4]}`,
     ],
+    markdown: [
+      `- ${ITEMS[0]}`,
+      `  - ${ITEMS[1]}`,
+      `    - ${ITEMS[2]}`,
+      `  - ${ITEMS[3]}`,
+      `- ${ITEMS[4]}`,
+      "",
+    ].join("\n"),
   },
   {
     name: "lists-indent-tolerance",
@@ -310,7 +360,7 @@ export const lists: Case[] = [
   {
     name: "lists-mixed-ordered-nesting",
     about:
-      "Numbered, lettered and numeral levels nest, each nested item starting where its parent's text does.",
+      "Numbered, lettered and numeral levels nest, each counted on its own, each nested item starting where its parent's text does.",
     pages: [
       (pen) =>
         (
@@ -334,6 +384,15 @@ export const lists: Case[] = [
       `  alpha b. ${ITEMS[4]}`,
       `numbered 2. ${ITEMS[5]}`,
     ],
+    markdown: [
+      `1. ${ITEMS[0]}`,
+      `   1. ${ITEMS[1]}`,
+      `      1. ${ITEMS[2]}`,
+      `      2. ${ITEMS[3]}`,
+      `   2. ${ITEMS[4]}`,
+      `2. ${ITEMS[5]}`,
+      "",
+    ].join("\n"),
   },
 
   // ---- what belongs to an item -------------------------------------------------------
@@ -417,6 +476,9 @@ export const lists: Case[] = [
       `numbered 3. ${ITEMS[2]}`,
       `numbered 4. ${ITEMS[3]}`,
     ],
+    markdown: [...md(2, true), "", prose(1)[0], "", ...md(2, true, 2), ""].join(
+      "\n",
+    ),
   },
   {
     name: "lists-paragraph-set-tight-under-an-item",
