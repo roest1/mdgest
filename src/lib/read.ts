@@ -81,14 +81,22 @@ function isImageObj(value: unknown): value is ImageObj {
 /** How long to wait for pdf.js's worker to send an image the operator list
  *  named before giving up on its pixels and drawing the page region instead. */
 const OBJECT_WAIT = 15_000;
+/** How long to wait for a font the text names to be loaded before reading
+ *  its style off its name alone. A font arrives from pdf.js's worker with
+ *  the operator list, so this waits only on the browser loading it. */
+const FONT_WAIT = 5_000;
 
-function resolveObject(page: PDFPageProxy, id: string): Promise<unknown> {
+function resolveObject(
+  page: PDFPageProxy,
+  id: string,
+  wait = OBJECT_WAIT,
+): Promise<unknown> {
   const objs = (id.startsWith("g_")
     ? page.commonObjs
     : page.objs) as unknown as Objects;
   if (objs.has(id)) return Promise.resolve(objs.get(id));
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), OBJECT_WAIT);
+    const timer = setTimeout(() => resolve(null), wait);
     objs.get(id, (data) => {
       clearTimeout(timer);
       resolve(data);
@@ -531,7 +539,23 @@ function fontName(raw: string | undefined): string {
 async function readRuns(page: PDFPageProxy): Promise<Run[]> {
   const viewport = page.getViewport({ scale: 1 });
   const content = await page.getTextContent();
-  const commonObjs = page.commonObjs as unknown as Objects;
+  // pdf.js registers a font only once the browser has loaded it, which can
+  // be after the operator list that sent it has come back. Asked before
+  // then, a bold face reads as regular -- and bold decides headings and
+  // where paragraphs join, so the same PDF would read into other blocks.
+  const names = new Set(
+    content.items.flatMap((item) =>
+      "fontName" in item ? [item.fontName] : [],
+    ),
+  );
+  const loaded = new Map(
+    await Promise.all(
+      [...names].map(
+        async (name) =>
+          [name, await resolveObject(page, name, FONT_WAIT)] as const,
+      ),
+    ),
+  );
   const fonts = new Map<
     string,
     { font: string; bold: boolean; italic: boolean }
@@ -539,15 +563,11 @@ async function readRuns(page: PDFPageProxy): Promise<Run[]> {
   const styleOf = (loadedName: string) => {
     let style = fonts.get(loadedName);
     if (style) return style;
-    // The operator list has been read by now, which is what loads the fonts;
-    // a font it did not send is not there, and the name says what it can.
-    let obj: FontObj | null = null;
-    try {
-      if (commonObjs.has(loadedName))
-        obj = commonObjs.get(loadedName) as FontObj;
-    } catch {
-      obj = null;
-    }
+    // A font pdf.js could not load arrives as its error, and one it never
+    // sent not at all; the name says what it can.
+    const got = loaded.get(loadedName);
+    const obj =
+      typeof got === "object" && got !== null ? (got as FontObj) : null;
     const font = fontName(obj?.name);
     style = {
       font,

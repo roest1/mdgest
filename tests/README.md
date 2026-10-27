@@ -20,7 +20,9 @@ is read, so most cases sit a known distance either side of one. The cases
 live in `cases/`, one file per area its name says: headings, lists, blocks,
 style, links, pictures, pages. `analysis.test.ts` covers the gate on a
 stored read: what `parseAnalysis` refuses, and that it refuses under the one
-name that tells the page to read the document again.
+name that tells the page to read the document again. `read.test.ts` drives `readPage` over a stand-in page, for the timing a real
+document cannot be made to show: a font still loading when the text is read
+is waited for, not read as regular.
 
 **The workspace.** `workspace.test.ts` covers ids, the places a document has,
 and what `parseManifest` refuses; `upload.test.ts`, the file-type policy and
