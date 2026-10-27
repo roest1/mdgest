@@ -331,10 +331,20 @@ test("a file that is not a PDF opens to a word on why, not a spinner", async () 
     .element(
       page.getByText(
         "This file is damaged or is not a PDF, and could not be opened.",
+        { exact: true },
       ),
     )
     .toBeVisible();
   expect(laidOut()).toBe(0);
+  // Nor is it read: the markdown pane says why instead of spinning.
+  await expect
+    .element(
+      page.getByText(
+        "Not read: This file is damaged or is not a PDF, and could not be opened.",
+      ),
+    )
+    .toBeVisible();
+  expect(document.querySelector('[role="status"]')).toBeNull();
 });
 
 test("document properties are the file's own, and close again", async () => {

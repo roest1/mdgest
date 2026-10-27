@@ -12,6 +12,7 @@ import { flushSync } from "react-dom";
 import { Spinner } from "src/components/shared/Spinner";
 import { ensureRead } from "src/lib/convert";
 import { engine } from "src/lib/engine";
+import { useEditor } from "src/lib/store";
 import {
   openPdf,
   readOutline,
@@ -299,6 +300,17 @@ export function PdfPane({ docId }: { docId: string }) {
     () => (loaded ? ensureRead(docId, loaded.pages) : undefined),
     [docId, loaded],
   );
+  // A document that does not open is not read either, and the markdown
+  // pane says so rather than waiting on a reading that never starts.
+  useEffect(() => {
+    if (problem)
+      useEditor
+        .getState()
+        .setReading(docId, {
+          status: "failed",
+          problem: "Not read: " + problem,
+        });
+  }, [docId, problem]);
   // The bar sets these and the body draws them, so they live here.
   const [sidebar, setSidebar] = useState(false);
   const [sidebarView, setSidebarView] = useState<SidebarView>("thumbnails");
