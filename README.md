@@ -56,8 +56,10 @@ On every push to `main` and every pull request.
 | -------- | ---------------------------------------------------------------------------------------- |
 | build    | `vite` (rolldown), `typescript`, `oxlint`, `prettier` (formatting)                       |
 | ui       | `react`, `react-router`, `tailwind`, `lucide-react` icons                                |
+| pdf      | `pdfjs-dist` 6 - drawing pages and reading them; its worker, cmaps and fonts same-origin |
 | fonts    | Literata (serif), Geist Sans (ui), JetBrains Mono (code) - self-hosted via `@fontsource` |
 | archives | `fflate` - unzip on the way in, zip on the way out                                       |
+| tests    | `vitest` in headless Chromium via `playwright`; `pdf-lib` draws the reader's fixtures    |
 
 ### Browser floor
 
