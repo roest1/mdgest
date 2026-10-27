@@ -10,6 +10,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { Spinner } from "src/components/shared/Spinner";
+import { ensureRead } from "src/lib/convert";
 import { engine } from "src/lib/engine";
 import {
   openPdf,
@@ -292,6 +293,12 @@ function PdfNav({
 
 export function PdfPane({ docId }: { docId: string }) {
   const { loaded, problem } = useDocument(docId);
+  // The document is read here, where its pages are open, and the markdown
+  // pane shows the reading from the store.
+  useEffect(
+    () => (loaded ? ensureRead(docId, loaded.pages) : undefined),
+    [docId, loaded],
+  );
   // The bar sets these and the body draws them, so they live here.
   const [sidebar, setSidebar] = useState(false);
   const [sidebarView, setSidebarView] = useState<SidebarView>("thumbnails");

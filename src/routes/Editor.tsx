@@ -21,7 +21,9 @@ import { Toolbar } from "src/components/editor/Toolbar";
 import { Split } from "src/components/editor/Split";
 import { TABS } from "src/components/editor/transitions";
 import { Slide } from "src/components/shared/Slide";
+import { releaseAssets } from "src/lib/assets";
 import { engine } from "src/lib/engine";
+import { byId, useEditor } from "src/lib/store";
 import { messageOf } from "src/lib/words";
 import type { Entry } from "src/lib/tree";
 import { MarkdownPane } from "src/components/editor/MarkdownPane";
@@ -156,6 +158,19 @@ export default function Editor() {
   const docId = docs?.includes(asked) ? asked : "";
   const [missing, setMissing] = useState<string | null>(null);
 
+  // What was held of every document goes when the editor does. A reading is
+  // the engine's cache held on the page, read again on the next open at
+  // little cost -- and kept past here, it could be shown for a document of
+  // the same name in the workspace the landing makes next.
+  useEffect(
+    () => () => {
+      for (const id of Object.keys(useEditor.getState().readings))
+        releaseAssets(id);
+      useEditor.setState({ readings: byId() });
+    },
+    [],
+  );
+
   // An unreadable manifest leaves the name blank here: the landing is where
   // that is said, and the editor never reaches one past it.
   useEffect(() => {
@@ -203,6 +218,10 @@ export default function Editor() {
   };
 
   const closeTab = (doc: string) => {
+    // What was held of it goes with its tab: its figures' blobs, and its
+    // reading, which the next open answers from the engine's cache.
+    releaseAssets(doc);
+    useEditor.getState().setReading(doc, undefined);
     startTransition(() => {
       const rest = openDocs.filter((d) => d != doc);
       if (rest.length == 0) addTransitionType(TABS);

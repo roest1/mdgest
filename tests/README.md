@@ -57,13 +57,20 @@ moves the pages every frame and draws them once it stops, the sidebar's
 thumbnails and outline go where they point, the properties dialog shows what
 the file says and closes from its backdrop, a picked zoom is drawn again on
 a screen of another pixel density, and a file that is not a PDF says so.
-These tests load the app's stylesheet, so what is hidden is hidden and what
+The open document is read, and the markdown pane shows it rendered, with
+its figures from the workspace, and as numbered source; a reading that
+fails says why there; and what was held of a document goes with its tab,
+and of every document with the editor, so the next workspace's document of
+the same name is read afresh. These tests load the app's stylesheet, so what is hidden is hidden and what
 scrolls scrolls. `pdf.test.ts` covers pdf.js as `pdf.ts` sets it up: one
 worker for every document, so letting one go never refuses the next; and
 what is read out of a document besides its pages -- its properties, its
 outline and where each entry points, on a page turned any way, and what is
 left when pdf.js cannot read the outline or the properties.
-`snapshots.test.ts` covers what the thumbnails are drawn from: one copy of a
+`store.test.ts` covers the store under a document named `__proto__`;
+`assets.test.ts`, figures read out of the workspace once, held as object
+URLs, and revoked when their document leaves. `snapshots.test.ts` covers
+what the thumbnails are drawn from: one copy of a
 page, not one per render, replaced only when too narrow for the screen, and
 scaled down to an average rather than speckle.
 

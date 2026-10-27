@@ -13,11 +13,14 @@ import { createRoot, type Root } from "react-dom/client";
 import { createElement } from "react";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { engine } from "src/lib/engine";
+import { useEditor } from "src/lib/store";
 import { inView, layout } from "src/components/editor/column";
 import Editor from "src/routes/Editor";
 // The app's own layout: which panes are hidden, and what scrolls.
 import "src/index.css";
 import { pdfOf, type PdfExtras } from "./harness";
+import { prose, TOP, X } from "./cases/text";
+import { buildPdf, PARAGRAPH } from "./fixtures/pdf";
 
 let root: Root | null = null;
 let host: HTMLElement | null = null;
@@ -416,4 +419,103 @@ test("a document with no outline has its tab, disabled", async () => {
   await expect
     .element(page.getByTitle("This document has no outline"))
     .toBeDisabled();
+});
+
+// ---- the markdown pane ----------------------------------------------------
+
+/** `a.pdf`: a title, three paragraphs and a picture, drawn so the reader
+ *  has something to read. */
+const written = async (title = "Pump Care") =>
+  new File(
+    [
+      await buildPdf([
+        (pen) => {
+          pen.text(X, TOP, title, { size: 16, face: "bold" });
+          pen.lines(X, TOP + PARAGRAPH, prose(3), { leading: PARAGRAPH });
+          pen.image(X, TOP + 5 * PARAGRAPH, 200, 120, [100, 60]);
+        },
+      ]),
+    ],
+    "a.pdf",
+  );
+
+/** The raw view's lines, as written. */
+const sourceLines = () =>
+  Array.from(document.querySelectorAll(".source > li")).map(
+    (li) => li.textContent,
+  );
+
+test("an open document is read, and its markdown shown as it reads and as its source", async () => {
+  await workspace(await written());
+  mount("/edit/a");
+  await expect
+    .element(page.getByRole("heading", { name: "Pump Care" }), {
+      timeout: 15_000,
+    })
+    .toBeVisible();
+  await expect.element(page.getByText(prose(1)[0])).toBeVisible();
+  // The figure, from the workspace, at the size the analysis gives it.
+  await expect
+    .poll(() => document.querySelector<HTMLImageElement>(".markdown img")?.src)
+    .toMatch(/^blob:/);
+  expect(document.querySelector(".markdown img")?.getAttribute("width")).toBe(
+    String(Math.round(200 * 2)),
+  );
+
+  await page.getByRole("radio", { name: "raw" }).click();
+  await expect.poll(sourceLines).toContain("# Pump Care");
+  expect(sourceLines()).toContain("![page 1 figure 1](a.assets/p1-i0.png)");
+});
+
+test("a document that cannot be read says why in the markdown pane", async () => {
+  const convert = vi
+    .spyOn(engine, "convert")
+    .mockRejectedValue(new Error("no room"));
+  try {
+    await workspace(await written());
+    mount("/edit/a");
+    await expect
+      .element(page.getByText("This document could not be read (no room)."), {
+        timeout: 15_000,
+      })
+      .toBeVisible();
+  } finally {
+    convert.mockRestore();
+  }
+});
+
+test("closing a document's tab lets go of its reading", async () => {
+  await workspace(await written());
+  mount("/edit/a");
+  await expect
+    .element(page.getByRole("heading", { name: "Pump Care" }), {
+      timeout: 15_000,
+    })
+    .toBeVisible();
+  expect(useEditor.getState().readings["a"]?.status).toBe("ready");
+  await page.getByRole("button", { name: "Close a" }).click();
+  await expect.poll(tabs).toEqual([]);
+  expect(useEditor.getState().readings["a"]).toBeUndefined();
+});
+
+test("a document of the same name in the next workspace is read afresh", async () => {
+  await workspace(await written());
+  mount("/edit/a");
+  await expect
+    .element(page.getByRole("heading", { name: "Pump Care" }), {
+      timeout: 15_000,
+    })
+    .toBeVisible();
+  // Out to the landing, where the workspace is discarded and another made.
+  root!.unmount();
+  host!.remove();
+  await engine.stageView();
+  await engine.discardWorkspace();
+  await workspace(await written("Valve Care"));
+  mount("/edit/a");
+  await expect
+    .element(page.getByRole("heading", { name: "Valve Care" }), {
+      timeout: 15_000,
+    })
+    .toBeVisible();
 });
