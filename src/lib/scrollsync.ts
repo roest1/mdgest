@@ -168,6 +168,9 @@ export function attachSync(
   for (const type of leads)
     pane.root.addEventListener(type, lead, { passive: true });
   pane.scroller.addEventListener("scroll", onScroll, { passive: true });
+  // Put where the other pane is as soon as both are measured, not left at
+  // whatever offset it had.
+  invalidateSync(docId);
 
   return () => {
     for (const type of leads) pane.root.removeEventListener(type, lead);
@@ -184,7 +187,10 @@ export function attachSync(
  * The pairs are remade a frame later rather than when the next scroll asks:
  * measuring forces a layout pass over the whole document, which taken in
  * the scroll handler is a visible hitch mid-scroll. A frame on, the layout
- * has settled and the handler's own work stays a lookup. */
+ * has settled and the handler's own work stays a lookup. Then the follower
+ * is put back in step: a pane laid out anew keeps its pixel offset, which
+ * is somewhere else in the document now -- the pages' leader if neither
+ * has led yet. */
 export function invalidateSync(docId: string): void {
   const link = links.get(docId);
   if (!link) return;
@@ -193,6 +199,7 @@ export function invalidateSync(docId: string): void {
     const { page, markdown } = link.panes;
     if (link.points === null && page && markdown && links.get(docId) === link) {
       link.points = pointsOf(page, markdown);
+      follow(link, link.leader ?? "page");
     }
   });
 }

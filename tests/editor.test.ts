@@ -743,9 +743,12 @@ test("scrolling either pane takes the other to the same place", async () => {
   await scrollTo(md, room(md));
   await expect.poll(() => pdf.scrollTop).toBeCloseTo(room(pdf), 0);
 
-  // The source view is followed too, laid out anew.
+  // The source view is followed too, laid out anew -- and put where the
+  // pages are as soon as it is, not left at the rendered view's offset.
+  await scrollTo(pdf, room(pdf));
   await page.getByRole("radio", { name: "raw" }).click();
   await expect.poll(sourceLines).toContain("# Section 2");
+  await expect.poll(() => md.scrollTop).toBeCloseTo(room(md), 0);
   await scrollTo(pdf, 0);
   await expect.poll(() => md.scrollTop).toBe(0);
   await scrollTo(pdf, room(pdf));
