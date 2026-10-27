@@ -388,6 +388,18 @@ export const lists: Case[] = [
     ],
   },
   {
+    name: "lists-detail-reach-is-a-line",
+    about:
+      "How far below an item a detail may start is measured in lines, not in the detail's own height: an indented paragraph of three lines, set too far below for a one-line detail, is a paragraph too.",
+    pages: [
+      (pen) => {
+        pen.text(X, TOP, `• ${ITEMS[0]}`);
+        pen.lines(X + 18, TOP + 36, prose(3));
+      },
+    ],
+    blocks: [`bullet • ${ITEMS[0]}`, `p ${joined(prose(3))}`],
+  },
+  {
     name: "lists-numbering-restarts",
     about:
       "A paragraph between two runs of items ends the list: the second run counts from 1 again, whatever was printed.",

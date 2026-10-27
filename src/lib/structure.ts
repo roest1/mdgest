@@ -527,9 +527,12 @@ export function structure(pages: ReadPage[]): Analysis {
         colOf.get(b.id) === colOf.get(item.id) &&
         b.box.x >= item.box.x + 2 &&
         b.size <= item.size + 0.6 &&
-        b.box.y - (item.box.y + item.box.h) < 2.5 * Math.max(b.box.h, 1)
+        b.box.y - (item.box.y + item.box.h) <
+          2.5 * Math.max(page.lines[b.lines[0]].box.h, 1)
       ) {
-        // A regular line under an item, indented: its detail.
+        // A regular line under an item, indented: its detail. How far below
+        // is in lines, the block's first: its own height would let a long
+        // paragraph reach further than a short one.
         b.role = "bullet";
         b.depth = item.depth + 1;
       } else {
