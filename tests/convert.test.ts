@@ -64,11 +64,30 @@ test("a document is read off its pages once, and kept", async () => {
   expect(again).toEqual(first);
 });
 
-test("two asks at once are one reading", async () => {
+test("two asks at once are one reading, and both hear its pages", async () => {
   const pages = await committed();
-  const [a, b] = [convert("pumps/a", pages), convert("pumps/a", pages)];
+  const heard: string[] = [];
+  const a = convert("pumps/a", pages, () => heard.push("a"));
+  const b = convert("pumps/a", pages, () => heard.push("b"));
   expect(a).toBe(b);
   expect((await a).markdown.text).toBe(MARKDOWN);
+  expect(heard.sort()).toEqual(["a", "b"]);
+});
+
+test("asks from two openings of a document are two readings", async () => {
+  const pages = await committed();
+  // The document opened again -- its tab closed and opened while the first
+  // reading was still going -- is other pages, which the first reading's
+  // cannot stand in for: they may be destroyed under it.
+  const task = openPdf(await buildPdf([(pen) => pen.text(X, TOP, "x")]));
+  closers.push(() => task.destroy());
+  const other = [await (await task.promise).getPage(1)];
+  const [first, second] = [
+    convert("pumps/a", pages),
+    convert("pumps/a", other),
+  ];
+  expect(first).not.toBe(second);
+  await Promise.allSettled([first, second]);
 });
 
 test("an analysis this build cannot use is read again, not shown", async () => {
