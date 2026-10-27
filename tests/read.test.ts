@@ -14,6 +14,41 @@ import { buildPdf } from "./fixtures/pdf";
 
 const H = 792;
 
+/** pdf.js's store of decoded things, holding nothing, ever: what a page
+ *  whose objects never arrive looks like. */
+const nothing = {
+  has: () => false,
+  get: (id: string, callback?: (data: unknown) => void) => {
+    if (!callback) throw new Error(`${id} has not resolved yet`);
+  },
+};
+
+/** A letter page with nothing on it, standing in for pdf.js's, with any
+ *  of its parts replaced. */
+function standIn(over: Record<string, unknown>): PDFPageProxy {
+  const viewport = ({ scale = 1 }: { scale?: number } = {}) => ({
+    width: 612 * scale,
+    height: H * scale,
+    transform: [scale, 0, 0, -scale, 0, H * scale],
+    convertToViewportPoint: (x: number, y: number) => [
+      x * scale,
+      (H - y) * scale,
+    ],
+  });
+  return {
+    pageNumber: 1,
+    commonObjs: nothing,
+    objs: nothing,
+    getViewport: viewport,
+    getOperatorList: async () => ({ fnArray: [], argsArray: [] }),
+    getTextContent: async () => ({ items: [], styles: {} }),
+    getAnnotations: async () => [],
+    render: () => ({ promise: Promise.resolve() }),
+    cleanup: () => true,
+    ...over,
+  } as unknown as PDFPageProxy;
+}
+
 /** A page of one line, "Safety Rules", in a bold face whose name says
  *  nothing about its weight -- only the font object does -- and which pdf.js
  *  registers `delay` ms after it is first asked for. */
@@ -34,20 +69,8 @@ function pageWithLateFont(delay: number): PDFPageProxy {
       return font;
     },
   };
-  const viewport = {
-    width: 612,
-    height: H,
-    transform: [1, 0, 0, -1, 0, H],
-    convertToViewportPoint: (x: number, y: number) => [x, H - y],
-  };
-  return {
-    pageNumber: 1,
+  return standIn({
     commonObjs,
-    objs: commonObjs,
-    getViewport: () => viewport,
-    getOperatorList: async () => ({ fnArray: [], argsArray: [] }),
-    getAnnotations: async () => [],
-    cleanup: () => true,
     getTextContent: async () => ({
       items: [
         {
@@ -64,7 +87,7 @@ function pageWithLateFont(delay: number): PDFPageProxy {
         g_d0_f1: { ascent: 0.9, descent: -0.2, vertical: false },
       },
     }),
-  } as unknown as PDFPageProxy;
+  });
 }
 
 test("a font still loading is waited for, not read as regular", async () => {
