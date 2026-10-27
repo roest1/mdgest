@@ -534,7 +534,8 @@ test("closing a document's tab lets go of its reading", async () => {
   expect(useEditor.getState().readings["a"]?.status).toBe("ready");
   await page.getByRole("button", { name: "Close a" }).click();
   await expect.poll(tabs).toEqual([]);
-  expect(useEditor.getState().readings["a"]).toBeUndefined();
+  // Once the tab's panes are gone, which is after the tab is.
+  await expect.poll(() => useEditor.getState().readings["a"]).toBeUndefined();
 });
 
 test("a document of the same name in the next workspace is read afresh", async () => {
