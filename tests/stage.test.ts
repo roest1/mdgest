@@ -14,7 +14,18 @@ import type * as Opfs from "src/lib/opfs";
 import type { StageView } from "src/lib/protocol";
 import type * as Stage from "src/lib/stage";
 import { MAX_MANIFEST } from "src/lib/limits";
-import { MANIFEST as MANIFEST_NAME, parseManifest } from "src/lib/workspace";
+import {
+  ANALYSIS_FORMAT,
+  READER,
+  type Analysis,
+  type Page,
+} from "src/lib/analysis";
+import {
+  MANIFEST as MANIFEST_NAME,
+  assetsDir,
+  markdownPath,
+  parseManifest,
+} from "src/lib/workspace";
 import { Client, bytes, zipOf } from "./harness";
 
 const client = new Client(new URL("./worker.ts", import.meta.url));
@@ -680,5 +691,101 @@ describe("the browser's workspace", () => {
     await opfs("writeText", [".tmp", "orphan"], "{");
     await stage("sweep");
     expect(await opfs("walk", [".tmp"])).toEqual([]);
+  });
+});
+
+describe("a document's read", () => {
+  const page: Page = {
+    n: 1,
+    width: 612,
+    height: 792,
+    lines: [],
+    pictures: [
+      { box: { x: 0, y: 0, w: 100, h: 100 }, path: "p1-i0.png", px: [1, 1] },
+    ],
+    blocks: [
+      {
+        id: "p1b0",
+        kind: "text",
+        page: 1,
+        box: { x: 72, y: 90, w: 200, h: 10 },
+        lines: [],
+        text: "Grease the bearings.",
+        role: "para",
+        level: 0,
+        depth: 0,
+        bold: false,
+        italic: false,
+        marker: "",
+        size: 10,
+        font: "Helvetica",
+        picture: -1,
+      },
+      {
+        id: "p1i0",
+        kind: "image",
+        page: 1,
+        box: { x: 0, y: 0, w: 100, h: 100 },
+        lines: [],
+        text: "",
+        role: "image",
+        level: 0,
+        depth: 0,
+        bold: false,
+        italic: false,
+        marker: "",
+        size: 0,
+        font: "",
+        picture: 0,
+      },
+    ],
+  };
+  const read: Analysis = {
+    format: ANALYSIS_FORMAT,
+    reader: READER,
+    bodySize: 10,
+    pages: [page],
+  };
+  const figure = (name: string, text = name) => ({
+    name,
+    bytes: bytes(text).buffer,
+  });
+
+  beforeEach(async () => {
+    await stage("stage", [dropped("pumps/a.pdf")]);
+    await stage("commit");
+  });
+
+  test("is nothing until it is kept, and then what was kept", async () => {
+    expect(await stage("analysis", "pumps/a")).toBeNull();
+    await stage("convert", "pumps/a", read, [figure("p1-i0.png", "png")]);
+    expect(await stage("analysis", "pumps/a")).toEqual(read);
+    expect(await opfs("readText", markdownPath("pumps/a"))).toBe(
+      "Grease the bearings.\n\n![page 1 figure 1](a.assets/p1-i0.png)\n",
+    );
+    expect(await stage("asset", "pumps/a", "p1-i0.png")).toEqual(bytes("png"));
+    expect(await stage("asset", "pumps/a", "p1-i9.png")).toBeNull();
+  });
+
+  test("read again, keeps only the new figures", async () => {
+    await stage("convert", "pumps/a", read, [
+      figure("p1-i0.png"),
+      figure("p2-i0.png"),
+    ]);
+    await stage("convert", "pumps/a", read, [figure("p1-i0.png")]);
+    expect(await opfs("walk", assetsDir("pumps/a"))).toEqual(["p1-i0.png"]);
+  });
+
+  test("is refused for a document not in the workspace, or a figure not named as one", async () => {
+    await expect(stage("convert", "pumps/b", read, [])).rejects.toThrow(
+      "pumps/b is not in this workspace.",
+    );
+    await expect(
+      stage("convert", "pumps/a", read, [figure("../escape.png")]),
+    ).rejects.toThrow("../escape.png is not a figure's name.");
+    expect(await stage("analysis", "pumps/a")).toBeNull();
+    await expect(stage("asset", "pumps/a", "../a.pdf")).rejects.toThrow(
+      "../a.pdf is not a figure's name.",
+    );
   });
 });

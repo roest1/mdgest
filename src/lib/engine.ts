@@ -1,6 +1,8 @@
+import type { Analysis } from "./analysis";
 import {
   type Call,
   type Failure,
+  type Figure,
   type Method,
   type Params,
   type Reply,
@@ -77,15 +79,18 @@ function start(): Promise<void> {
   return ready;
 }
 
+/** `transfer` names buffers in `params` to hand over rather than copy;
+ *  they are empty here afterwards. */
 async function call<M extends Method>(
   method: M,
   params: Params<M>,
+  transfer: Transferable[] = [],
 ): Promise<Result<M>> {
   await start();
   const id = ++sequence;
   return new Promise<Result<M>>((resolve, reject) => {
     pending.set(id, { resolve: resolve as (value: never) => void, reject });
-    worker!.postMessage({ id, method, params } satisfies Call<M>);
+    worker!.postMessage({ id, method, params } satisfies Call<M>, transfer);
   });
 }
 
@@ -106,4 +111,12 @@ export const engine = {
   workspaceName: () => call("workspaceName", undefined),
   renameWorkspace: (name: string) => call("renameWorkspace", { name }),
   source: (docId: string) => call("source", { docId }),
+  analysis: (docId: string) => call("analysis", { docId }),
+  convert: (docId: string, analysis: Analysis, figures: Figure[]) =>
+    call(
+      "convert",
+      { docId, analysis, figures },
+      figures.map((f) => f.bytes),
+    ),
+  asset: (docId: string, name: string) => call("asset", { docId, name }),
 };

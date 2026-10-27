@@ -45,6 +45,10 @@ const handlers: Handlers = {
   workspaceName: () => stage.workspaceName(),
   renameWorkspace: ({ name }) => stage.renameWorkspace(name),
   source: ({ docId }) => stage.source(docId),
+  analysis: ({ docId }) => stage.analysis(docId),
+  convert: ({ docId, analysis, figures }) =>
+    stage.convert(docId, analysis, figures),
+  asset: ({ docId, name }) => stage.asset(docId, name),
 };
 
 /** Which buffers of a method's result are handed over rather than cloned.
@@ -53,6 +57,7 @@ const handlers: Handlers = {
  *  clone would hold a large PDF twice. */
 const transfers: { [M in Method]?: (result: Result<M>) => Transferable[] } = {
   source: (bytes) => [bytes.buffer],
+  asset: (bytes) => (bytes ? [bytes.buffer] : []),
 };
 
 function failure(cause: unknown): Failure {
