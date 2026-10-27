@@ -1,14 +1,16 @@
-/** What `readPage` asks of pdf.js, over a stand-in page: the timing a real
- *  document cannot be made to show on demand.
+/** What `readPage` hands back beyond the blocks the drawn cases check: the
+ *  style of a font still loading, and the pixels of a fallback picture.
  *
  * pdf.js registers a font only once the browser has loaded it, which can
  * be after the operator list that sent it has come back. The drawn cases
- * cannot catch a reader that asks too soon: their standard faces are never
- * embedded, so there is nothing to wait for. */
+ * cannot catch a reader that asks too soon -- their standard faces are
+ * never embedded, so there is nothing to wait for -- so that one runs over
+ * a stand-in page. */
 
 import { expect, test } from "vitest";
-import type { PDFPageProxy } from "src/lib/pdf";
+import { openPdf, type PDFPageProxy } from "src/lib/pdf";
 import { readPage } from "src/lib/read";
+import { buildPdf } from "./fixtures/pdf";
 
 const H = 792;
 
@@ -73,4 +75,39 @@ test("a font still loading is waited for, not read as regular", async () => {
     font: "Face2",
     bold: true,
   });
+});
+
+/** The RGB of the pixel at (`x`, `y`) in a PNG. */
+async function pixel(png: ArrayBuffer, x: number, y: number) {
+  const bitmap = await createImageBitmap(new Blob([png]));
+  const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(bitmap, 0, 0);
+  return [...ctx.getImageData(x, y, 1, 1).data.slice(0, 3)];
+}
+
+test("a picture with no pixels of its own is the page under it, in place", async () => {
+  // The right half of the undecodable image's box is a solid picture, drawn
+  // first; the left half is the page.
+  const bytes = await buildPdf([
+    (pen) => {
+      pen.image(122, 100, 50, 100, [100, 60]);
+      pen.undecodable(72, 100, 100, 100);
+    },
+  ]);
+  const task = openPdf(bytes);
+  try {
+    const pdf = await task.promise;
+    const { page, figures } = await readPage(await pdf.getPage(1));
+    expect(page.pictures.map((p) => p.px)).toEqual([
+      [100, 200],
+      [300, 300],
+    ]);
+    const fallback = figures[1].bytes;
+    // 3 pixels a point: the solid picture starts 150 pixels in.
+    expect(await pixel(fallback, 146, 150)).toEqual([255, 255, 255]);
+    expect(await pixel(fallback, 154, 150)).toEqual([90, 120, 160]);
+  } finally {
+    await task.destroy();
+  }
 });

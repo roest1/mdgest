@@ -317,20 +317,32 @@ function drawFigure(
   return canvas;
 }
 
-/** The page region under `box`, rendered: what a picture falls back to
- *  when its pixels cannot be had on their own. */
-async function drawRegion(
+/** The page rendered whole, and the scale it was rendered at: what a
+ *  picture falls back to when its pixels cannot be had on their own. Once
+ *  per page however many fall back, since each render runs the page's
+ *  every operator whatever part of it is kept. */
+async function drawPage(
   page: PDFPageProxy,
+): Promise<{ canvas: HTMLCanvasElement; s: number }> {
+  const { width, height } = page.getViewport({ scale: 1 });
+  const s = Math.min(3, MAX_SIDE_PX / Math.max(width, height));
+  const canvas = canvasOf(width * s, height * s);
+  await page.render({ canvas, viewport: page.getViewport({ scale: s }) })
+    .promise;
+  return { canvas, s };
+}
+
+/** The part of the page's render under `box`, copied pixel for pixel: cut
+ *  on whole pixels, a picture is a shift of under one from where it was
+ *  drawn rather than a blur. */
+function cut(
+  { canvas: whole, s }: { canvas: HTMLCanvasElement; s: number },
   box: Box,
-): Promise<HTMLCanvasElement> {
-  const s = Math.min(3, MAX_SIDE_PX / Math.max(box.w, box.h));
+): HTMLCanvasElement {
   const canvas = canvasOf(box.w * s, box.h * s);
-  const viewport = page.getViewport({
-    scale: s,
-    offsetX: -box.x * s,
-    offsetY: -box.y * s,
-  });
-  await page.render({ canvas, viewport }).promise;
+  const [x, y] = [Math.floor(box.x * s), Math.floor(box.y * s)];
+  const { width: w, height: h } = canvas;
+  canvas.getContext("2d")!.drawImage(whole, x, y, w, h, 0, 0, w, h);
   return canvas;
 }
 
@@ -342,6 +354,7 @@ async function readPictures(
   const pictures: Picture[] = [];
   const figures: Figure[] = [];
   const clip = { x: 0, y: 0, w: viewport.width, h: viewport.height };
+  let whole: Promise<{ canvas: HTMLCanvasElement; s: number }> | null = null;
 
   for (const drawn of await findDrawn(page)) {
     // The unit square under the transform is where the image lands.
@@ -407,7 +420,8 @@ async function readPictures(
         h,
       );
     } else {
-      canvas = await drawRegion(page, box);
+      whole ??= drawPage(page);
+      canvas = cut(await whole, box);
     }
     const bytes = await png(canvas);
     if (!bytes) continue;
