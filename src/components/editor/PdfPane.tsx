@@ -304,12 +304,10 @@ export function PdfPane({ docId }: { docId: string }) {
   // pane says so rather than waiting on a reading that never starts.
   useEffect(() => {
     if (problem)
-      useEditor
-        .getState()
-        .setReading(docId, {
-          status: "failed",
-          problem: "Not read: " + problem,
-        });
+      useEditor.getState().setReading(docId, {
+        status: "failed",
+        problem: "Not read: " + problem,
+      });
   }, [docId, problem]);
   // The bar sets these and the body draws them, so they live here.
   const [sidebar, setSidebar] = useState(false);

@@ -464,17 +464,42 @@ test("an open document is read, and its markdown shown as it reads and as its so
     })
     .toBeVisible();
   await expect.element(page.getByText(prose(1)[0])).toBeVisible();
-  // The figure, from the workspace, at the size the analysis gives it.
+  // The figure, from the workspace, at the size it is printed: 200pt wide
+  // is 267 CSS px, whatever pixels it was drawn at.
   await expect
     .poll(() => document.querySelector<HTMLImageElement>(".markdown img")?.src)
     .toMatch(/^blob:/);
   expect(document.querySelector(".markdown img")?.getAttribute("width")).toBe(
-    String(Math.round(200 * 2)),
+    "267",
   );
 
   await page.getByRole("radio", { name: "raw" }).click();
   await expect.poll(sourceLines).toContain("# Pump Care");
   expect(sourceLines()).toContain("![page 1 figure 1](a.assets/p1-i0.png)");
+});
+
+test("a figure holds its place at its size while its pixels are read", async () => {
+  const asset = vi
+    .spyOn(engine, "asset")
+    .mockImplementation(() => new Promise(() => {}));
+  try {
+    await workspace(await written());
+    mount("/edit/a");
+    await expect
+      .poll(() => document.querySelector<HTMLElement>(".figure-wait"), {
+        timeout: 15_000,
+      })
+      .not.toBeNull();
+    expect(
+      document.querySelector<HTMLElement>(".figure-wait")!.style.width,
+    ).toBe("267px");
+    expect(document.querySelector(".markdown img")).toBeNull();
+    expect(document.querySelector(".markdown")!.textContent).not.toContain(
+      "[page 1 figure 1]",
+    );
+  } finally {
+    asset.mockRestore();
+  }
 });
 
 test("a document that cannot be read says why in the markdown pane", async () => {

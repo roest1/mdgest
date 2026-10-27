@@ -54,8 +54,10 @@ function ViewToggle({
 /** The <img> for `docId`'s markdown: a figure, by the path the markdown
  *  gives it. A path under the document's own assets folder is one the
  *  workspace holds; anything else the markdown could say is shown as its
- *  alt text alone. The size comes from the analysis, so the pane lays out
- *  at its final height before the pixels arrive. */
+ *  alt text alone. Shown at the size it is printed, a point a point -- not
+ *  its pixels, which `read.ts` draws at twice that or more -- and held at
+ *  that size while its pixels are read, so the pane does not jump as each
+ *  one arrives. */
 function figureFor(docId: string, analysis: Analysis): Components["img"] {
   const prefix = assetsPrefix(docId);
   /** The path as the workspace names it: the markdown writes it
@@ -67,9 +69,14 @@ function figureFor(docId: string, analysis: Analysis): Components["img"] {
       return src;
     }
   };
-  const sizes = new Map<string, [number, number]>();
+  // CSS's px is 3/4 of a point.
+  const sizes = new Map<string, { width: number; height: number }>();
   for (const page of analysis.pages)
-    for (const pic of page.pictures) sizes.set(pic.path, pic.px);
+    for (const pic of page.pictures)
+      sizes.set(pic.path, {
+        width: Math.round((pic.box.w * 4) / 3),
+        height: Math.round((pic.box.h * 4) / 3),
+      });
   return function Figure({
     node: _node,
     src,
@@ -79,11 +86,23 @@ function figureFor(docId: string, analysis: Analysis): Components["img"] {
     const path = typeof src === "string" ? decoded(src) : "";
     const name = path.startsWith(prefix) ? path.slice(prefix.length) : "";
     const url = useAssetUrl(docId, name);
-    const px = sizes.get(name);
-    if (!url) return <span className="text-faint">[{alt}]</span>;
-    return (
-      <img {...props} src={url} alt={alt} width={px?.[0]} height={px?.[1]} />
-    );
+    const size = sizes.get(name);
+    if (!name || url === null)
+      return <span className="text-faint">[{alt}]</span>;
+    if (url === undefined)
+      return (
+        <span
+          className="figure-wait"
+          aria-hidden
+          style={
+            size && {
+              width: size.width,
+              aspectRatio: `${size.width} / ${size.height}`,
+            }
+          }
+        />
+      );
+    return <img {...props} src={url} alt={alt} {...size} />;
   };
 }
 

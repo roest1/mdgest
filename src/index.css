@@ -264,6 +264,10 @@
   .markdown img {
     @apply my-4 h-auto max-w-full rounded border border-edge bg-white;
   }
+  /* Where a figure will be, at its size, while its pixels are read. */
+  .markdown .figure-wait {
+    @apply my-4 block max-w-full rounded border border-edge bg-raised/40;
+  }
 
   /* `.source` is the raw view: an <ol>, one <li> a line, numbered by a CSS
      counter in a gutter drawn by the item's ::before. A counter and not text

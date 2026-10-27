@@ -77,21 +77,30 @@ export function assetUrl(docId: string, name: string): Promise<string | null> {
   return p;
 }
 
-/** `assetUrl` for a component: null until it is known, and stays null for
- *  a figure that is not there. */
-export function useAssetUrl(docId: string, name: string): string | null {
-  const [url, setUrl] = useState<string | null>(
-    () => urls.get(key(docId, name)) ?? null,
+/** `assetUrl` for a component: undefined while it is being read, then the
+ *  URL, or null for a figure that is not there. What is answered is for the
+ *  figure asked about now: asked about another, it is undefined again until
+ *  that one is read, never the last one's URL. */
+export function useAssetUrl(
+  docId: string,
+  name: string,
+): string | null | undefined {
+  const k = key(docId, name);
+  const [got, setGot] = useState<{ k: string; url: string | null } | null>(
+    null,
   );
   useEffect(() => {
     let live = true;
     assetUrl(docId, name).then(
-      (u) => live && setUrl(u),
-      (cause: unknown) => console.warn(cause),
+      (url) => live && setGot({ k, url }),
+      (cause: unknown) => {
+        console.warn(cause);
+        if (live) setGot({ k, url: null });
+      },
     );
     return () => {
       live = false;
     };
-  }, [docId, name]);
-  return url;
+  }, [docId, name, k]);
+  return got?.k === k ? got.url : urls.get(k);
 }
