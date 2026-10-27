@@ -13,6 +13,7 @@ import { Spinner } from "src/components/shared/Spinner";
 import { ensureRead, readDone } from "src/lib/convert";
 import { engine } from "src/lib/engine";
 import { useEditor } from "src/lib/store";
+import { attachSync, invalidateSync } from "src/lib/scrollsync";
 import {
   openPdf,
   readOutline,
@@ -442,6 +443,42 @@ export function PdfPane({ docId }: { docId: string }) {
     };
   }, []);
 
+  // Where each block starts in the column, for the scroll sync: worked out
+  // from the layout rather than measured, since only the rows near the view
+  // are in the document. Only blocks the markdown wrote, since only those
+  // have somewhere to be on the other side.
+  const reading = useEditor((s) => s.readings[docId]);
+  const tops = useCallback(() => {
+    const out = new Map<string, number>();
+    if (reading?.status !== "ready") return out;
+    const { analysis, markdown } = reading;
+    for (const page of analysis.pages) {
+      const row = rows[rowOf(page.n)];
+      if (!row) continue;
+      for (const block of page.blocks) {
+        if (markdown.blocks[block.id])
+          out.set(block.id, row.top + block.box.y * scale);
+      }
+    }
+    return out;
+  }, [reading, rows, rowOf, scale]);
+  const topsRef = useRef(tops);
+  useLayoutEffect(() => {
+    topsRef.current = tops;
+    invalidateSync(docId);
+  }, [tops, docId]);
+
+  // Joined once the column is drawn, which is when the scroller holds it.
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!ready || !root.current || !scroller.current) return;
+    return attachSync(docId, "page", {
+      root: root.current,
+      scroller: scroller.current,
+      tops: () => topsRef.current(),
+    });
+  }, [ready, docId]);
+
   const frame = useRef(0);
   const onScroll = () => {
     cancelAnimationFrame(frame.current);
@@ -487,6 +524,7 @@ export function PdfPane({ docId }: { docId: string }) {
 
   return (
     <Pane
+      ref={root}
       left={
         <Hamburger sidebar={sidebar} onSidebar={() => setSidebar((s) => !s)} />
       }

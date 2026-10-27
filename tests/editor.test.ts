@@ -20,7 +20,7 @@ import Editor from "src/routes/Editor";
 import "src/index.css";
 import { pdfOf, type PdfExtras } from "./harness";
 import { prose, TOP, X } from "./cases/text";
-import { buildPdf, PARAGRAPH } from "./fixtures/pdf";
+import { buildPdf, PARAGRAPH, type Pen } from "./fixtures/pdf";
 
 let root: Root | null = null;
 let host: HTMLElement | null = null;
@@ -661,3 +661,93 @@ test("a document of the same name in the next workspace is read afresh", async (
     })
     .toBeVisible();
 });
+
+// ---- the scroll sync ------------------------------------------------------
+
+/** `a.pdf`: three pages, each a section title over a column of paragraphs,
+ *  long enough that both panes scroll. */
+const sections = async () =>
+  new File(
+    [
+      await buildPdf(
+        [1, 2, 3].map((n) => (pen: Pen) => {
+          pen.text(X, TOP, `Section ${n}`, { size: 16, face: "bold" });
+          pen.lines(X, TOP + PARAGRAPH, prose(24, n), { leading: PARAGRAPH });
+        }),
+      ),
+    ],
+    "a.pdf",
+  );
+
+const pdfScroller = () =>
+  document
+    .querySelector("[data-paper]")!
+    .closest<HTMLElement>(".overflow-auto")!;
+const markdownScroller = () =>
+  document.querySelector(".markdown")!.parentElement!;
+/** Scroll `el` to `top`, as a person would: touching its pane first, which
+ *  is what makes it the one the other follows. */
+async function scrollTo(el: HTMLElement, top: number): Promise<void> {
+  el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  el.scrollTop = top;
+  // A scroll event is sent before the next frame is drawn -- or not at all,
+  // if it was there already.
+  await new Promise((done) =>
+    requestAnimationFrame(() => requestAnimationFrame(done)),
+  );
+}
+const room = (el: HTMLElement) => el.scrollHeight - el.clientHeight;
+
+test("scrolling either pane takes the other to the same place", async () => {
+  await workspace(await sections());
+  mount("/edit/a");
+  await expect
+    .element(page.getByRole("heading", { name: "Section 1" }), {
+      timeout: 15_000,
+    })
+    .toBeVisible();
+  await pagesDrawn();
+  const [pdf, md] = [pdfScroller(), markdownScroller()];
+  expect(room(pdf)).toBeGreaterThan(0);
+  expect(room(md)).toBeGreaterThan(0);
+
+  // The ends go to the ends.
+  await scrollTo(pdf, room(pdf));
+  await expect.poll(() => md.scrollTop).toBeCloseTo(room(md), 0);
+  await scrollTo(pdf, 0);
+  await expect.poll(() => md.scrollTop).toBe(0);
+
+  // The sync lines up the line each pane is looking at: from the view's
+  // top edge when scrolled to the top to its bottom edge at the bottom.
+  const probe = (el: HTMLElement) =>
+    el.scrollTop + (el.scrollTop / room(el)) * el.clientHeight;
+  /** Where `el`'s child starts in its content. */
+  const inContent = (el: HTMLElement, child: Element) =>
+    child.getBoundingClientRect().top -
+    el.getBoundingClientRect().top +
+    el.scrollTop;
+  // Section 2's title on the markdown's line puts the PDF's on page 2,
+  // near its top: where that title is printed.
+  const heading = await page
+    .getByRole("heading", { name: "Section 2" })
+    .element();
+  const at = inContent(md, heading);
+  await scrollTo(md, at / (1 + md.clientHeight / room(md)));
+  const second = document.querySelectorAll("[data-paper]")[1];
+  const pageTop = inContent(pdf, second);
+  const pageHeight = second.getBoundingClientRect().height;
+  await expect.poll(() => probe(pdf) - pageTop).toBeGreaterThan(0);
+  expect(probe(pdf) - pageTop).toBeLessThan(pageHeight / 4);
+
+  // And the markdown leads as well as follows.
+  await scrollTo(md, room(md));
+  await expect.poll(() => pdf.scrollTop).toBeCloseTo(room(pdf), 0);
+
+  // The source view is followed too, laid out anew.
+  await page.getByRole("radio", { name: "raw" }).click();
+  await expect.poll(sourceLines).toContain("# Section 2");
+  await scrollTo(pdf, 0);
+  await expect.poll(() => md.scrollTop).toBe(0);
+  await scrollTo(pdf, room(pdf));
+  await expect.poll(() => md.scrollTop).toBeCloseTo(room(md), 0);
+}, 30_000);
