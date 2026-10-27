@@ -7,7 +7,8 @@
  * never embedded, so there is nothing to wait for -- so that one runs over
  * a stand-in page. */
 
-import { expect, test } from "vitest";
+import { OPS } from "pdfjs-dist";
+import { expect, test, vi } from "vitest";
 import { openPdf, type PDFPageProxy } from "src/lib/pdf";
 import { readPage } from "src/lib/read";
 import { buildPdf } from "./fixtures/pdf";
@@ -133,4 +134,37 @@ test("a picture with no pixels of its own is the page under it, in place", async
   } finally {
     await task.destroy();
   }
+});
+
+test("images that never arrive are waited for together, not in turn", async () => {
+  // Three images, each a box of the page, whose pixels pdf.js never sends.
+  const ids = ["img_p0_1", "img_p0_2", "img_p0_3"];
+  const page = standIn({
+    getOperatorList: async () => ({
+      fnArray: ids.flatMap(() => [
+        OPS.save,
+        OPS.transform,
+        OPS.paintImageXObject,
+        OPS.restore,
+      ]),
+      argsArray: ids.flatMap((id, i) => [
+        null,
+        [100, 0, 0, 100, 72 + i * 150, 500],
+        [id, 64, 64],
+        null,
+      ]),
+    }),
+  });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  let read: Awaited<ReturnType<typeof readPage>> | null = null;
+  try {
+    void readPage(page).then((r) => (read = r));
+    // One wait's length: enough for all three, if they are waited for at
+    // once, and for the first alone if one after another.
+    await vi.advanceTimersByTimeAsync(15_000);
+  } finally {
+    vi.useRealTimers();
+  }
+  await vi.waitFor(() => expect(read).not.toBeNull(), { timeout: 2000 });
+  expect(read!.page.pictures).toHaveLength(3);
 });
