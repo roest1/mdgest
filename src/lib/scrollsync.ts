@@ -36,6 +36,8 @@ interface Link {
    *  arrives: a scroll landing on it is this module's, and one anywhere
    *  else is a person's. */
   wrote: Partial<Record<Side, number>>;
+  /** The remeasure waiting for the layout to hold still. */
+  settle?: number;
 }
 
 const links = new Map<string, Link>();
@@ -175,28 +177,36 @@ export function attachSync(
     if (link.leader === side) link.leader = null;
     delete link.wrote[side];
     link.points = null;
-    if (!link.panes.page && !link.panes.markdown) links.delete(docId);
+    if (!link.panes.page && !link.panes.markdown) {
+      clearTimeout(link.settle);
+      links.delete(docId);
+    }
   };
 }
 
+/** How long a pane's layout holds still before its blocks are measured
+ *  again, in ms. */
+const SETTLE = 100;
+
 /** A pane of `docId` laid out again: its blocks are somewhere else now.
  *
- * The pairs are remade a frame later rather than when the next scroll asks:
- * measuring forces a layout pass over the whole document, which taken in
- * the scroll handler is a visible hitch mid-scroll. A frame on, the layout
- * has settled and the handler's own work stays a lookup. Then the follower
- * is put back in step: a pane laid out anew keeps its pixel offset, which
- * is somewhere else in the document now -- the pages' leader if neither
- * has led yet. */
+ * The pairs are remade once the layout has held still, rather than when the
+ * next scroll asks: measuring forces a layout pass over the whole document,
+ * which taken in the scroll handler is a visible hitch mid-scroll -- and
+ * rather than a frame on, which during a dragged split or a sliding sidebar
+ * is every frame, each measure thrown away by the next. A scroll before
+ * then measures for itself. Then the follower is put back in step: a pane
+ * laid out anew keeps its pixel offset, which is somewhere else in the
+ * document now -- the pages' leader if neither has led yet. */
 export function invalidateSync(docId: string): void {
   const link = links.get(docId);
   if (!link) return;
   link.points = null;
-  requestAnimationFrame(() => {
+  clearTimeout(link.settle);
+  link.settle = window.setTimeout(() => {
     const { page, markdown } = link.panes;
-    if (link.points === null && page && markdown && links.get(docId) === link) {
-      link.points = pointsOf(page, markdown);
-      follow(link, link.leader ?? "page");
-    }
-  });
+    if (links.get(docId) !== link || !page || !markdown) return;
+    link.points ??= pointsOf(page, markdown);
+    follow(link, link.leader ?? "page");
+  }, SETTLE);
 }
