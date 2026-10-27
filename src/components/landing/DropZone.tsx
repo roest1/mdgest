@@ -193,7 +193,16 @@ export function DropZone({
           className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full
             transition-colors duration-200 ${s.halo}`}
         >
-          <Icon className={`h-6 w-6 ${s.icons}`} aria-hidden />
+          {/* pointer-events-none so a drag entering here lands on the halo,
+              which stays mounted, not on the icon, which does not: the
+              dragging state swaps this element, and a dragenter target
+              removed mid-drag never delivers its dragleave, so the depth
+              count in useDropZone would stick one high and the zone would
+              stay lit after the drag left. */}
+          <Icon
+            className={`pointer-events-none h-6 w-6 ${s.icons}`}
+            aria-hidden
+          />
         </div>
 
         <div className="min-w-0">
