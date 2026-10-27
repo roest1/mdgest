@@ -685,10 +685,9 @@ const pdfScroller = () =>
     .closest<HTMLElement>(".overflow-auto")!;
 const markdownScroller = () =>
   document.querySelector(".markdown")!.parentElement!;
-/** Scroll `el` to `top`, as a person would: touching its pane first, which
- *  is what makes it the one the other follows. */
+/** Scroll `el` to `top`, as a person would: nothing else is needed for
+ *  it to lead, whatever moved it. */
 async function scrollTo(el: HTMLElement, top: number): Promise<void> {
-  el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
   el.scrollTop = top;
   // A scroll event is sent before the next frame is drawn -- or not at all,
   // if it was there already.
@@ -741,6 +740,13 @@ test("scrolling either pane takes the other to the same place", async () => {
 
   // And the markdown leads as well as follows.
   await scrollTo(md, room(md));
+  await expect.poll(() => pdf.scrollTop).toBeCloseTo(room(pdf), 0);
+
+  // Whatever moves it -- keys, a trackpad's glide, the scrollbar -- with no
+  // pointer anywhere near: a pane that scrolls on its own leads.
+  await scrollTo(pdf, 0);
+  await expect.poll(() => md.scrollTop).toBe(0);
+  md.scrollTop = room(md);
   await expect.poll(() => pdf.scrollTop).toBeCloseTo(room(pdf), 0);
 
   // The source view is followed too, laid out anew -- and put where the

@@ -8,19 +8,17 @@
  * two-column page read down one column and then up the next -- are left
  * out, keeping the longest run that goes forwards on both.
  *
- * The pane last touched leads and the other follows. The follower's own
- * scrolling, including what this module does to it, is not sent back, so
- * the two never chase each other -- and a pane that brings a picked block
- * into view does not drag the one it was picked in. Kept outside React: it
- * runs on every scroll frame and draws nothing. */
+ * The pane that scrolls leads and the other follows -- whatever scrolled
+ * it: the wheel, the keys, a trackpad's glide, the scrollbar, a jump to a
+ * page. What this module does to the follower is told apart by where it
+ * lands: the offset it was set to, which is not sent back, so the two never
+ * chase each other. Kept outside React: it runs on every scroll frame and
+ * draws nothing. */
 
 /** Which pane: the PDF's pages, or the markdown. */
 export type Side = "page" | "markdown";
 
 export interface SyncPane {
-  /** The whole pane, whose touch makes it the leader: its toolbar too, so
-   *  a jump to a page is followed like a scroll. */
-  root: HTMLElement;
   scroller: HTMLElement;
   /** Where each block starts, in the scroller's content px. */
   tops: () => Map<string, number>;
@@ -34,6 +32,10 @@ interface Link {
   panes: Partial<Record<Side, SyncPane>>;
   leader: Side | null;
   points: Points | null;
+  /** The offset each follower was last set to, until its scroll there
+   *  arrives: a scroll landing on it is this module's, and one anywhere
+   *  else is a person's. */
+  wrote: Partial<Record<Side, number>>;
 }
 
 const links = new Map<string, Link>();
@@ -41,7 +43,7 @@ const links = new Map<string, Link>();
 function linkOf(docId: string): Link {
   let link = links.get(docId);
   if (!link) {
-    link = { panes: {}, leader: null, points: null };
+    link = { panes: {}, leader: null, points: null, wrote: {} };
     links.set(docId, link);
   }
   return link;
@@ -131,10 +133,14 @@ function follow(link: Link, leader: Side) {
     leader === "page"
       ? [link.points.page, link.points.markdown]
       : [link.points.markdown, link.points.page];
+  const side = other(leader);
   to.scroller.scrollTop = scrollFor(
     to.scroller,
     interpolate(xs, ys, probe(from.scroller)),
   );
+  // As the browser kept it, rounded to its pixels: what its scroll event
+  // will find.
+  link.wrote[side] = to.scroller.scrollTop;
 }
 
 /** Join `docId`'s pane on `side` to the other one; the returned function
@@ -148,35 +154,26 @@ export function attachSync(
   link.panes[side] = pane;
   link.points = null;
 
-  const lead = () => {
-    link.leader = side;
-  };
   // Followed at once: scroll events come at most a frame apart already,
   // and a frame later would let the two panes be seen out of step.
   const onScroll = () => {
-    if (link.leader === side) follow(link, side);
+    const wrote = link.wrote[side];
+    delete link.wrote[side];
+    if (wrote !== undefined && Math.abs(pane.scroller.scrollTop - wrote) < 1)
+      return;
+    link.leader = side;
+    follow(link, side);
   };
-  // Whatever a person does to a pane first: point at it, press in it, turn
-  // the wheel over it, or move focus into it for the keys.
-  const leads = [
-    "pointerenter",
-    "pointerdown",
-    "wheel",
-    "touchstart",
-    "focusin",
-  ] as const;
-  for (const type of leads)
-    pane.root.addEventListener(type, lead, { passive: true });
   pane.scroller.addEventListener("scroll", onScroll, { passive: true });
   // Put where the other pane is as soon as both are measured, not left at
   // whatever offset it had.
   invalidateSync(docId);
 
   return () => {
-    for (const type of leads) pane.root.removeEventListener(type, lead);
     pane.scroller.removeEventListener("scroll", onScroll);
     if (link.panes[side] === pane) delete link.panes[side];
     if (link.leader === side) link.leader = null;
+    delete link.wrote[side];
     link.points = null;
     if (!link.panes.page && !link.panes.markdown) links.delete(docId);
   };

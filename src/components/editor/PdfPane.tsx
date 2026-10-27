@@ -469,11 +469,9 @@ export function PdfPane({ docId }: { docId: string }) {
   }, [tops, docId]);
 
   // Joined once the column is drawn, which is when the scroller holds it.
-  const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!ready || !root.current || !scroller.current) return;
+    if (!ready || !scroller.current) return;
     return attachSync(docId, "page", {
-      root: root.current,
       scroller: scroller.current,
       tops: () => topsRef.current(),
     });
@@ -524,7 +522,6 @@ export function PdfPane({ docId }: { docId: string }) {
 
   return (
     <Pane
-      ref={root}
       left={
         <Hamburger sidebar={sidebar} onSidebar={() => setSidebar((s) => !s)} />
       }

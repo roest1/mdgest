@@ -244,17 +244,15 @@ function useScrollSync(
   docId: string,
   ready: boolean,
   view: View,
-  root: React.RefObject<HTMLDivElement | null>,
   scroller: React.RefObject<HTMLDivElement | null>,
 ) {
   useEffect(() => {
     const el = scroller.current;
     const content = el?.firstElementChild;
-    if (!ready || !root.current || !el || !content) return;
+    if (!ready || !el || !content) return;
     const ro = new ResizeObserver(() => invalidateSync(docId));
     ro.observe(content);
     const detach = attachSync(docId, "markdown", {
-      root: root.current,
       scroller: el,
       tops: () => {
         const out = new Map<string, number>();
@@ -271,19 +269,17 @@ function useScrollSync(
       ro.disconnect();
       detach();
     };
-  }, [docId, ready, view, root, scroller]);
+  }, [docId, ready, view, scroller]);
 }
 
 export function MarkdownPane({ docId }: { docId: string }) {
   const [view, setView] = useState<View>("rendered");
   const reading = useEditor((s) => s.readings[docId]);
-  const root = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
-  useScrollSync(docId, reading?.status === "ready", view, root, scroller);
+  useScrollSync(docId, reading?.status === "ready", view, scroller);
 
   return (
     <Pane
-      ref={root}
       left={
         // TODO: the editor's store, once ported: edit opens the markdown as
         // a draft, and a document marked done disables it.
