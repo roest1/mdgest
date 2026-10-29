@@ -31,10 +31,13 @@ import {
   MAX_MANIFEST,
   RESERVE,
 } from "./limits";
+import { parseAnalysis, type Analysis } from "./analysis";
+import { emit } from "./emit";
 import { bare } from "./exchange";
 import * as opfs from "./opfs";
 import type {
   Candidate,
+  Figure,
   Origin,
   StageRow,
   StageView,
@@ -51,9 +54,13 @@ import {
 } from "./upload";
 import { few, human, messageOf, plural } from "./words";
 import {
+  FIGURE_NAME,
   MANIFEST,
   SOURCES,
+  assetsDir,
+  assetsPrefix,
   byCodeUnit,
+  cacheDir,
   cleanId,
   cleanName,
   copyManifest,
@@ -61,6 +68,7 @@ import {
   emptyManifest,
   exportedName,
   isDocId,
+  markdownPath,
   parseManifest,
   renameStem,
   renamedId,
@@ -1031,4 +1039,78 @@ export function source(docId: string): Promise<Uint8Array<ArrayBuffer>> {
     if (!bytes) throw new Error(`${docId} is not in this workspace.`);
     return bytes;
   });
+}
+
+const ANALYSIS = "analysis.json";
+
+/** One committed document's analysis, or null when it has not been read.
+ *  Null rather than an error: a document that is in the workspace and not
+ *  yet read is the ordinary state of a fresh upload, and the source's read
+ *  is what says whether the document is there at all. */
+export function analysis(docId: string): Promise<Analysis | null> {
+  return locked(async () => {
+    const text = await opfs.readText([...cacheDir(docId), ANALYSIS]);
+    return text === null ? null : parseAnalysis(text);
+  });
+}
+
+/** Keep a document's read and write its markdown. The figures replace
+ *  whatever was in the assets folder: a re-read names them from scratch,
+ *  and a stale one would otherwise sit beside the new set. */
+export function convert(
+  docId: string,
+  analysis: Analysis,
+  figures: Figure[],
+): Promise<void> {
+  return locked(async () => {
+    if ((await opfs.size(sourcePath(docId))) === null) {
+      throw new Error(`${docId} is not in this workspace.`);
+    }
+    for (const { name } of figures) {
+      if (!FIGURE_NAME.test(name))
+        throw new Error(`${name} is not a figure's name.`);
+    }
+
+    // What this read derives, measured before anything is touched: the
+    // commit's `RESERVE` was an estimate of it, and a scanned document can
+    // derive far more than twice its source. Refusing here leaves whatever
+    // was there before, whole. The texts are counted in code units, which
+    // is near enough for figuring room; a zero free means the browser would
+    // not say, and `writeFile` still reports a real full disk in words if
+    // it comes to that.
+    const markdown = emit(analysis, assetsPrefix(docId)).text;
+    const json = `${JSON.stringify(analysis, null, 1)}\n`;
+    let writing = markdown.length + json.length;
+    for (const { bytes } of figures) writing += bytes.byteLength;
+    const { free } = await opfs.space();
+    if (free > 0 && writing > free) {
+      throw new Error(
+        `Not enough room in this browser to keep this document's read: ${human(writing)} to ` +
+          `write, about ${human(free)} free. Take some documents out of the listing, or free ` +
+          `some space, and open it again.`,
+      );
+    }
+
+    // `analysis.json` is what says a document has been read, so it goes
+    // first and comes back last: a write cut short anywhere between leaves
+    // no analysis, and the next open reads the document again rather than
+    // trusting a read whose figures or markdown are not all there.
+    await opfs.remove([...cacheDir(docId), ANALYSIS]);
+    await opfs.remove(assetsDir(docId), true);
+    for (const { name, bytes } of figures) {
+      await opfs.writeFile([...assetsDir(docId), name], bytes);
+    }
+    await opfs.writeText(markdownPath(docId), markdown);
+    await opfs.writeText([...cacheDir(docId), ANALYSIS], json);
+  });
+}
+
+/** One of a document's figures, or null when there is no such file. */
+export function asset(
+  docId: string,
+  name: string,
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  if (!FIGURE_NAME.test(name))
+    return Promise.reject(new Error(`${name} is not a figure's name.`));
+  return locked(() => opfs.readFile([...assetsDir(docId), name]));
 }

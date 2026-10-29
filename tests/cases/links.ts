@@ -24,7 +24,7 @@ export const links: Case[] = [
   {
     name: "links-whole-block",
     about:
-      "A paragraph whose every line is under one link links where they do.",
+      "A paragraph whose every line is under one link is written [text](url).",
     pages: [
       (pen) => {
         pen.lines(X, TOP, prose(2));
@@ -37,6 +37,11 @@ export const links: Case[] = [
       `p ${joined(prose(2))} -> ${GUIDE}`,
       ...prose(3, 2).map((l) => `p ${l}`),
     ],
+    markdown: [
+      `[${joined(prose(2))}](${GUIDE})`,
+      "",
+      ...prose(3, 2).flatMap((l) => [l, ""]),
+    ].join("\n"),
   },
   {
     name: "links-part-of-a-block",
@@ -56,6 +61,36 @@ export const links: Case[] = [
       `p ${prose(1, 2)[0]}`,
       ...prose(3, 3).map((l) => `p ${l}`),
     ],
+    markdown: [
+      joined(prose(2)),
+      "",
+      prose(1, 2)[0],
+      "",
+      ...prose(3, 3).flatMap((l) => [l, ""]),
+    ].join("\n"),
+  },
+  {
+    name: "links-unsafe-characters",
+    about:
+      "Spaces and parentheses in a link's URL are percent-encoded, so they cannot end the markdown link early.",
+    pages: [
+      (pen) => {
+        pen.text(X, TOP, "Read the maintenance guide online.");
+        pen.link(...over(TOP), "https://example.com/pump guide (rev 2).pdf");
+        pen.lines(X, TOP + PARAGRAPH, prose(3), { leading: PARAGRAPH });
+      },
+    ],
+    blocks: [
+      // pdf.js hands the URL over with its spaces encoded, its parentheses
+      // not: the markdown is left to encode those.
+      "p Read the maintenance guide online. -> https://example.com/pump%20guide%20(rev%202).pdf",
+      ...prose(3).map((l) => `p ${l}`),
+    ],
+    markdown: [
+      "[Read the maintenance guide online.](https://example.com/pump%20guide%20%28rev%202%29.pdf)",
+      "",
+      ...prose(3).flatMap((l) => [l, ""]),
+    ].join("\n"),
   },
   {
     name: "links-elsewhere-on-the-page",
@@ -72,5 +107,10 @@ export const links: Case[] = [
       ...LEFT.map((l) => `p ${l}`),
       `p See the pump guide online. -> ${GUIDE}`,
     ],
+    markdown: [
+      ...LEFT.flatMap((l) => [l, ""]),
+      `[See the pump guide online.](${GUIDE})`,
+      "",
+    ].join("\n"),
   },
 ];
