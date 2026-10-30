@@ -7,9 +7,10 @@
  *
  * `stage.ts` keeps its state in module scope, so each test gets a worker of
  * its own: the one way to start from nothing seen and nothing staged, even
- * after a test that leaves the stage deliberately stale. */
+ * after a test that leaves the stage deliberately stale. OPFS is emptied
+ * after each test as well as before, since the next file to run shares it. */
 
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type * as Opfs from "src/lib/opfs";
 import type { StageView } from "src/lib/protocol";
 import type * as Stage from "src/lib/stage";
@@ -59,10 +60,14 @@ const stored = async () => {
   return text === null ? null : parseManifest(text);
 };
 
-beforeEach(async () => {
+/** A worker of its own, over an emptied workspace. */
+async function fresh(): Promise<void> {
   client.restart();
   await opfs("clearWorkspace");
-});
+}
+
+beforeEach(fresh);
+afterEach(fresh);
 
 describe("loose files", () => {
   test("take their ids from their paths, folders kept", async () => {

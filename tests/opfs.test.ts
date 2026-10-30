@@ -2,10 +2,11 @@
  *  -- truncation, what counts as a document, what a removal may touch --
  *  not whether the browser can store a file.
  *
- * The test runner's origin is not the app's, so this OPFS is its own; each
- * test starts from an emptied workspace. */
+ * The test runner's origin is not the app's, so this OPFS is its own, but
+ * every test file shares it: each test starts from an emptied workspace,
+ * and leaves one for the file after. */
 
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type * as Opfs from "src/lib/opfs";
 import { emptyManifest } from "src/lib/workspace";
 import { Client, bytes } from "./harness";
@@ -19,9 +20,10 @@ const opfs = client.bind<Api>("opfs");
 /** Call one of the worker's own hooks on `move`: see `worker.ts`. */
 const harness = client.bind<Harness>("harness");
 
-beforeEach(async () => {
-  await opfs("clearWorkspace");
-});
+const clear = () => opfs("clearWorkspace");
+
+beforeEach(clear);
+afterEach(clear);
 
 describe("files", () => {
   test("a shorter write replaces a longer file whole, leaving none of its tail", async () => {
