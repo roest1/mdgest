@@ -5,9 +5,9 @@
  *
  * As in `landing.test.ts`, nothing is mocked between the page and OPFS. The
  * workspace is committed through the engine, and the browser's copy of it
- * discarded after each test, so the next starts from nothing. */
+ * discarded before and after each test, so each starts from nothing. */
 
-import { afterEach, beforeAll, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { createRoot, type Root } from "react-dom/client";
 import { createElement } from "react";
@@ -45,14 +45,22 @@ function mount(path: string): void {
 // on the desktops and tablets the editor is for.
 beforeAll(() => page.viewport(1280, 800));
 
+/** The browser's workspace, staged on a first look and discarded, which
+ *  empties OPFS. */
+async function discard(): Promise<void> {
+  await engine.stageView();
+  await engine.discardWorkspace();
+}
+
+// Before as well as after: test files share one OPFS, and one that runs
+// earlier, like `stage.test.ts`, may leave a workspace of its own behind.
+beforeEach(discard);
+
 afterEach(async () => {
   root?.unmount();
   host?.remove();
   root = host = router = null;
-  // The browser's workspace is staged on a first look, and discarding it
-  // empties OPFS.
-  await engine.stageView();
-  await engine.discardWorkspace();
+  await discard();
 });
 
 /** A workspace of `files`, committed. A name alone is a file whose bytes

@@ -4,9 +4,9 @@
  *
  * As in `editor.test.ts`, nothing is mocked between the page and OPFS. The
  * workspace is committed through the engine, and the browser's copy of it
- * discarded after each test, so the next starts from nothing. */
+ * discarded before and after each test, so each starts from nothing. */
 
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type * as Opfs from "src/lib/opfs";
 import { READER } from "src/lib/analysis";
 import {
@@ -31,10 +31,20 @@ const opfs = new Client(new URL("./worker.ts", import.meta.url)).bind<
 
 const closers: (() => Promise<void>)[] = [];
 
-afterEach(async () => {
-  for (const close of closers.splice(0)) await close();
+/** The browser's workspace, staged on a first look and discarded, which
+ *  empties OPFS. */
+async function discard(): Promise<void> {
   await engine.stageView();
   await engine.discardWorkspace();
+}
+
+// Before as well as after: test files share one OPFS, and one that runs
+// earlier, like `stage.test.ts`, may leave a workspace of its own behind.
+beforeEach(discard);
+
+afterEach(async () => {
+  for (const close of closers.splice(0)) await close();
+  await discard();
 });
 
 /** A one-page document of a paragraph and a picture, committed as
