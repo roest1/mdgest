@@ -433,21 +433,27 @@ test("a document with no outline has its tab, disabled", async () => {
 
 // ---- the markdown pane ----------------------------------------------------
 
-/** `a.pdf`: a title, three paragraphs and a picture, drawn so the reader
- *  has something to read. */
-const written = async (title = "Pump Care") =>
+const GUIDE = "https://example.com/pumps/guide";
+
+/** `a.pdf`: a title, three paragraphs -- the first a link to the guide --
+ *  and a picture, drawn so the reader has something to read. */
+const written = async (title = "Pump Care", name = "a.pdf") =>
   new File(
     [
       await buildPdf([
         (pen) => {
           pen.text(X, TOP, title, { size: 16, face: "bold" });
           pen.lines(X, TOP + PARAGRAPH, prose(3), { leading: PARAGRAPH });
+          pen.link(X - 2, TOP + PARAGRAPH - 10, 420, 14, GUIDE);
           pen.image(X, TOP + 5 * PARAGRAPH, 200, 120, [100, 60]);
         },
       ]),
     ],
-    "a.pdf",
+    name,
   );
+
+/** Where `a`'s reading stands in the store. */
+const readingOf = (doc = "a") => useEditor.getState().readings[doc];
 
 /** The raw view's lines, as written. */
 const sourceLines = () =>
@@ -464,6 +470,12 @@ test("an open document is read, and its markdown shown as it reads and as its so
     })
     .toBeVisible();
   await expect.element(page.getByText(prose(1)[0])).toBeVisible();
+  // A link the document carries opens in a tab of its own, not over the
+  // editor and every document open in it.
+  const link = page.getByRole("link", { name: prose(1)[0] });
+  await expect.element(link).toHaveAttribute("href", GUIDE);
+  await expect.element(link).toHaveAttribute("target", "_blank");
+  await expect.element(link).toHaveAttribute("rel", "noopener noreferrer");
   // The figure, from the workspace, at the size it is printed: 200pt wide
   // is 267 CSS px, whatever pixels it was drawn at.
   await expect
@@ -480,6 +492,88 @@ test("an open document is read, and its markdown shown as it reads and as its so
   const rows = document.querySelectorAll<HTMLElement>(".source > li");
   expect(rows[1].offsetHeight).toBe(rows[0].offsetHeight);
   expect(sourceLines()).toContain("![page 1 figure 1](a.assets/p1-i0.png)");
+});
+
+test("a reading goes on while its tab is switched away from, and the next pane shows it", async () => {
+  // The reading is held at its last step -- the engine writing it down --
+  // long enough to switch tabs under it.
+  const write = engine.convert.bind(engine);
+  const convert = vi
+    .spyOn(engine, "convert")
+    .mockImplementation(async (...args) => {
+      await new Promise((r) => setTimeout(r, 600));
+      return write(...args);
+    });
+  const forgotten: boolean[] = [];
+  const unsubscribe = useEditor.subscribe((s) =>
+    forgotten.push(s.readings["a"] === undefined),
+  );
+  try {
+    await workspace(await written(), await written("Valve Care", "b.pdf"));
+    mount("/edit/a");
+    await expect
+      .poll(
+        () => {
+          const reading = readingOf();
+          return reading?.status === "reading" && reading.page >= reading.pages;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(true);
+    await router!.navigate("/edit/b");
+    await expect.poll(() => tabs().slice(0, 2)).toEqual(["a", "b"]);
+    await expect
+      .element(page.getByRole("heading", { name: "Valve Care" }), {
+        timeout: 15_000,
+      })
+      .toBeVisible();
+    await router!.navigate("/edit/a");
+    await expect
+      .element(page.getByRole("heading", { name: "Pump Care" }), {
+        timeout: 15_000,
+      })
+      .toBeVisible();
+    // Read once, never from page one again, and never shown as unread.
+    expect(convert).toHaveBeenCalledTimes(2); // Once each document.
+    expect(forgotten).not.toContain(true);
+  } finally {
+    unsubscribe();
+    convert.mockRestore();
+  }
+});
+
+test("closing a tab mid-read gives the reading up, and the next open reads afresh", async () => {
+  // Held before its first page, so the close lands while it is reading.
+  const analysis = engine.analysis.bind(engine);
+  const spy = vi.spyOn(engine, "analysis").mockImplementation(async (id) => {
+    await new Promise((r) => setTimeout(r, 400));
+    return analysis(id);
+  });
+  const convert = vi.spyOn(engine, "convert");
+  try {
+    await workspace(await written());
+    mount("/edit/a");
+    await expect.poll(() => readingOf()?.status).toBe("reading");
+    await page.getByRole("button", { name: "Close a" }).click();
+    await expect.poll(tabs).toEqual([]);
+    await expect.poll(() => readingOf()).toBeUndefined();
+    // Given up, so nothing was written down for it.
+    await expect.poll(() => spy.mock.calls.length).toBe(1);
+    await new Promise((r) => setTimeout(r, 600));
+    expect(convert).not.toHaveBeenCalled();
+    expect(readingOf()).toBeUndefined();
+
+    await router!.navigate("/edit/a");
+    await expect
+      .element(page.getByRole("heading", { name: "Pump Care" }), {
+        timeout: 15_000,
+      })
+      .toBeVisible();
+    expect(convert).toHaveBeenCalledTimes(1);
+  } finally {
+    convert.mockRestore();
+    spy.mockRestore();
+  }
 });
 
 test("a figure holds its place at its size while its pixels are read", async () => {

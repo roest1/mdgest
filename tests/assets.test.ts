@@ -50,9 +50,16 @@ describe("holding a figure", () => {
     expect(await readBack(b)).toBeNull();
   });
 
-  test("is null for a figure the workspace does not have", async () => {
-    vi.spyOn(engine, "asset").mockResolvedValue(null);
+  test("is null for a figure the workspace does not have, asked once", async () => {
+    const asset = vi.spyOn(engine, "asset").mockResolvedValue(null);
     expect(await assetUrl("doc", "gone.png")).toBeNull();
+    // Nothing writes to a document's figures while it is open, so the
+    // answer stands until the document leaves.
+    expect(await assetUrl("doc", "gone.png")).toBeNull();
+    expect(asset).toHaveBeenCalledTimes(1);
+    releaseAssets("doc");
+    asset.mockResolvedValue(bytes("back"));
+    expect(await readBack(await assetUrl("doc", "gone.png"))).toBe("back");
   });
 });
 

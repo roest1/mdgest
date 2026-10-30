@@ -27,8 +27,10 @@ hand over is the page under it, cut from one render in the right place.
 `emit.test.ts` covers the map beside the markdown: each block's number on
 its page and the line it went on, which the numbered boxes will read.
 `convert.test.ts` reads a document over the real engine: off its pages
-once and kept, from the cache after, one reading for two asks at once, and
-read again when the cached analysis cannot be used.
+once and kept, from the cache after, one reading for two asks at once, off
+its pages once the last is read rather than once it is written down, given
+up under its write without showing it or over the next reading, and read
+again when the cached analysis cannot be used.
 
 **The workspace.** `workspace.test.ts` covers ids, the places a document has,
 and what `parseManifest` refuses; `upload.test.ts`, the file-type policy and
@@ -58,8 +60,10 @@ thumbnails and outline go where they point, the properties dialog shows what
 the file says and closes from its backdrop, a picked zoom is drawn again on
 a screen of another pixel density, and a file that is not a PDF says so.
 The open document is read, and the markdown pane shows it rendered, with
-its figures from the workspace, and as numbered source; a reading that
-fails says why there; and what was held of a document goes with its tab,
+its figures from the workspace and its links opening in a tab of their
+own, and as numbered source; a reading that fails says why there; a reading
+goes on under a tab switch and the pane switched back to shows it; and what
+was held of a document goes with its tab, a reading still going given up,
 and of every document with the editor, so the next workspace's document of
 the same name is read afresh. These tests load the app's stylesheet, so what is hidden is hidden and what
 scrolls scrolls. `pdf.test.ts` covers pdf.js as `pdf.ts` sets it up: one
@@ -68,8 +72,9 @@ what is read out of a document besides its pages -- its properties, its
 outline and where each entry points, on a page turned any way, and what is
 left when pdf.js cannot read the outline or the properties.
 `store.test.ts` covers the store under a document named `__proto__`;
-`assets.test.ts`, figures read out of the workspace once, held as object
-URLs, and revoked when their document leaves. `snapshots.test.ts` covers
+`assets.test.ts`, figures read out of the workspace once -- or found
+missing once -- held as object URLs, and revoked when their document
+leaves. `snapshots.test.ts` covers
 what the thumbnails are drawn from: one copy of a
 page, not one per render, replaced only when too narrow for the screen, and
 scaled down to an average rather than speckle.

@@ -6,12 +6,19 @@
  * workspace is committed through the engine, and the browser's copy of it
  * discarded after each test, so the next starts from nothing. */
 
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import type * as Opfs from "src/lib/opfs";
 import { READER } from "src/lib/analysis";
-import { convert } from "src/lib/convert";
+import {
+  CANCELED,
+  convert,
+  ensureRead,
+  forgetReading,
+  readDone,
+} from "src/lib/convert";
 import { engine } from "src/lib/engine";
 import { openPdf, type PDFPageProxy } from "src/lib/pdf";
+import { useEditor } from "src/lib/store";
 import { cacheDir } from "src/lib/workspace";
 import { buildPdf } from "./fixtures/pdf";
 import { prose, TOP, X } from "./cases/text";
@@ -74,20 +81,137 @@ test("two asks at once are one reading, and both hear its pages", async () => {
   expect(heard.sort()).toEqual(["a", "b"]);
 });
 
-test("asks from two openings of a document are two readings", async () => {
+test("an ask from another opening of the document joins the reading", async () => {
   const pages = await committed();
-  // The document opened again -- its tab closed and opened while the first
-  // reading was still going -- is other pages, which the first reading's
-  // cannot stand in for: they may be destroyed under it.
+  // The document opened again while the first reading was still going --
+  // its tab switched away from and back -- is other pages, but the first
+  // reading's own stay open until it is done, so it stands for both.
   const task = openPdf(await buildPdf([(pen) => pen.text(X, TOP, "x")]));
   closers.push(() => task.destroy());
   const other = [await (await task.promise).getPage(1)];
-  const [first, second] = [
-    convert("pumps/a", pages),
-    convert("pumps/a", other),
-  ];
-  expect(first).not.toBe(second);
-  await Promise.allSettled([first, second]);
+  const first = convert("pumps/a", pages);
+  const second = convert("pumps/a", other);
+  expect(second).toBe(first);
+  expect((await second).markdown.text).toBe(MARKDOWN);
+});
+
+test("a reading is off its pages once the last is read, before it is written down", async () => {
+  const pages = await committed();
+  let done = false;
+  void readDone("pumps/a").then(() => (done = true));
+  await Promise.resolve();
+  expect(done).toBe(true); // No reading: done at once.
+
+  // The write held, the way the workspace lock would hold it under another
+  // tab's commit: the pages are not needed for it, and are let go before.
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  let written = false;
+  const write = engine.convert.bind(engine);
+  const spy = vi
+    .spyOn(engine, "convert")
+    .mockImplementation(async (...args) => {
+      await held;
+      written = true;
+      return write(...args);
+    });
+  try {
+    done = false;
+    const job = convert("pumps/a", pages);
+    void readDone("pumps/a").then(() => (done = true));
+    await Promise.resolve();
+    expect(done).toBe(false);
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(done).toBe(true);
+    expect(written).toBe(false);
+    release();
+    expect((await job).markdown.text).toBe(MARKDOWN);
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+test("a reading that ends before its last page is off them when it ends", async () => {
+  const pages = await committed();
+  const spy = vi
+    .spyOn(engine, "analysis")
+    .mockRejectedValue(new Error("the engine is down"));
+  try {
+    const job = convert("pumps/a", pages);
+    let done = false;
+    void readDone("pumps/a").then(() => (done = true));
+    await expect(job).rejects.toThrow("the engine is down");
+    await new Promise((r) => setTimeout(r));
+    expect(done).toBe(true);
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+/** `engine.convert` held until `release` is called, then doing what it
+ *  does -- or, the first time, throwing `cause` instead. */
+function holdWrite(cause?: Error) {
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  const write = engine.convert.bind(engine);
+  let first = true;
+  const spy = vi
+    .spyOn(engine, "convert")
+    .mockImplementation(async (...args) => {
+      await held;
+      if (cause && first) {
+        first = false;
+        throw cause;
+      }
+      return write(...args);
+    });
+  return { release, spy };
+}
+
+test("a reading given up under its write ends as given up, and is cached", async () => {
+  const pages = await committed();
+  const { release, spy } = holdWrite();
+  try {
+    const job = convert("pumps/a", pages);
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    forgetReading("pumps/a");
+    release();
+    await expect(job).rejects.toHaveProperty("name", CANCELED);
+    // The write had gone out, so the next reading is from the cache.
+    expect(await engine.analysis("pumps/a")).not.toBeNull();
+    let read = 0;
+    const again = await convert("pumps/a", pages, () => read++);
+    expect(read).toBe(0);
+    expect(again.markdown.text).toBe(MARKDOWN);
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+test("what a given-up reading ends with is not shown over the next one's", async () => {
+  const pages = await committed();
+  const { release, spy } = holdWrite(new Error("disk full"));
+  const readings = useEditor.getState;
+  try {
+    ensureRead("pumps/a", pages);
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    // The tab closed under the write, and the document opened again before
+    // the write came back -- failed. That failure is the first reading's.
+    forgetReading("pumps/a");
+    expect(readings().readings["pumps/a"]).toBeUndefined();
+    ensureRead("pumps/a", pages);
+    expect(readings().readings["pumps/a"]?.status).toBe("reading");
+    release();
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+    expect(readings().readings["pumps/a"]?.status).not.toBe("failed");
+    await vi.waitFor(() =>
+      expect(readings().readings["pumps/a"]?.status).toBe("ready"),
+    );
+  } finally {
+    spy.mockRestore();
+    forgetReading("pumps/a");
+  }
 });
 
 test("an analysis this build cannot use is read again, not shown", async () => {

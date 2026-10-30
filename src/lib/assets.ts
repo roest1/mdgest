@@ -2,13 +2,16 @@
  *
  * The workspace holds them as files in OPFS, which a page cannot address
  * by path, so each one is read out once and kept as an object URL until its
- * document leaves the editor. A figure read here was written by `read.ts`
- * and carries a name it checked -- and is shown as an image, never run. */
+ * document leaves the editor -- as is the fact of a figure that is not
+ * there, since nothing writes to a document's assets while it is open. A
+ * figure read here was written by `read.ts` and carries a name it checked
+ * -- and is shown as an image, never run. */
 
 import { useEffect, useState } from "react";
 import { engine } from "./engine";
 
-const urls = new Map<string, string>();
+/** By figure: its URL, or null for one the workspace does not have. */
+const urls = new Map<string, string | null>();
 const pending = new Map<string, Promise<string | null>>();
 /** How many times each document has been let go. A read that lands after
  *  its document left the editor belongs to nothing, so what it carries is
@@ -18,8 +21,13 @@ const era = new Map<string, number>();
 
 const key = (docId: string, name: string) => `${docId}\n${name}`;
 
-function keep(docId: string, name: string, bytes: BlobPart): string {
-  const url = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+function keep(
+  docId: string,
+  name: string,
+  bytes: BlobPart | null,
+): string | null {
+  const url =
+    bytes && URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
   const k = key(docId, name);
   // Whatever stood at this key is let go first. Two URLs on one figure is
   // a blob held for the life of the page with nothing left to show it.
@@ -38,7 +46,7 @@ export function releaseAssets(docId: string): void {
   const prefix = `${docId}\n`;
   for (const [k, url] of urls) {
     if (k.startsWith(prefix)) {
-      URL.revokeObjectURL(url);
+      if (url) URL.revokeObjectURL(url);
       urls.delete(k);
     }
   }
@@ -49,22 +57,29 @@ export function releaseAssets(docId: string): void {
     if (k.startsWith(prefix)) pending.delete(k);
 }
 
+/** Let go of every document's figures: for when the editor itself goes.
+ *  Kept here, where what is held is known, rather than derived from what
+ *  else the editor remembers of each document. */
+export function releaseAllAssets(): void {
+  const docs = new Set<string>();
+  for (const k of [...urls.keys(), ...pending.keys()])
+    docs.add(k.slice(0, k.indexOf("\n")));
+  for (const docId of docs) releaseAssets(docId);
+}
+
 /** The URL of `name` under `docId`'s assets, or null when the workspace
  *  has no such file. */
 export function assetUrl(docId: string, name: string): Promise<string | null> {
   if (!name) return Promise.resolve(null);
   const k = key(docId, name);
-  const held = urls.get(k);
-  if (held) return Promise.resolve(held);
+  if (urls.has(k)) return Promise.resolve(urls.get(k)!);
   let p = pending.get(k);
   if (!p) {
     const started = era.get(docId) ?? 0;
     const mine: Promise<string | null> = engine
       .asset(docId, name)
       .then((bytes) =>
-        bytes && (era.get(docId) ?? 0) === started
-          ? keep(docId, name, bytes)
-          : null,
+        (era.get(docId) ?? 0) === started ? keep(docId, name, bytes) : null,
       )
       // Only if this read is still the one outstanding: `releaseAssets` may
       // have dropped it and a later read taken its place.
@@ -80,7 +95,8 @@ export function assetUrl(docId: string, name: string): Promise<string | null> {
 /** `assetUrl` for a component: undefined while it is being read, then the
  *  URL, or null for a figure that is not there. What is answered is for the
  *  figure asked about now: asked about another, it is undefined again until
- *  that one is read, never the last one's URL. */
+ *  that one is read, never the last one's URL. One already held is answered
+ *  on the first render, with no render after. */
 export function useAssetUrl(
   docId: string,
   name: string,
@@ -90,6 +106,7 @@ export function useAssetUrl(
     null,
   );
   useEffect(() => {
+    if (urls.has(k)) return;
     let live = true;
     assetUrl(docId, name).then(
       (url) => live && setGot({ k, url }),
@@ -102,5 +119,5 @@ export function useAssetUrl(
       live = false;
     };
   }, [docId, name, k]);
-  return got?.k === k ? got.url : urls.get(k);
+  return got?.k === k ? got.url : urls.has(k) ? urls.get(k) : undefined;
 }

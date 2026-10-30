@@ -22,9 +22,10 @@ import { Toolbar } from "src/components/editor/Toolbar";
 import { Split } from "src/components/editor/Split";
 import { TABS } from "src/components/editor/transitions";
 import { Slide } from "src/components/shared/Slide";
-import { releaseAssets } from "src/lib/assets";
+import { releaseAllAssets, releaseAssets } from "src/lib/assets";
+import { forgetReading } from "src/lib/convert";
 import { engine } from "src/lib/engine";
-import { byId, useEditor } from "src/lib/store";
+import { useEditor } from "src/lib/store";
 import { messageOf } from "src/lib/words";
 import type { Entry } from "src/lib/tree";
 import { MarkdownPane } from "src/components/editor/MarkdownPane";
@@ -161,13 +162,14 @@ export default function Editor() {
 
   // What was held of every document goes when the editor does. A reading is
   // the engine's cache held on the page, read again on the next open at
-  // little cost -- and kept past here, it could be shown for a document of
-  // the same name in the workspace the landing makes next.
+  // little cost -- and kept past here, or still going, it could be shown
+  // for or written to a document of the same name in the workspace the
+  // landing makes next.
   useEffect(
     () => () => {
+      releaseAllAssets();
       for (const id of Object.keys(useEditor.getState().readings))
-        releaseAssets(id);
-      useEditor.setState({ readings: byId() });
+        forgetReading(id);
     },
     [],
   );
@@ -194,16 +196,16 @@ export default function Editor() {
   }
 
   // What was held of a document goes with its tab: its figures' blobs, and
-  // its reading, which the next open answers from the engine's cache. Once
-  // the tab has gone, not as it is closed: the panes showing the document
-  // are unmounted by then, so neither shows it without its reading on the
-  // way out, nor can a reading still going put one back.
+  // its reading, given up if still going, which the next open answers from
+  // the engine's cache or reads afresh. Once the tab has gone, not as it is
+  // closed: the panes showing the document are unmounted by then, so
+  // neither shows it without its reading on the way out.
   const wasOpen = useRef<string[]>([]);
   useEffect(() => {
     for (const doc of wasOpen.current) {
       if (openDocs.includes(doc)) continue;
       releaseAssets(doc);
-      useEditor.getState().setReading(doc, undefined);
+      forgetReading(doc);
     }
     wasOpen.current = openDocs;
   }, [openDocs]);

@@ -106,6 +106,16 @@ function figureFor(docId: string, analysis: Analysis): Components["img"] {
   };
 }
 
+/** A link the markdown carries -- a PDF's link annotation, written out by
+ *  `emit.ts` -- opened in a tab of its own. In this one it would replace
+ *  the editor, and with it every open document. */
+function Anchor({
+  node: _node,
+  ...props
+}: React.AnchorHTMLAttributes<HTMLAnchorElement> & ExtraProps) {
+  return <a {...props} target="_blank" rel="noopener noreferrer" />;
+}
+
 /** The document as a reader would see it. react-markdown writes no raw HTML
  *  through, so what a PDF's text happens to contain stays text. The look
  *  is `.markdown` in index.css. */
@@ -119,7 +129,7 @@ function Rendered({
   markdown: Markdown;
 }) {
   const components = useMemo(
-    () => ({ img: figureFor(docId, analysis) }),
+    () => ({ a: Anchor, img: figureFor(docId, analysis) }),
     [docId, analysis],
   );
   return (
@@ -167,13 +177,15 @@ function Raw({ markdown }: { markdown: Markdown }) {
 
 // ---- the pane -------------------------------------------------------------
 
-/** What the pane says while a reading goes. `page` is how many pages are
- *  done, so the one being read is the next; with all done, what is left is
- *  writing it down. Nothing about pages before the first is done, which is
- *  also all a reading from the cache ever shows. */
+/** What the pane says before the markdown is there. With no reading yet,
+ *  the document is still being opened by the page pane, which starts one
+ *  once it is; `page` is then how many pages are done, so the one being
+ *  read is the next, and with all done what is left is writing it down.
+ *  Nothing about pages before the first is done, which is also all a
+ *  reading from the cache ever shows. */
 function progress(reading: Reading | undefined): string {
-  if (!reading || reading.status !== "reading" || reading.page === 0)
-    return "Reading…";
+  if (!reading) return "Opening…";
+  if (reading.status !== "reading" || reading.page === 0) return "Reading…";
   if (reading.page >= reading.pages) return "Writing the markdown…";
   return `Reading page ${reading.page + 1} of ${reading.pages}…`;
 }
