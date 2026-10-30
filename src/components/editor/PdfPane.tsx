@@ -10,7 +10,9 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { Spinner } from "src/components/shared/Spinner";
+import { ensureRead, readDone } from "src/lib/convert";
 import { engine } from "src/lib/engine";
+import { useEditor } from "src/lib/store";
 import {
   openPdf,
   readOutline,
@@ -118,8 +120,11 @@ function useDocument(docId: string): {
     return () => {
       live = false;
       // Ends pdf.js's side of the document, whatever stage it reached; the
-      // worker itself stays for the next one.
-      void task?.destroy();
+      // worker itself stays for the next one. Not under a reading still on
+      // these pages: that goes on past this pane, for the next one to show,
+      // and lets go of the pages once it has read them.
+      const opened = task;
+      void readDone(docId).then(() => opened?.destroy());
     };
   }, [docId]);
 
@@ -292,6 +297,21 @@ function PdfNav({
 
 export function PdfPane({ docId }: { docId: string }) {
   const { loaded, problem } = useDocument(docId);
+  // The document is read here, where its pages are open, and the markdown
+  // pane shows the reading from the store. A reading outlives this pane --
+  // the tab switched away from mid-read -- and the next pane finds it.
+  useEffect(() => {
+    if (loaded) ensureRead(docId, loaded.pages);
+  }, [docId, loaded]);
+  // A document that does not open is not read either, and the markdown
+  // pane says so rather than waiting on a reading that never starts.
+  useEffect(() => {
+    if (problem)
+      useEditor.getState().setReading(docId, {
+        status: "failed",
+        problem: "Not read: " + problem,
+      });
+  }, [docId, problem]);
   // The bar sets these and the body draws them, so they live here.
   const [sidebar, setSidebar] = useState(false);
   const [sidebarView, setSidebarView] = useState<SidebarView>("thumbnails");

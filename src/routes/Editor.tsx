@@ -4,6 +4,7 @@ import {
   useState,
   useEffect,
   useMemo,
+  useRef,
   ViewTransition,
 } from "react";
 import { Link, useNavigate, useParams } from "react-router";
@@ -21,7 +22,10 @@ import { Toolbar } from "src/components/editor/Toolbar";
 import { Split } from "src/components/editor/Split";
 import { TABS } from "src/components/editor/transitions";
 import { Slide } from "src/components/shared/Slide";
+import { releaseAllAssets, releaseAssets } from "src/lib/assets";
+import { forgetReading } from "src/lib/convert";
 import { engine } from "src/lib/engine";
+import { useEditor } from "src/lib/store";
 import { messageOf } from "src/lib/words";
 import type { Entry } from "src/lib/tree";
 import { MarkdownPane } from "src/components/editor/MarkdownPane";
@@ -156,6 +160,20 @@ export default function Editor() {
   const docId = docs?.includes(asked) ? asked : "";
   const [missing, setMissing] = useState<string | null>(null);
 
+  // What was held of every document goes when the editor does. A reading is
+  // the engine's cache held on the page, read again on the next open at
+  // little cost -- and kept past here, or still going, it could be shown
+  // for or written to a document of the same name in the workspace the
+  // landing makes next.
+  useEffect(
+    () => () => {
+      releaseAllAssets();
+      for (const id of Object.keys(useEditor.getState().readings))
+        forgetReading(id);
+    },
+    [],
+  );
+
   // An unreadable manifest leaves the name blank here: the landing is where
   // that is said, and the editor never reaches one past it.
   useEffect(() => {
@@ -176,6 +194,21 @@ export default function Editor() {
   if (docId && !openDocs.includes(docId)) {
     setOpenDocs((prev) => (prev.includes(docId) ? prev : [...prev, docId]));
   }
+
+  // What was held of a document goes with its tab: its figures' blobs, and
+  // its reading, given up if still going, which the next open answers from
+  // the engine's cache or reads afresh. Once the tab has gone, not as it is
+  // closed: the panes showing the document are unmounted by then, so
+  // neither shows it without its reading on the way out.
+  const wasOpen = useRef<string[]>([]);
+  useEffect(() => {
+    for (const doc of wasOpen.current) {
+      if (openDocs.includes(doc)) continue;
+      releaseAssets(doc);
+      forgetReading(doc);
+    }
+    wasOpen.current = openDocs;
+  }, [openDocs]);
 
   // Back to the tab last open, or to none, in place of the address: Back
   // should not return to it.

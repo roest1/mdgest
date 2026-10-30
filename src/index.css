@@ -198,6 +198,114 @@
   .marquee:hover .marquee-view > span {
     animation: marquee 3.4s linear infinite;
   }
+
+  /* ── the markdown pane ────────────────────────────────────────────── */
+
+  .markdown {
+    @apply font-serif text-[15px] leading-[1.65] text-ink/90;
+  }
+  .markdown > :first-child {
+    @apply mt-0;
+  }
+  .markdown :is(h1, h2, h3, h4, h5, h6) {
+    @apply font-semibold tracking-tight text-ink;
+  }
+  .markdown h1 {
+    @apply mt-8 mb-3 text-[1.75rem] leading-tight;
+  }
+  .markdown h2 {
+    @apply mt-7 mb-2.5 text-[1.35rem] leading-snug;
+  }
+  .markdown h3 {
+    @apply mt-6 mb-2 text-[1.1rem];
+  }
+  .markdown :is(h4, h5, h6) {
+    @apply mt-5 mb-1.5 text-base;
+  }
+  .markdown p {
+    @apply my-3;
+  }
+  .markdown a {
+    @apply text-accent-lit underline decoration-accent-lit/40 underline-offset-2
+      hover:decoration-accent-lit;
+  }
+  .markdown strong {
+    @apply font-semibold text-ink;
+  }
+  .markdown :is(ul, ol) {
+    @apply my-3 pl-6;
+  }
+  .markdown ul {
+    @apply list-disc;
+  }
+  .markdown ol {
+    @apply list-decimal;
+  }
+  /* The markdown counts every ordered level in decimal (`emit.ts`); the
+     levels are lettered and numeraled back here. */
+  .markdown ol ol {
+    @apply list-[lower-alpha];
+  }
+  .markdown ol ol ol {
+    @apply list-[lower-roman];
+  }
+  .markdown li {
+    @apply my-1 pl-1;
+  }
+  .markdown li > p {
+    @apply my-1;
+  }
+  /* A rule is the converter's page break, and reads as one. */
+  .markdown hr {
+    @apply my-8 border-0 border-t border-dashed border-edge-strong;
+  }
+  /* On white, as on the page: a figure with nothing behind it -- a logo,
+     a scanned line of text -- would vanish into the pane. */
+  .markdown img {
+    @apply my-4 h-auto max-w-full rounded border border-edge bg-white;
+  }
+  /* Where a figure will be, at its size, while its pixels are read. */
+  .markdown .figure-wait {
+    @apply my-4 block max-w-full rounded border border-edge bg-raised/40;
+  }
+
+  /* `.source` is the raw view: an <ol>, one <li> a line, numbered by a CSS
+     counter in a gutter drawn by the item's ::before. A counter and not text
+     so that selecting the view and copying it gives the markdown alone. The
+     gutter's width comes from `--digits`, set by the pane to the line
+     count's length, so every number sits on one right edge and the column
+     is no wider than the document needs. Each line wraps under its own
+     number; the gutter runs the full height of a wrapped one. */
+  .source {
+    counter-reset: line;
+    @apply m-0 list-none p-0 font-mono text-[12.5px] leading-[1.55] text-ink/85
+      [font-variant-ligatures:none];
+  }
+  .source > li {
+    counter-increment: line;
+    display: grid;
+    grid-template-columns: calc(var(--digits, 2) * 1ch + 1.5rem) minmax(0, 1fr);
+    @apply gap-x-3 pr-4 whitespace-pre-wrap wrap-break-word;
+  }
+  .source > li::before {
+    content: counter(line);
+    @apply border-r border-edge pr-2.5 text-right text-faint tabular-nums select-none;
+  }
+  .source > li:hover {
+    @apply bg-ink/[0.03];
+  }
+  .source > li:hover::before {
+    @apply text-muted;
+  }
+  .source > li[data-kind="heading"] {
+    @apply font-semibold text-ink;
+  }
+  .source > li[data-kind="rule"] {
+    @apply text-faint;
+  }
+  .source > li[data-kind="image"] {
+    @apply text-muted;
+  }
 }
 
 /* ── motion ─────────────────────────────────────────────────────────── */
