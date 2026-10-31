@@ -10,13 +10,21 @@
  *
  * The pane that scrolls leads and the other follows -- whatever scrolled
  * it: the wheel, the keys, a trackpad's glide, the scrollbar, a jump to a
- * page. What this module does to the follower is told apart by where it
- * lands: the offset it was set to, which is not sent back, so the two never
- * chase each other. Kept outside React: it runs on every scroll frame and
- * draws nothing. */
+ * page. Two kinds of scroll are not a person's, and lead nothing. What
+ * this module does to the follower is told apart by where it lands: the
+ * offset it was set to, which is not sent back, so the two never chase
+ * each other. And what a pane's own layout does to it -- its offset
+ * clamped to content grown shorter, or moved to keep in view what was
+ * there as the text rewrapped or the pages were resized -- is told apart
+ * by the scroller being another size than at its last scroll: that pane
+ * was laid out anew, and is put back in step once the layout holds still
+ * instead. Kept outside React: it runs on every scroll frame and draws
+ * nothing. */
 
 /** Which pane: the PDF's pages, or the markdown. */
 export type Side = "page" | "markdown";
+
+const SIDES: readonly Side[] = ["page", "markdown"];
 
 export interface SyncPane {
   scroller: HTMLElement;
@@ -28,14 +36,23 @@ export interface SyncPane {
  *  `page[i]` on the pages is `markdown[i]` in the markdown. */
 type Points = Record<Side, number[]>;
 
+/** What a scroller's offset is measured against. */
+interface Size {
+  content: number;
+  view: number;
+}
+
 interface Link {
   panes: Partial<Record<Side, SyncPane>>;
   leader: Side | null;
   points: Points | null;
-  /** The offset each follower was last set to, until its scroll there
-   *  arrives: a scroll landing on it is this module's, and one anywhere
-   *  else is a person's. */
-  wrote: Partial<Record<Side, number>>;
+  /** Each pane's offset as this module last saw it, or left it: a scroll
+   *  landing there has been seen to, and a pane found anywhere else has
+   *  been scrolled since -- by a person, if its layout has not changed. */
+  at: Partial<Record<Side, number>>;
+  /** Each scroller's size at its last scroll, or as its layout last left
+   *  it: a scroll that finds it another size is the layout's own. */
+  size: Partial<Record<Side, Size>>;
   /** The remeasure waiting for the layout to hold still. */
   settle?: number;
 }
@@ -45,13 +62,40 @@ const links = new Map<string, Link>();
 function linkOf(docId: string): Link {
   let link = links.get(docId);
   if (!link) {
-    link = { panes: {}, leader: null, points: null, wrote: {} };
+    link = { panes: {}, leader: null, points: null, at: {}, size: {} };
     links.set(docId, link);
   }
   return link;
 }
 
 const other = (side: Side): Side => (side === "page" ? "markdown" : "page");
+
+const sizeOf = (el: HTMLElement): Size => ({
+  content: el.scrollHeight,
+  view: el.clientHeight,
+});
+
+const sameSize = (a: Size | undefined, b: Size): boolean =>
+  a !== undefined && a.content === b.content && a.view === b.view;
+
+/** Take a pane's offset and size as they are, as its layout left them. */
+function settled(link: Link, side: Side): void {
+  const pane = link.panes[side];
+  if (!pane) return;
+  link.at[side] = pane.scroller.scrollTop;
+  link.size[side] = sizeOf(pane.scroller);
+}
+
+/** Whether `side` has been scrolled since this module last saw it. */
+function moved(link: Link, side: Side): boolean {
+  const pane = link.panes[side];
+  const at = link.at[side];
+  return (
+    pane !== undefined &&
+    at !== undefined &&
+    Math.abs(pane.scroller.scrollTop - at) >= 1
+  );
+}
 
 /** Indices of the longest strictly increasing run of `ys`, in order. */
 function longestRun(ys: number[]): number[] {
@@ -142,7 +186,7 @@ function follow(link: Link, leader: Side) {
   );
   // As the browser kept it, rounded to its pixels: what its scroll event
   // will find.
-  link.wrote[side] = to.scroller.scrollTop;
+  link.at[side] = to.scroller.scrollTop;
 }
 
 /** Join `docId`'s pane on `side` to the other one; the returned function
@@ -159,10 +203,20 @@ export function attachSync(
   // Followed at once: scroll events come at most a frame apart already,
   // and a frame later would let the two panes be seen out of step.
   const onScroll = () => {
-    const wrote = link.wrote[side];
-    delete link.wrote[side];
-    if (wrote !== undefined && Math.abs(pane.scroller.scrollTop - wrote) < 1)
+    const el = pane.scroller;
+    const was = link.size[side];
+    const seen = !moved(link, side);
+    link.at[side] = el.scrollTop;
+    link.size[side] = sizeOf(el);
+    // Where it was left, or already was: nothing new.
+    if (seen) return;
+    // Another size than at its last scroll: laid out anew, and this scroll
+    // is the layout's. The pane's own report of the layout comes after the
+    // scroll event when it is an observer's, so it is taken here as well.
+    if (!sameSize(was, link.size[side])) {
+      invalidateSync(docId);
       return;
+    }
     link.leader = side;
     follow(link, side);
   };
@@ -175,7 +229,8 @@ export function attachSync(
     pane.scroller.removeEventListener("scroll", onScroll);
     if (link.panes[side] === pane) delete link.panes[side];
     if (link.leader === side) link.leader = null;
-    delete link.wrote[side];
+    delete link.at[side];
+    delete link.size[side];
     link.points = null;
     if (!link.panes.page && !link.panes.markdown) {
       clearTimeout(link.settle);
@@ -197,15 +252,27 @@ const SETTLE = 100;
  * is every frame, each measure thrown away by the next. A scroll before
  * then measures for itself. Then the follower is put back in step: a pane
  * laid out anew keeps its pixel offset, which is somewhere else in the
- * document now -- the pages' leader if neither has led yet. */
+ * document now -- the pages' leader if neither has led yet.
+ *
+ * Where the layout has left each pane is taken as it is, so that a scroll
+ * event still to come for it -- the layout's, not a person's -- leads
+ * nothing. Called from a layout effect, that is before the event; called
+ * from an observer, after it, and the scroll handler has seen the pane
+ * resized for itself. And a pane found somewhere else once the layout has
+ * held still was scrolled meanwhile by a person, whose scroll event is
+ * still to come: that pane leads, rather than being put back where it was
+ * before the event could say so. */
 export function invalidateSync(docId: string): void {
   const link = links.get(docId);
   if (!link) return;
   link.points = null;
+  settled(link, "page");
+  settled(link, "markdown");
   clearTimeout(link.settle);
   link.settle = window.setTimeout(() => {
     const { page, markdown } = link.panes;
     if (links.get(docId) !== link || !page || !markdown) return;
+    for (const side of SIDES) if (moved(link, side)) link.leader = side;
     link.points ??= pointsOf(page, markdown);
     follow(link, link.leader ?? "page");
   }, SETTLE);
