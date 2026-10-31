@@ -13,6 +13,7 @@ import { Spinner } from "src/components/shared/Spinner";
 import { ensureRead, readDone } from "src/lib/convert";
 import { engine } from "src/lib/engine";
 import { useEditor } from "src/lib/store";
+import { attachSync, invalidateSync } from "src/lib/scrollsync";
 import {
   openPdf,
   readOutline,
@@ -441,6 +442,45 @@ export function PdfPane({ docId }: { docId: string }) {
       ro.disconnect();
     };
   }, []);
+
+  // Where each block starts in the column, for the scroll sync: worked out
+  // from the layout rather than measured, since only the rows near the view
+  // are in the document. Only blocks the markdown wrote, since only those
+  // have somewhere to be on the other side.
+  // The reading once it is ready, and nothing before: selected so, the pane
+  // is not drawn again for every page of a reading in progress.
+  const read = useEditor((s) => {
+    const r = s.readings[docId];
+    return r?.status === "ready" ? r : null;
+  });
+  const tops = useCallback(() => {
+    const out = new Map<string, number>();
+    if (!read) return out;
+    const { analysis, markdown } = read;
+    for (const page of analysis.pages) {
+      const row = rows[rowOf(page.n)];
+      if (!row) continue;
+      for (const block of page.blocks) {
+        if (markdown.blocks[block.id])
+          out.set(block.id, row.top + block.box.y * scale);
+      }
+    }
+    return out;
+  }, [read, rows, rowOf, scale]);
+  const topsRef = useRef(tops);
+  useLayoutEffect(() => {
+    topsRef.current = tops;
+    invalidateSync(docId);
+  }, [tops, docId]);
+
+  // Joined once the column is drawn, which is when the scroller holds it.
+  useEffect(() => {
+    if (!ready || !scroller.current) return;
+    return attachSync(docId, "page", {
+      scroller: scroller.current,
+      tops: () => topsRef.current(),
+    });
+  }, [ready, docId]);
 
   const frame = useRef(0);
   const onScroll = () => {

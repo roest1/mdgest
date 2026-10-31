@@ -1,5 +1,13 @@
 import { SquarePen } from "lucide-react";
-import { useMemo, useState, type CSSProperties } from "react";
+import {
+  createElement,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type HTMLAttributes,
+} from "react";
 import ReactMarkdown, {
   type Components,
   type ExtraProps,
@@ -9,6 +17,7 @@ import { Spinner } from "src/components/shared/Spinner";
 import type { Analysis } from "src/lib/analysis";
 import { useAssetUrl } from "src/lib/assets";
 import type { Markdown } from "src/lib/emit";
+import { attachSync, invalidateSync } from "src/lib/scrollsync";
 import { useEditor, type Reading } from "src/lib/store";
 import { assetsPrefix } from "src/lib/workspace";
 import { barButton } from "./controls";
@@ -116,6 +125,34 @@ function Anchor({
   return <a {...props} target="_blank" rel="noopener noreferrer" />;
 }
 
+/** The elements a block can be written as. */
+const BLOCKS = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li"] as const;
+
+/** react-markdown's block elements, each marked with the block that wrote
+ *  it: the parser records on every node the source line it starts on, and
+ *  the emitter records which block wrote each line. What the scroll sync
+ *  finds a block's place in this pane by. */
+function marked(markdown: Markdown): Components {
+  const blockAt = (line: number | undefined) =>
+    line === undefined
+      ? undefined
+      : (markdown.lines[line - 1]?.block ?? undefined);
+  return Object.fromEntries(
+    BLOCKS.map((tag) => [
+      tag,
+      function Marked({
+        node,
+        ...props
+      }: HTMLAttributes<HTMLElement> & ExtraProps) {
+        return createElement(tag, {
+          ...props,
+          "data-block": blockAt(node?.position?.start.line),
+        });
+      },
+    ]),
+  );
+}
+
 /** The document as a reader would see it. react-markdown writes no raw HTML
  *  through, so what a PDF's text happens to contain stays text. The look
  *  is `.markdown` in index.css. */
@@ -129,8 +166,12 @@ function Rendered({
   markdown: Markdown;
 }) {
   const components = useMemo(
-    () => ({ a: Anchor, img: figureFor(docId, analysis) }),
-    [docId, analysis],
+    () => ({
+      ...marked(markdown),
+      a: Anchor,
+      img: figureFor(docId, analysis),
+    }),
+    [docId, analysis, markdown],
   );
   return (
     <article className="markdown mx-auto max-w-[72ch] px-8 pt-6 pb-24">
@@ -167,7 +208,11 @@ function Raw({ markdown }: { markdown: Markdown }) {
       }
     >
       {markdown.lines.map((line, i) => (
-        <li key={i} data-kind={kindOf(line.text)}>
+        <li
+          key={i}
+          data-kind={kindOf(line.text)}
+          data-block={line.block ?? undefined}
+        >
           {line.text}
         </li>
       ))}
@@ -190,9 +235,48 @@ function progress(reading: Reading | undefined): string {
   return `Reading page ${reading.page + 1} of ${reading.pages}…`;
 }
 
+/** Join the pane to the PDF pane's scroll once its markdown is shown, and
+ *  again for each view, since each lays the blocks out anew. Where each
+ *  block starts is measured off the elements marked with it; and measured
+ *  again whenever what the pane holds changes size -- a figure loading, the
+ *  pane resized -- not on every scroll. */
+function useScrollSync(
+  docId: string,
+  ready: boolean,
+  view: View,
+  scroller: React.RefObject<HTMLDivElement | null>,
+) {
+  useEffect(() => {
+    const el = scroller.current;
+    const content = el?.firstElementChild;
+    if (!ready || !el || !content) return;
+    const ro = new ResizeObserver(() => invalidateSync(docId));
+    ro.observe(content);
+    const detach = attachSync(docId, "markdown", {
+      scroller: el,
+      tops: () => {
+        const out = new Map<string, number>();
+        const base = el.getBoundingClientRect().top - el.scrollTop;
+        for (const node of el.querySelectorAll<HTMLElement>("[data-block]")) {
+          const id = node.dataset.block!;
+          if (!out.has(id))
+            out.set(id, node.getBoundingClientRect().top - base);
+        }
+        return out;
+      },
+    });
+    return () => {
+      ro.disconnect();
+      detach();
+    };
+  }, [docId, ready, view, scroller]);
+}
+
 export function MarkdownPane({ docId }: { docId: string }) {
   const [view, setView] = useState<View>("rendered");
   const reading = useEditor((s) => s.readings[docId]);
+  const scroller = useRef<HTMLDivElement>(null);
+  useScrollSync(docId, reading?.status === "ready", view, scroller);
 
   return (
     <Pane
@@ -216,7 +300,7 @@ export function MarkdownPane({ docId }: { docId: string }) {
         />
       }
     >
-      <div className="h-full overflow-y-auto">
+      <div ref={scroller} className="h-full overflow-y-auto">
         {reading?.status === "ready" ? (
           view === "rendered" ? (
             <Rendered

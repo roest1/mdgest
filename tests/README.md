@@ -65,7 +65,9 @@ own, and as numbered source; a reading that fails says why there; a reading
 goes on under a tab switch and the pane switched back to shows it; and what
 was held of a document goes with its tab, a reading still going given up,
 and of every document with the editor, so the next workspace's document of
-the same name is read afresh. These tests load the app's stylesheet, so what is hidden is hidden and what
+the same name is read afresh. Scrolling either pane takes the other to
+the same place -- the ends to the ends, a section's title to where it is
+printed -- in both views, and either pane leads. These tests load the app's stylesheet, so what is hidden is hidden and what
 scrolls scrolls. `pdf.test.ts` covers pdf.js as `pdf.ts` sets it up: one
 worker for every document, so letting one go never refuses the next; and
 what is read out of a document besides its pages -- its properties, its
