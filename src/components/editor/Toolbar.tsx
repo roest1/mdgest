@@ -3,7 +3,6 @@ import {
   Check,
   CheckCheck,
   ChevronDown,
-  Download,
   Eye,
   EyeOff,
   Image,
@@ -494,18 +493,6 @@ export function Toolbar({ docId: _docId }: { docId: string }) {
             mark done
           </button>
         )}
-
-        {/* (TODO): ExportMenu.tsx */}
-        <button
-          type="button"
-          title="Export: the one save that survives clearing this browser"
-          aria-haspopup="menu"
-          onClick={() => alert("Export coming soon")}
-          className={barButton()}
-        >
-          <Download className="h-4 w-4" />
-          export
-        </button>
       </div>
     </div>
   );

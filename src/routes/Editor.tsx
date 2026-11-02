@@ -11,12 +11,14 @@ import { Link, useNavigate, useParams } from "react-router";
 import {
   CircleCheck,
   CircleHelp,
+  Download,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
 import { Spinner } from "src/components/shared/Spinner";
 import { FileTree } from "src/components/shared/FileTree";
 import { WorkspaceName } from "src/components/shared/WorkspaceName";
+import { barButton } from "src/components/editor/controls";
 import { TabBar } from "src/components/editor/TabBar";
 import { Toolbar } from "src/components/editor/Toolbar";
 import { Split } from "src/components/editor/Split";
@@ -311,6 +313,20 @@ export default function Editor() {
         </div>
 
         <div className="flex min-w-0 items-center justify-end gap-3">
+          {/* The whole workspace's, not the open document's: so it sits
+              up here, with the workspace's name, rather than on a tab's
+              toolbar. */}
+          {/* (TODO): ExportMenu.tsx */}
+          <button
+            type="button"
+            title="Export: the one save that survives clearing this browser"
+            aria-haspopup="menu"
+            onClick={() => alert("Export coming soon")}
+            className={barButton()}
+          >
+            <Download className="h-4 w-4" />
+            export
+          </button>
           {/* (TODO): Tutorial */}
           <button
             type="button"
