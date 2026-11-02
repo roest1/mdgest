@@ -34,7 +34,7 @@
 
   --color-ink: #ece7dd;
   --color-muted: #a2988a;
-  --color-faint: #776e62;
+  --color-faint: #8e8375; /* 4.6:1 on chrome, the AA floor for small text */
 
   /* the sticky note on a selection: paper and the pencil on it */
   --color-note: #f3d35f;
