@@ -21,15 +21,20 @@
   --color-accent: #3b82f6;
   --color-accent-lit: #60a5fa;
 
-  --color-ground: #14120f;
-  --color-chrome: #1b1815;
-  --color-raised: #242018;
-  --color-edge: #2f2a23;
-  --color-edge-strong: #453d32;
+  /* Three levels, each a visible step from the next. Content sits lowest:
+     the panes in pure black, and ground -- the file tree, the PDF canvas, an
+     inset field -- a hair above it, read as the same level. The chrome holds
+     the controls; raised is a menu, a tip, whatever is active. Neutral, to
+     match the panes' black; the warmth is in the ink. */
+  --color-ground: #0d0d0d;
+  --color-chrome: #1c1c1c;
+  --color-raised: #282828;
+  --color-edge: #333333;
+  --color-edge-strong: #474747;
 
   --color-ink: #ece7dd;
   --color-muted: #a2988a;
-  --color-faint: #776e62;
+  --color-faint: #8e8375; /* 4.6:1 on chrome, the AA floor for small text */
 
   /* the sticky note on a selection: paper and the pencil on it */
   --color-note: #f3d35f;
