@@ -21,6 +21,7 @@ import { attachSync, invalidateSync } from "src/lib/scrollsync";
 import { useEditor, type Reading } from "src/lib/store";
 import { assetsPrefix } from "src/lib/workspace";
 import { barButton } from "./controls";
+import { MarkdownProperties } from "./MarkdownProperties";
 import { MoreMenu } from "./MoreMenu";
 import { Pane } from "./Pane";
 
@@ -274,6 +275,7 @@ function useScrollSync(
 
 export function MarkdownPane({ docId }: { docId: string }) {
   const [view, setView] = useState<View>("rendered");
+  const [properties, setProperties] = useState(false);
   const reading = useEditor((s) => s.readings[docId]);
   const scroller = useRef<HTMLDivElement>(null);
   useScrollSync(docId, reading?.status === "ready", view, scroller);
@@ -295,8 +297,13 @@ export function MarkdownPane({ docId }: { docId: string }) {
       center={<ViewToggle view={view} onView={setView} />}
       right={
         <MoreMenu
-          // TODO: PropertiesDialog, once ported.
-          items={[{ label: "Document properties", disabled: true }]}
+          disabled={reading?.status !== "ready"}
+          items={[
+            {
+              label: "Document properties",
+              onPick: () => setProperties(true),
+            },
+          ]}
         />
       }
     >
@@ -325,6 +332,14 @@ export function MarkdownPane({ docId }: { docId: string }) {
           </p>
         )}
       </div>
+
+      {properties && reading?.status === "ready" && (
+        <MarkdownProperties
+          docId={docId}
+          text={reading.markdown.text}
+          onClose={() => setProperties(false)}
+        />
+      )}
     </Pane>
   );
 }
