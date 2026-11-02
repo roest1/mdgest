@@ -19,51 +19,22 @@ a single pdf, a zip of pdfs, or a folder with pdfs in it.
 
 ---
 
-## Development
+## Tech stack
 
-### Prerequisites
-
-**bun**
-
-```bash
-curl -fsSL https://bun.com/install | bash
-```
-
-### Get Started
-
-```bash
-git clone https://github.com/roest1/mdgest.git && cd mdgest
-bun install
-bun run dev # http://127.0.0.1:2048, or set WEB_PORT
-```
-
-**CI jobs**:
-
-1. `bun install --frozen-lockfile`
-2. `bun run lint` (oxlint)
-3. `bun run format:check` (prettier)
-4. `bun run typecheck` (`tsc -b`)
-5. `bun run test` (vitest in headless Chromium, see [tests/README.md](tests/README.md))
-6. `bun run build` (`tsc -b` then vite)
-
-On every push to `main` and every pull request.
-
-### Tech stack
-
-**web app deployment plan**: one bundle, hosted as static files on Cloudflare Pages.
+What runs in your browser. Every file is served from the same origin as the
+app — no CDN, no fonts or workers fetched from anywhere else.
 
 |          |                                                                                          |
 | -------- | ---------------------------------------------------------------------------------------- |
-| build    | `vite` (rolldown), `typescript`, `oxlint`, `prettier` (formatting)                       |
 | ui       | `react`, `react-router`, `tailwind`, `lucide-react` icons                                |
 | state    | `zustand` — one store for what both editor panes read                                    |
 | pdf      | `pdfjs-dist` 6 - drawing pages and reading them; its worker, cmaps and fonts same-origin |
 | markdown | `react-markdown` + `remark-gfm` for the rendered view                                    |
 | fonts    | Literata (serif), Geist Sans (ui), JetBrains Mono (code) - self-hosted via `@fontsource` |
 | archives | `fflate` - unzip on the way in, zip on the way out                                       |
-| tests    | `vitest` in headless Chromium via `playwright`; `pdf-lib` draws the reader's fixtures    |
+| storage  | the browser's origin private file system (OPFS) — the workspace never leaves it          |
 
-### Browser floor
+## Browser floor
 
 Desktop browsers and tablets. Phones are turned away at load with a screen that
 says so, before the app mounts: a phone runs out of memory far below the limits
@@ -92,6 +63,11 @@ written through (WebKit implemented it in October 2021; MDN does not list it),
 and Safari made it replace a file already at its destination in 17.0. At the
 floor, a move that refuses is reported as a failed write, with the file as it
 was: there is no in-place fallback.
+
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md): setup, scripts, what CI runs, and
+what goes into the build.
 
 ---
 
