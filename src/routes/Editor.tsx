@@ -346,7 +346,7 @@ export default function Editor() {
             header's color, so what the curved corner cuts away reads as the
             header continuing down. */}
         <Slide open={sidebar} width={260} className="bg-chrome">
-          <aside className="h-full overflow-hidden rounded-tr-xl border-t border-r border-edge bg-ground">
+          <aside className="h-full overflow-hidden rounded-tr-xl border-t border-r border-edge bg-sunk">
             <Sidebar
               docs={docs}
               problem={problem}

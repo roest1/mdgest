@@ -21,11 +21,14 @@
   --color-accent: #3b82f6;
   --color-accent-lit: #60a5fa;
 
-  --color-ground: #14120f;
-  --color-chrome: #1b1815;
-  --color-raised: #242018;
-  --color-edge: #2f2a23;
-  --color-edge-strong: #453d32;
+  /* neutral, to match the panes' pure black; the warmth is in the ink */
+  --color-ground: #121212;
+  /* the file tree, sunk below the chrome toward the panes' black */
+  --color-sunk: #0d0d0d;
+  --color-chrome: #181818;
+  --color-raised: #202020;
+  --color-edge: #2b2b2b;
+  --color-edge-strong: #3e3e3e;
 
   --color-ink: #ece7dd;
   --color-muted: #a2988a;
