@@ -2,7 +2,7 @@ import { CircleCheck, Minus } from "lucide-react";
 import { Section } from "./Section";
 
 /** Two lists side by side, on purpose: the promises mean more next to the
- *  things that are not promised. Both come from the README. */
+ *  things that are not promised. */
 const KEPT = [
   "Every line of text in the PDF makes it into the markdown.",
   "Every picture in the PDF makes it into the markdown.",
