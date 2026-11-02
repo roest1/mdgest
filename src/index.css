@@ -21,14 +21,16 @@
   --color-accent: #3b82f6;
   --color-accent-lit: #60a5fa;
 
-  /* neutral, to match the panes' pure black; the warmth is in the ink */
-  --color-ground: #121212;
-  /* the file tree, sunk below the chrome toward the panes' black */
-  --color-sunk: #0d0d0d;
-  --color-chrome: #181818;
-  --color-raised: #202020;
-  --color-edge: #2b2b2b;
-  --color-edge-strong: #3e3e3e;
+  /* Three levels, each a visible step from the next. Content sits lowest:
+     the panes in pure black, and ground -- the file tree, the PDF canvas, an
+     inset field -- a hair above it, read as the same level. The chrome holds
+     the controls; raised is a menu, a tip, whatever is active. Neutral, to
+     match the panes' black; the warmth is in the ink. */
+  --color-ground: #0d0d0d;
+  --color-chrome: #1c1c1c;
+  --color-raised: #282828;
+  --color-edge: #333333;
+  --color-edge-strong: #474747;
 
   --color-ink: #ece7dd;
   --color-muted: #a2988a;
