@@ -11,12 +11,14 @@ import { Link, useNavigate, useParams } from "react-router";
 import {
   CircleCheck,
   CircleHelp,
+  Download,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
 import { Spinner } from "src/components/shared/Spinner";
 import { FileTree } from "src/components/shared/FileTree";
 import { WorkspaceName } from "src/components/shared/WorkspaceName";
+import { barButton } from "src/components/editor/controls";
 import { TabBar } from "src/components/editor/TabBar";
 import { Toolbar } from "src/components/editor/Toolbar";
 import { Split } from "src/components/editor/Split";
@@ -292,7 +294,7 @@ export default function Editor() {
             is done -- here, where the name an export goes out under is. The
             status hangs off the name's right edge rather than sitting beside
             it, so the name alone is what the center column centers; narrow
-            windows drop it before it can reach the help button. */}
+            windows drop it before it can reach export. */}
         <div className="relative flex min-w-0 items-center text-sm">
           <WorkspaceName
             name={workspace}
@@ -302,7 +304,7 @@ export default function Editor() {
             className="max-w-[min(40vw,24rem)] text-center"
           />
           <span
-            className="absolute top-1/2 left-full ml-2 hidden -translate-y-1/2 items-center gap-1 text-xs leading-none whitespace-nowrap text-faint lg:flex"
+            className="absolute top-1/2 left-full ml-2 hidden -translate-y-1/2 items-center gap-1 text-xs leading-none whitespace-nowrap text-faint xl:flex"
             title="Every edit is written to this browser as it is made. Export is the copy you keep."
           >
             <CircleCheck className="h-3.5 w-3.5" aria-hidden />
@@ -311,6 +313,20 @@ export default function Editor() {
         </div>
 
         <div className="flex min-w-0 items-center justify-end gap-3">
+          {/* The whole workspace's, not the open document's: so it sits
+              up here, with the workspace's name, rather than on a tab's
+              toolbar. */}
+          {/* (TODO): ExportMenu.tsx */}
+          <button
+            type="button"
+            title="Export: the one save that survives clearing this browser"
+            aria-haspopup="menu"
+            onClick={() => alert("Export coming soon")}
+            className={barButton()}
+          >
+            <Download className="h-4 w-4" />
+            export
+          </button>
           {/* (TODO): Tutorial */}
           <button
             type="button"
