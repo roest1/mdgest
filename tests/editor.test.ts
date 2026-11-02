@@ -108,6 +108,29 @@ test("a document the workspace holds opens as a tab", async () => {
   expect(router!.state.location.pathname).toBe("/edit/deep/b");
 });
 
+test("the autosave note stays clear of export, however long the workspace's name", async () => {
+  await workspace("a.pdf");
+  // As wide as the name is ever drawn: it is cut off past 24rem.
+  await engine.renameWorkspace(
+    "A workspace with a name long enough to be cut off",
+  );
+  mount("/edit");
+  const note = page.getByText("Autosaved in this browser · export to keep it");
+  const exportButton = page.getByRole("button", { name: "export" });
+  // The narrowest window it is shown in, where it comes closest.
+  await expect.element(note).toBeVisible();
+  expect(note.element().getBoundingClientRect().right).toBeLessThan(
+    exportButton.element().getBoundingClientRect().left,
+  );
+  // Any narrower, and it is not shown at all.
+  await page.viewport(1279, 800);
+  try {
+    await expect.element(note).not.toBeVisible();
+  } finally {
+    await page.viewport(1280, 800);
+  }
+});
+
 test("an address the workspace does not hold opens nothing, and says so", async () => {
   await workspace("a.pdf");
   mount("/edit/gone/missing");

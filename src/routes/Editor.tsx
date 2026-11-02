@@ -294,7 +294,7 @@ export default function Editor() {
             is done -- here, where the name an export goes out under is. The
             status hangs off the name's right edge rather than sitting beside
             it, so the name alone is what the center column centers; narrow
-            windows drop it before it can reach the help button. */}
+            windows drop it before it can reach export. */}
         <div className="relative flex min-w-0 items-center text-sm">
           <WorkspaceName
             name={workspace}
@@ -304,7 +304,7 @@ export default function Editor() {
             className="max-w-[min(40vw,24rem)] text-center"
           />
           <span
-            className="absolute top-1/2 left-full ml-2 hidden -translate-y-1/2 items-center gap-1 text-xs leading-none whitespace-nowrap text-faint lg:flex"
+            className="absolute top-1/2 left-full ml-2 hidden -translate-y-1/2 items-center gap-1 text-xs leading-none whitespace-nowrap text-faint xl:flex"
             title="Every edit is written to this browser as it is made. Export is the copy you keep."
           >
             <CircleCheck className="h-3.5 w-3.5" aria-hidden />
