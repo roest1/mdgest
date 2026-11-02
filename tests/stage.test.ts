@@ -806,4 +806,20 @@ describe("a document's read", () => {
       "../a.pdf is not a figure's name.",
     );
   });
+
+  test("counts its figures and sums their bytes, and no other document's", async () => {
+    expect(await stage("assetBytes", "pumps/a")).toEqual({
+      files: 0,
+      bytes: 0,
+    });
+    await stage("convert", "pumps/a", read, [
+      figure("p1-i0.png", "abc"),
+      figure("p2-i0.png", "hello"),
+    ]);
+    await opfs("writeFile", [...assetsDir("pumps/b"), "p1-i0.png"], bytes("x"));
+    expect(await stage("assetBytes", "pumps/a")).toEqual({
+      files: 2,
+      bytes: 8,
+    });
+  });
 });

@@ -525,6 +525,31 @@ test("an open document is read, and its markdown shown as it reads and as its so
   expect(sourceLines()).toContain("![page 1 figure 1](a.assets/p1-i0.png)");
 });
 
+test("the markdown's document properties measure what was written, figures and all", async () => {
+  await workspace(await written());
+  mount("/edit/a");
+  // Nothing to measure until the markdown is there.
+  const menu = page.getByTitle("More").last();
+  await expect.element(menu).toBeDisabled();
+  await expect.element(menu, { timeout: 15_000 }).toBeEnabled();
+  await menu.click();
+  await page.getByRole("menuitem", { name: "Document properties" }).click();
+  const dialog = page.getByRole("dialog");
+  const reading = readingOf();
+  if (reading?.status !== "ready") throw new Error("not read");
+  const text = reading.markdown.text;
+  const row = (label: string) =>
+    dialog.getByText(`${label}:`).element().nextElementSibling?.textContent;
+  await expect.element(dialog.getByText("a.md")).toBeVisible();
+  // Every line ends in a break, the last one included.
+  expect(row("Lines")).toBe(String(text.split("\n").length - 1));
+  expect(row("Text")).toBe(`${new TextEncoder().encode(text).length} B`);
+  await expect.poll(() => row("Media")).toMatch(/ \(1 figure\)$/);
+  expect(row("Renders in")).toBe("CommonMark");
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect.element(dialog).not.toBeInTheDocument();
+});
+
 test("a reading goes on while its tab is switched away from, and the next pane shows it", async () => {
   // The reading is held at its last step -- the engine writing it down --
   // long enough to switch tabs under it.
