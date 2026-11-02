@@ -1114,3 +1114,21 @@ export function asset(
     return Promise.reject(new Error(`${name} is not a figure's name.`));
   return locked(() => opfs.readFile([...assetsDir(docId), name]));
 }
+
+/** A document's figures, counted and their lengths summed, without reading
+ *  any of them. */
+export function assetBytes(
+  docId: string,
+): Promise<{ files: number; bytes: number }> {
+  return locked(async () => {
+    const assets = assetsDir(docId);
+    const sizes = await Promise.all(
+      (await opfs.walk(assets)).map((name) => opfs.size([...assets, name])),
+    );
+    const present = sizes.filter((n) => n !== null);
+    return {
+      files: present.length,
+      bytes: present.reduce((sum, n) => sum + n, 0),
+    };
+  });
+}

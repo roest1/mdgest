@@ -126,4 +126,5 @@ export const engine = {
       figures.map((f) => f.bytes),
     ),
   asset: (docId: string, name: string) => call("asset", { docId, name }),
+  assetBytes: (docId: string) => call("assetBytes", { docId }),
 };

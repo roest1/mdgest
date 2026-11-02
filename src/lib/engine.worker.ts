@@ -49,6 +49,7 @@ const handlers: Handlers = {
   convert: ({ docId, analysis, figures }) =>
     stage.convert(docId, analysis, figures),
   asset: ({ docId, name }) => stage.asset(docId, name),
+  assetBytes: ({ docId }) => stage.assetBytes(docId),
 };
 
 /** Which buffers of a method's result are handed over rather than cloned.

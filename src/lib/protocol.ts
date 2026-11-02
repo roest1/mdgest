@@ -139,6 +139,13 @@ export interface Engine {
     params: { docId: string; name: string };
     result: Uint8Array<ArrayBuffer> | null;
   };
+  /** A document's figures: how many, and their bytes together. Every file
+   *  under `markdown/<doc>.assets/`, whether or not the markdown still
+   *  names it. */
+  assetBytes: {
+    params: { docId: string };
+    result: { files: number; bytes: number };
+  };
 }
 
 /** A figure's PNG, named as it sits in `markdown/<doc>.assets/`. */
