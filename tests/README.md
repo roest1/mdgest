@@ -25,7 +25,7 @@ document cannot be made to show: a font still loading when the text is read
 is waited for, not read as regular; and a picture whose pixels pdf.js cannot
 hand over is the page under it, cut from one render in the right place.
 `emit.test.ts` covers the map beside the markdown: each block's number on
-its page and the line it went on, which the numbered boxes will read.
+its page and the line it went on, which the numbered boxes read.
 `convert.test.ts` reads a document over the real engine: off its pages
 once and kept, from the cache after, one reading for two asks at once, off
 its pages once the last is read rather than once it is written down, given
@@ -67,7 +67,12 @@ was held of a document goes with its tab, a reading still going given up,
 and of every document with the editor, so the next workspace's document of
 the same name is read afresh. Scrolling either pane takes the other to
 the same place -- the ends to the ends, a section's title to where it is
-printed -- in both views, and either pane leads. These tests load the app's stylesheet, so what is hidden is hidden and what
+printed -- in both views, and either pane leads. Every block the page read is
+boxed where it is printed, at every zoom, with the number the markdown
+counts it by; the boxes let every click through to the page; the tool bar
+turns the text's boxes, the pictures' and the numbers off and on, for the
+editor rather than the one document; and a number hangs in the margin, but
+on a block printed to the page's edge stays on the paper, as does the box. These tests load the app's stylesheet, so what is hidden is hidden and what
 scrolls scrolls. `pdf.test.ts` covers pdf.js as `pdf.ts` sets it up: one
 worker for every document, so letting one go never refuses the next; and
 what is read out of a document besides its pages -- its properties, its

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { useMenuDismiss } from "src/components/shared/useMenuDismiss";
+import { useEditor, type Boxes } from "src/lib/store";
 import { barButton, iconButton } from "./controls";
 
 /** What a document does with one kind of page furniture: keep it as text,
@@ -33,13 +34,6 @@ interface Line {
   where: "top" | "bottom";
   pages: number[];
   choice: Choice;
-}
-
-/** Which blocks the page pane draws a box around: text, images, either or
- *  neither. */
-interface Boxes {
-  text: boolean;
-  images: boolean;
 }
 
 // TODO: from findFurniture(analysis) once furniture.ts and the reading are
@@ -140,10 +134,18 @@ function Moves({
   ));
 }
 
-/** A bar button whose options open to its right: on hover with a mouse,
- *  and on a click or tap -- a tablet has no hover -- or keyboard focus.
- *  The options sit inside the same box as the button, padded rather than
- *  spaced from it, so the pointer crossing between them never leaves. */
+/** A bar button whose options open below it: on hover with a mouse, and
+ *  on a click or tap -- a tablet has no hover -- or keyboard focus.
+ *
+ * Below, left edges lined up, and not beside it: beside, they lay over the
+ * bar's next buttons, which could not be reached while they were open --
+ * and the pointer on its way to one crosses this button and opens them.
+ * Below, they cover only the panes' bars for as long as they are open, off
+ * the path along the tool bar. Nor do they push the next buttons aside,
+ * which would move them away from the pointer heading for them.
+ *
+ * The options sit inside the same box as the button, padded rather than
+ * spaced from it, so the pointer crossing between them never leaves. */
 function Flyout({
   label,
   button,
@@ -194,7 +196,7 @@ function Flyout({
         {button.content}
       </button>
       {shown && (
-        <span className="absolute top-1/2 left-full z-30 -translate-y-1/2 pl-1">
+        <span className="absolute top-full left-0 z-30 pt-1">
           <span
             role="group"
             aria-label={label}
@@ -399,12 +401,13 @@ function BoxesButton({
  * sits under tab row and above each panes respective header **/
 export function Toolbar({ docId: _docId }: { docId: string }) {
   const isDone = false; // todo
-  // TODO: the editor's store, once ported: the page pane draws the boxes
-  // and indices, and the furniture choices are edits.
+  // TODO: the editor's store, once ported: the furniture choices are edits.
   const [pageNumbers, setPageNumbers] = useState<Choice>("keep");
   const [lines, setLines] = useState<Line[]>(FOUND.lines);
-  const [boxes, setBoxes] = useState<Boxes>({ text: true, images: true });
-  const [indices, setIndices] = useState(true);
+  const boxes = useEditor((s) => s.boxes);
+  const setBoxes = useEditor((s) => s.setBoxes);
+  const indices = useEditor((s) => s.indices);
+  const setIndices = useEditor((s) => s.setIndices);
 
   return (
     <div className="flex h-10 shrink-0 items-center gap-3 border-t border-edge bg-chrome px-3 text-xs text-muted">
@@ -450,15 +453,12 @@ export function Toolbar({ docId: _docId }: { docId: string }) {
 
       {/* what the page draws: not edits, so they stay live when done */}
       <div className="flex items-center gap-2">
-        <BoxesButton
-          boxes={boxes}
-          onChange={(change) => setBoxes((prev) => ({ ...prev, ...change }))}
-        />
+        <BoxesButton boxes={boxes} onChange={setBoxes} />
         <button
           type="button"
           aria-pressed={indices}
           title={indices ? "Hide the block indices" : "Show the block indices"}
-          onClick={() => setIndices((on) => !on)}
+          onClick={() => setIndices(!indices)}
           className={barButton(indices)}
         >
           <Tag className="h-3.5 w-3.5" />
