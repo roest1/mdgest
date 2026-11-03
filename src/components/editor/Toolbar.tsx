@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { useMenuDismiss } from "src/components/shared/useMenuDismiss";
+import { useEditor, type Boxes } from "src/lib/store";
 import { barButton, iconButton } from "./controls";
 
 /** What a document does with one kind of page furniture: keep it as text,
@@ -33,13 +34,6 @@ interface Line {
   where: "top" | "bottom";
   pages: number[];
   choice: Choice;
-}
-
-/** Which blocks the page pane draws a box around: text, images, either or
- *  neither. */
-interface Boxes {
-  text: boolean;
-  images: boolean;
 }
 
 // TODO: from findFurniture(analysis) once furniture.ts and the reading are
@@ -407,12 +401,13 @@ function BoxesButton({
  * sits under tab row and above each panes respective header **/
 export function Toolbar({ docId: _docId }: { docId: string }) {
   const isDone = false; // todo
-  // TODO: the editor's store, once ported: the page pane draws the boxes
-  // and indices, and the furniture choices are edits.
+  // TODO: the editor's store, once ported: the furniture choices are edits.
   const [pageNumbers, setPageNumbers] = useState<Choice>("keep");
   const [lines, setLines] = useState<Line[]>(FOUND.lines);
-  const [boxes, setBoxes] = useState<Boxes>({ text: true, images: true });
-  const [indices, setIndices] = useState(true);
+  const boxes = useEditor((s) => s.boxes);
+  const setBoxes = useEditor((s) => s.setBoxes);
+  const indices = useEditor((s) => s.indices);
+  const setIndices = useEditor((s) => s.setIndices);
 
   return (
     <div className="flex h-10 shrink-0 items-center gap-3 border-t border-edge bg-chrome px-3 text-xs text-muted">
@@ -458,15 +453,12 @@ export function Toolbar({ docId: _docId }: { docId: string }) {
 
       {/* what the page draws: not edits, so they stay live when done */}
       <div className="flex items-center gap-2">
-        <BoxesButton
-          boxes={boxes}
-          onChange={(change) => setBoxes((prev) => ({ ...prev, ...change }))}
-        />
+        <BoxesButton boxes={boxes} onChange={setBoxes} />
         <button
           type="button"
           aria-pressed={indices}
           title={indices ? "Hide the block indices" : "Show the block indices"}
-          onClick={() => setIndices((on) => !on)}
+          onClick={() => setIndices(!indices)}
           className={barButton(indices)}
         >
           <Tag className="h-3.5 w-3.5" />

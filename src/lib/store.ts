@@ -21,6 +21,13 @@ export function byId<T>(from?: ById<T>): ById<T> {
   return Object.assign(Object.create(null) as ById<T>, from);
 }
 
+/** Which blocks the page pane draws a box around: text, images, either or
+ *  neither. */
+export interface Boxes {
+  text: boolean;
+  images: boolean;
+}
+
 /** Where a document's reading stands. `reading` counts pages as they are
  *  read; `ready` carries the analysis and the markdown emitted from it --
  *  the same text the engine wrote to the workspace. */
@@ -33,6 +40,14 @@ interface EditorState {
   readings: ById<Reading>;
   /** Set, or with undefined forget, a document's reading. */
   setReading: (docId: string, reading: Reading | undefined) => void;
+  /** What the page pane draws over every document's pages: how the page is
+   *  looked at, not edits to it, so one setting for the editor rather than
+   *  one per document, kept across a switch of tab. */
+  boxes: Boxes;
+  setBoxes: (boxes: Partial<Boxes>) => void;
+  /** Whether each block's number is shown on its box. */
+  indices: boolean;
+  setIndices: (indices: boolean) => void;
 }
 
 export const useEditor = create<EditorState>()((set) => ({
@@ -44,4 +59,8 @@ export const useEditor = create<EditorState>()((set) => ({
       else delete readings[docId];
       return { readings };
     }),
+  boxes: { text: true, images: true },
+  setBoxes: (boxes) => set((s) => ({ boxes: { ...s.boxes, ...boxes } })),
+  indices: true,
+  setIndices: (indices) => set({ indices }),
 }));
