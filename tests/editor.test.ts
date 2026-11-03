@@ -893,16 +893,18 @@ test("a number hangs in the margin, and a block printed to the edge is boxed and
 
 // ---- the scroll sync ------------------------------------------------------
 
-/** `a.pdf`: three pages, each a section title over a column of paragraphs,
- *  long enough that both panes scroll. */
-const sections = async () =>
+/** `a.pdf`: `count` pages, three unless said, each a section title over a
+ *  column of paragraphs, long enough that both panes scroll. */
+const sections = async (count = 3) =>
   new File(
     [
       await buildPdf(
-        [1, 2, 3].map((n) => (pen: Pen) => {
-          pen.text(X, TOP, `Section ${n}`, { size: 16, face: "bold" });
-          pen.lines(X, TOP + PARAGRAPH, prose(24, n), { leading: PARAGRAPH });
-        }),
+        Array.from({ length: count }, (_, i) => i + 1).map(
+          (n) => (pen: Pen) => {
+            pen.text(X, TOP, `Section ${n}`, { size: 16, face: "bold" });
+            pen.lines(X, TOP + PARAGRAPH, prose(24, n), { leading: PARAGRAPH });
+          },
+        ),
       ),
     ],
     "a.pdf",
@@ -997,3 +999,61 @@ test("scrolling either pane takes the other to the same place", async () => {
   await scrollTo(pdf, room(pdf));
   await expect.poll(() => md.scrollTop, settle).toBeCloseTo(room(md), 0);
 }, 30_000);
+
+test("a long document's markdown is there at once, and the rest drawn in while the panes keep in step", async () => {
+  // Sixty pages are more than the pane draws in one go, so it draws the
+  // first and waits the rest -- each a placeholder named by its page.
+  await workspace(await sections(60));
+  const seen = new Set<string>();
+  const watch = new MutationObserver((changes) => {
+    for (const change of changes)
+      for (const node of change.addedNodes)
+        if (node instanceof HTMLElement)
+          for (const el of [
+            node,
+            ...node.querySelectorAll<HTMLElement>("[data-wait]"),
+          ])
+            if (el.dataset.wait) seen.add(el.dataset.wait);
+  });
+  watch.observe(document.body, { childList: true, subtree: true });
+  try {
+    mount("/edit/a");
+    await expect
+      .element(page.getByRole("heading", { name: "Section 1", exact: true }), {
+        timeout: 30_000,
+      })
+      .toBeVisible();
+    await pagesDrawn();
+    const [pdf, md] = [pdfScroller(), markdownScroller()];
+    // Taken to the end while the pages are drawn in: the markdown is put at
+    // its end, however much of it is drawn yet, and stays there as the
+    // rest arrives.
+    await scrollTo(pdf, room(pdf));
+    await expect
+      .poll(
+        () => document.querySelector(".markdown")!.getAttribute("aria-busy"),
+        {
+          timeout: 15_000,
+        },
+      )
+      .toBe("false");
+    expect(seen.size).toBeGreaterThan(0);
+    expect(seen.has("1")).toBe(false);
+    expect(document.querySelector("[data-wait]")).toBeNull();
+    await expect.poll(() => md.scrollTop, settle).toBeCloseTo(room(md), 0);
+    const last = Array.from(
+      document.querySelectorAll('.markdown [data-block^="p60b"]'),
+    ).at(-1)!;
+    await expect.element(page.elementLocator(last)).toBeInViewport();
+    // Every page's markdown is there, once each, in order.
+    const titles = Array.from(
+      document.querySelectorAll(".markdown h1, .markdown h2"),
+      (h) => h.textContent,
+    );
+    expect(titles).toEqual(
+      Array.from({ length: 60 }, (_, i) => `Section ${i + 1}`),
+    );
+  } finally {
+    watch.disconnect();
+  }
+}, 90_000);

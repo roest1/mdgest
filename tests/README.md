@@ -26,6 +26,10 @@ is waited for, not read as regular; and a picture whose pixels pdf.js cannot
 hand over is the page under it, cut from one render in the right place.
 `emit.test.ts` covers the map beside the markdown: each block's number on
 its page and the line it went on, which the numbered boxes read.
+`pieces.test.ts` reads every case the same way and holds the markdown pane
+to drawing a page at a time: the pages' markdown, rendered each on its own,
+is the same HTML as the whole rendered at once, with every element marked
+by the same block.
 `convert.test.ts` reads a document over the real engine: off its pages
 once and kept, from the cache after, one reading for two asks at once, off
 its pages once the last is read rather than once it is written down, given
@@ -67,7 +71,10 @@ was held of a document goes with its tab, a reading still going given up,
 and of every document with the editor, so the next workspace's document of
 the same name is read afresh. Scrolling either pane takes the other to
 the same place -- the ends to the ends, a section's title to where it is
-printed -- in both views, and either pane leads. Every block the page read is
+printed -- in both views, and either pane leads. A long document's markdown
+is there at once and its other pages drawn in after, each waiting in a
+placeholder named by its page; taken to the end meanwhile, the markdown is
+put at its end and stays there as the rest arrives. Every block the page read is
 boxed where it is printed, at every zoom, with the number the markdown
 counts it by; the boxes let every click through to the page; the tool bar
 turns the text's boxes, the pictures' and the numbers off and on, for the

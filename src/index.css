@@ -274,6 +274,51 @@
     @apply my-4 block max-w-full rounded border border-edge bg-raised/40;
   }
 
+  /* A page of the markdown drawn, in either view: skipped by the browser
+     while far off screen, at the size it was last laid out at -- or, until
+     it has been, at the estimate its placeholder had. What keeps a book's
+     hundred thousand elements from costing a layout every frame; what the
+     scroll sync measures around it is `tops.ts`. */
+  .piece {
+    content-visibility: auto;
+  }
+
+  /* A page of the markdown not drawn yet (`Waiting`, MarkdownPane.tsx), in
+     either view: its page named at the top, then lines like the view's
+     text, `--row` apart, with a sweep through them for as long as it waits.
+     The lines are a mask over one moving gradient, so a page waiting is one
+     box however long it is; and off screen it is skipped, so a book's
+     thousand waiting pages cost nothing while one is in view. */
+  .piece-wait {
+    position: relative;
+    content-visibility: auto;
+  }
+  .piece-wait::before {
+    content: "page " attr(data-wait);
+    @apply block font-mono text-[11px] text-faint select-none;
+    line-height: var(--row);
+  }
+  .piece-wait::after {
+    content: "";
+    position: absolute;
+    inset: var(--row) 8% 0 0;
+    --line: color-mix(in srgb, var(--color-faint) 16%, transparent);
+    --glint: color-mix(in srgb, var(--color-faint) 34%, transparent);
+    background: linear-gradient(
+        100deg,
+        var(--line) 40%,
+        var(--glint) 50%,
+        var(--line) 60%
+      )
+      0 0 / 300% 100%;
+    mask: repeating-linear-gradient(
+      to bottom,
+      #000 0 calc(var(--row) * 0.42),
+      transparent calc(var(--row) * 0.42) var(--row)
+    );
+    animation: piece-wait 1.6s linear infinite;
+  }
+
   /* `.source` is the raw view: an <ol>, one <li> a line, numbered by a CSS
      counter in a gutter drawn by the item's ::before. A counter and not text
      so that selecting the view and copying it gives the markdown alone. The
@@ -370,6 +415,16 @@
 }
 
 /* ── motion ─────────────────────────────────────────────────────────── */
+/* The sweep through a page of the markdown waiting to be drawn. */
+@keyframes piece-wait {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;

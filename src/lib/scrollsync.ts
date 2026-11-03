@@ -239,6 +239,18 @@ export function attachSync(
   };
 }
 
+/** The blocks of `docId`'s panes to be measured again before the next
+ *  follow, and nothing more: for when what a pane knows of where they are
+ *  gets better without anything moving -- a page of the markdown coming
+ *  into view is laid out, where before its blocks were estimated. Not
+ *  `invalidateSync`, which takes each pane's offset as the layout's: this
+ *  can be heard between a person's scroll and its event, and would swallow
+ *  the scroll. */
+export function remeasureSync(docId: string): void {
+  const link = links.get(docId);
+  if (link) link.points = null;
+}
+
 /** How long a pane's layout holds still before its blocks are measured
  *  again, in ms. */
 const SETTLE = 100;
