@@ -603,12 +603,19 @@ test("a reading goes on while its tab is switched away from, and the next pane s
 });
 
 test("closing a tab mid-read gives the reading up, and the next open reads afresh", async () => {
-  // Held before its first page, so the close lands while it is reading.
+  // The first reading held before its first page until the close has
+  // landed, so the close is mid-read however long the click takes -- held
+  // for a time instead, a slow click lands after the reading has got as far
+  // as the write, which it then finishes, unshown, as it should.
   const analysis = engine.analysis.bind(engine);
-  const spy = vi.spyOn(engine, "analysis").mockImplementation(async (id) => {
-    await new Promise((r) => setTimeout(r, 400));
-    return analysis(id);
-  });
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  const spy = vi
+    .spyOn(engine, "analysis")
+    .mockImplementationOnce(async (id) => {
+      await held;
+      return analysis(id);
+    });
   const convert = vi.spyOn(engine, "convert");
   try {
     await workspace(await written());
@@ -617,10 +624,15 @@ test("closing a tab mid-read gives the reading up, and the next open reads afres
     await page.getByRole("button", { name: "Close a" }).click();
     await expect.poll(tabs).toEqual([]);
     await expect.poll(() => readingOf()).toBeUndefined();
-    // Given up, so nothing was written down for it.
-    await expect.poll(() => spy.mock.calls.length).toBe(1);
-    await new Promise((r) => setTimeout(r, 600));
-    expect(convert).not.toHaveBeenCalled();
+    expect(spy).toHaveBeenCalledTimes(1);
+    release();
+    // Given up, so nothing was written down for it: it stops as its
+    // analysis comes back, before any page.
+    await spy.mock.results[0].value;
+    await new Promise((r) => setTimeout(r, 0));
+    // By count: the calls themselves hold bytes sent to the worker, which
+    // cannot be printed.
+    expect(convert.mock.calls.length).toBe(0);
     expect(readingOf()).toBeUndefined();
 
     await router!.navigate("/edit/a");
@@ -629,8 +641,9 @@ test("closing a tab mid-read gives the reading up, and the next open reads afres
         timeout: 15_000,
       })
       .toBeVisible();
-    expect(convert).toHaveBeenCalledTimes(1);
+    expect(convert.mock.calls.length).toBe(1);
   } finally {
+    release();
     convert.mockRestore();
     spy.mockRestore();
   }
