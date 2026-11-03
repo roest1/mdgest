@@ -10,9 +10,11 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { Spinner } from "src/components/shared/Spinner";
+import type { Block } from "src/lib/analysis";
 import { ensureRead, readDone } from "src/lib/convert";
+import type { Placed } from "src/lib/emit";
 import { engine } from "src/lib/engine";
-import { useEditor } from "src/lib/store";
+import { useEditor, type Boxes } from "src/lib/store";
 import { attachSync, invalidateSync } from "src/lib/scrollsync";
 import {
   openPdf,
@@ -31,6 +33,7 @@ import { sourcePath } from "src/lib/workspace";
 import { iconButton } from "./controls";
 import { GAP, inView, layout, PAD, type Row } from "./column";
 import { MoreMenu } from "./MoreMenu";
+import { PageBlocks } from "./PageBlocks";
 import { PageCanvas } from "./PageCanvas";
 import { Pane } from "./Pane";
 import {
@@ -155,6 +158,10 @@ const SETTLE = 150;
 /** What `sizes` is before a document has loaded: one value, so nothing
  *  downstream recomputes for a fresh empty array each render. */
 const NO_SIZES: { w: number; h: number }[] = [];
+/** The same, for the blocks and where they went before the reading is
+ *  ready: no boxes, and no row drawn again for a fresh empty one. */
+const NO_PAGES: Block[][] = [];
+const NO_PLACED: Record<string, Placed> = {};
 
 const when = (d: Date | null) =>
   d
@@ -468,6 +475,15 @@ export function PdfPane({ docId }: { docId: string }) {
     return out;
   }, [read, rows, rowOf, scale]);
   const topsRef = useRef(tops);
+  // What each page draws over itself: its blocks, numbered as the markdown
+  // counts them, once the reading is ready.
+  const blocks = useMemo(
+    () => read?.analysis.pages.map((p) => p.blocks) ?? NO_PAGES,
+    [read],
+  );
+  const placed = read?.markdown.blocks ?? NO_PLACED;
+  const boxes = useEditor((s) => s.boxes);
+  const indices = useEditor((s) => s.indices);
   useLayoutEffect(() => {
     topsRef.current = tops;
     invalidateSync(docId);
@@ -618,8 +634,13 @@ export function PdfPane({ docId }: { docId: string }) {
                   key={row.pages[0].n}
                   row={row}
                   pages={loaded.pages}
+                  scale={scale}
                   drawScale={drawScale}
                   snapshots={snapshots}
+                  blocks={blocks}
+                  placed={placed}
+                  boxes={boxes}
+                  indices={indices}
                   left={
                     PAD + Math.max(0, (paneWidth - 2 * PAD - row.width) / 2)
                   }
@@ -642,19 +663,32 @@ export function PdfPane({ docId }: { docId: string }) {
 
 /** One row of the column, placed where `layout` put it. Memoised: a
  *  scroll that brings a row in should not re-render the rows already there.
- *  The row's boxes come from `row`; `drawScale` is what the pages are drawn
- *  at, which lags the boxes while the pane is resized. */
+ *  The row's boxes come from `row`, laid out at `scale`; `drawScale` is
+ *  what the pages are drawn at, which lags the boxes while the pane is
+ *  resized. The blocks' boxes are the layout's, at `scale`, so they stay on
+ *  the page's box every frame of a resize, over a picture stretched to it. */
 const PageRow = memo(function PageRow({
   row,
   pages,
+  scale,
   drawScale,
   snapshots,
+  blocks,
+  placed,
+  boxes,
+  indices,
   left,
 }: {
   row: Row;
   pages: PDFPageProxy[];
+  scale: number;
   drawScale: number;
   snapshots: Snapshots;
+  /** Every page's blocks, by page number less one. */
+  blocks: Block[][];
+  placed: Record<string, Placed>;
+  boxes: Boxes;
+  indices: boolean;
   left: number;
 }) {
   return (
@@ -675,6 +709,16 @@ const PageRow = memo(function PageRow({
             active
             snapshots={snapshots}
           />
+          {blocks[p.n - 1] && (
+            <PageBlocks
+              blocks={blocks[p.n - 1]}
+              placed={placed}
+              scale={scale}
+              page={p}
+              boxes={boxes}
+              indices={indices}
+            />
+          )}
         </div>
       ))}
     </div>

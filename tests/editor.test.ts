@@ -13,7 +13,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { createElement } from "react";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { engine } from "src/lib/engine";
-import { useEditor } from "src/lib/store";
+import { useEditor, type Reading } from "src/lib/store";
 import { inView, layout } from "src/components/editor/column";
 import Editor from "src/routes/Editor";
 // The app's own layout: which panes are hidden, and what scrolls.
@@ -60,6 +60,10 @@ afterEach(async () => {
   root?.unmount();
   host?.remove();
   root = host = router = null;
+  // What the page draws is the editor's, not a document's, and outlives
+  // the mount.
+  useEditor.getState().setBoxes({ text: true, images: true });
+  useEditor.getState().setIndices(true);
   await discard();
 });
 
@@ -708,6 +712,183 @@ test("a document of the same name in the next workspace is read afresh", async (
       timeout: 15_000,
     })
     .toBeVisible();
+});
+
+// ---- the blocks on the page -----------------------------------------------
+
+/** Page `n` as laid out in the PDF pane. */
+const paper = (n = 1) =>
+  document.querySelector<HTMLElement>(`[data-paper="${n}"]`)!;
+/** The boxes drawn over page `n`, in the order they are stacked. */
+const boxesOn = (n = 1) =>
+  Array.from(paper(n).querySelectorAll<HTMLElement>(".hit"));
+/** The numbers on page `n`'s boxes, in the order they are stacked. */
+const numbersOn = (n = 1) =>
+  boxesOn(n).flatMap((b) => {
+    const note = b.querySelector(".note");
+    return note ? [note.textContent] : [];
+  });
+/** `a`'s reading, once it is ready. */
+async function ready(): Promise<Extract<Reading, { status: "ready" }>> {
+  await expect
+    .poll(() => readingOf()?.status, { timeout: 15_000 })
+    .toBe("ready");
+  return readingOf() as Extract<Reading, { status: "ready" }>;
+}
+/** Where `el` is on page `n`, in CSS px. */
+function onPaper(el: Element, n = 1) {
+  const at = el.getBoundingClientRect();
+  const p = paper(n).getBoundingClientRect();
+  return {
+    x: at.left - p.left,
+    y: at.top - p.top,
+    right: at.right - p.left,
+    w: at.width,
+    h: at.height,
+  };
+}
+/** Toggle the Boxes flyout's option for `kind`, leaving it open: what is
+ *  clicked next in the bar must be reachable with it so. */
+async function toggleBoxes(kind: "text" | "images"): Promise<void> {
+  await page.getByRole("button", { name: "Boxes" }).click();
+  await page
+    .getByRole("group", { name: "Boxes on the page" })
+    .getByRole("button", { name: kind, exact: true })
+    .click();
+}
+
+test("every block the page read is boxed where it is printed, numbered as the markdown counts it", async () => {
+  await workspace(await written());
+  mount("/edit/a");
+  const { analysis, markdown } = await ready();
+  await pagesDrawn();
+  const blocks = analysis.pages[0].blocks;
+  expect(blocks.map((b) => b.kind)).toContain("image");
+  await expect.poll(() => boxesOn().length).toBe(blocks.length);
+
+  // Each box is its block's, a hair outside the box the reading gave at the
+  // page's scale: at 3px and 2px, whatever the zoom.
+  const check = () => {
+    const scale = paper().getBoundingClientRect().width / LETTER[0];
+    for (const block of blocks) {
+      const at = onPaper(paper().querySelector(`[data-block="${block.id}"]`)!);
+      expect(Math.abs(at.x - (block.box.x * scale - 3))).toBeLessThan(1);
+      expect(Math.abs(at.y - (block.box.y * scale - 2))).toBeLessThan(1);
+      expect(Math.abs(at.w - (block.box.w * scale + 6))).toBeLessThan(1);
+      expect(Math.abs(at.h - (block.box.h * scale + 4))).toBeLessThan(1);
+    }
+  };
+  check();
+  const before = paper().getBoundingClientRect().width;
+  await page.getByTitle("Zoom in").click();
+  await expect
+    .poll(() => paper().getBoundingClientRect().width)
+    .toBeGreaterThan(before);
+  check();
+
+  // The number on a box is the one the markdown counts its block by: one
+  // list, from 1 on the page, the picture's under the text's.
+  for (const el of boxesOn())
+    expect(el.querySelector(".note")?.textContent).toBe(
+      String(markdown.blocks[el.dataset.block!].n),
+    );
+  expect(
+    numbersOn()
+      .map(Number)
+      .sort((a, b) => a - b),
+  ).toEqual(blocks.map((_, i) => i + 1));
+  expect(boxesOn()[0].dataset.kind).toBe("image");
+
+  // Drawn only: what is under a box is what a click reaches.
+  const box = boxesOn()[0].getBoundingClientRect();
+  const under = document.elementFromPoint(
+    box.left + box.width / 2,
+    box.top + box.height / 2,
+  );
+  expect(under?.closest(".hit")).toBeNull();
+});
+
+test("the tool bar turns the boxes and the numbers off and on, for every document", async () => {
+  await workspace(await written());
+  mount("/edit/a");
+  const { analysis } = await ready();
+  await pagesDrawn();
+  const all = analysis.pages[0].blocks.length;
+  await expect.poll(() => boxesOn().length).toBe(all);
+  const ringed = () => boxesOn().filter((b) => !b.matches(".quiet"));
+
+  // The numbers off: every box, none numbered.
+  await page.getByRole("button", { name: "Indices" }).click();
+  await expect.poll(() => numbersOn()).toEqual([]);
+  expect(boxesOn()).toHaveLength(all);
+
+  // The text's boxes off: the picture's alone.
+  await toggleBoxes("text");
+  await expect
+    .poll(() => boxesOn().map((b) => b.dataset.kind))
+    .toEqual(["image"]);
+
+  // Both off: nothing over the page at all.
+  await toggleBoxes("images");
+  await expect.poll(() => boxesOn().length).toBe(0);
+  expect(paper().querySelector("[aria-hidden] [data-block]")).toBeNull();
+
+  // The numbers on again, with no boxes: each on a box that draws nothing.
+  // Clicked with the flyout still open, which lies clear of the button.
+  await expect
+    .element(page.getByRole("group", { name: "Boxes on the page" }))
+    .toBeVisible();
+  await page.getByRole("button", { name: "Indices" }).click();
+  await expect.poll(() => numbersOn().length).toBe(all);
+  expect(ringed()).toEqual([]);
+
+  // And it is the editor's setting, not the document's: the next document
+  // opened is drawn the same.
+  expect(useEditor.getState().boxes).toEqual({ text: false, images: false });
+  expect(useEditor.getState().indices).toBe(true);
+});
+
+test("a number hangs in the margin, and a block printed to the edge is boxed and numbered on the paper", async () => {
+  await workspace(
+    new File(
+      [
+        await buildPdf([
+          (pen) => {
+            pen.text(X, TOP, "Edge to Edge", { size: 16, face: "bold" });
+            pen.lines(X, TOP + PARAGRAPH, prose(10), { leading: PARAGRAPH });
+            // Full bleed, after enough blocks that its number has two
+            // digits: no margin to the left of it at all.
+            pen.image(0, TOP + 11 * PARAGRAPH, LETTER[0], 160, [100, 60]);
+          },
+        ]),
+      ],
+      "a.pdf",
+    ),
+  );
+  mount("/edit/a");
+  await ready();
+  await pagesDrawn();
+  await expect.poll(() => numbersOn().length).toBe(12);
+
+  const [picture, heading] = boxesOn();
+  expect(picture.dataset.kind).toBe("image");
+  const noteOf = (b: HTMLElement) => b.querySelector(".note")!;
+  expect(noteOf(picture).textContent).toBe("12");
+  // The heading's number left of its box, clear of the words in it.
+  const words = onPaper(heading);
+  const hung = onPaper(noteOf(heading));
+  expect(hung.right).toBeLessThanOrEqual(words.x + 3);
+  expect(hung.x).toBeGreaterThan(0);
+  // The picture's box on the paper, ring and all, though the picture
+  // runs to both its edges -- and its number slid back over its corner,
+  // its whole width on the page, not cut off past the page's edge.
+  const bleed = onPaper(picture);
+  const width = paper().getBoundingClientRect().width;
+  expect(bleed.x).toBeGreaterThanOrEqual(1);
+  expect(bleed.right).toBeLessThanOrEqual(width - 1);
+  const slid = onPaper(noteOf(picture));
+  expect(slid.x).toBeGreaterThanOrEqual(0);
+  expect(slid.x).toBeLessThan(2);
 });
 
 // ---- the scroll sync ------------------------------------------------------

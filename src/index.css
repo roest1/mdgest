@@ -311,6 +311,62 @@
   .source > li[data-kind="image"] {
     @apply text-muted;
   }
+
+  /* ── the page pane's blocks ───────────────────────────────────────── */
+
+  /* A block's box over the page: a gray hairline around everything that
+     was read, so what the reading found -- and what it missed -- is seen
+     at a glance. On the page's white whatever the theme, so in grays that
+     read on paper. `quiet` is a box turned off in the tool bar, there only
+     to carry its note. Placed by `--box-x` and `--box-y`, its corner on
+     the page, which its note reads as well. */
+  .hit {
+    position: absolute;
+    left: var(--box-x);
+    top: var(--box-y);
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px
+      color-mix(in srgb, var(--color-faint) 55%, transparent);
+  }
+  .hit.quiet {
+    box-shadow: none;
+  }
+  /* The block's number, on a small gray tag set a little askew as a
+     stuck-on thing is: the number the markdown counts it by. It hangs off
+     the box's top-left corner, into the margin, so it covers no glyph --
+     the box is the text's own, with no padding to sit in.
+
+     And it stays on the paper: on the column's leftmost page the pane
+     would cut off what hangs past it. Where the margin is narrower than
+     the tag -- a full-bleed picture, a line at the very edge -- `translate`
+     slides it back in by the difference, over the box's corner. A
+     percentage in `translate` is of the tag's own width, so however many
+     digits it holds, nothing outside this rule needs its size. Each slide
+     stops 1px short of the page's edge: the tag is turned 6°, which takes
+     its corner about a pixel past its box. */
+  .hit > .note {
+    position: absolute;
+    z-index: 1;
+    top: -7px;
+    right: calc(100% - 2px);
+    translate: max(0px, calc(100% - 1px - var(--box-x)))
+      max(0px, calc(8px - var(--box-y)));
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 2px;
+    font: 700 12px/20px var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    white-space: nowrap;
+    color: #2b2723;
+    background: linear-gradient(#dcd7ce, #cbc5ba);
+    box-shadow:
+      0 1px 1px rgb(0 0 0 / 0.25),
+      0 0 0 0.5px rgb(0 0 0 / 0.08);
+    transform: rotate(-6deg);
+    user-select: none;
+  }
 }
 
 /* ── motion ─────────────────────────────────────────────────────────── */
