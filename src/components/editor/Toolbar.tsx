@@ -140,10 +140,18 @@ function Moves({
   ));
 }
 
-/** A bar button whose options open to its right: on hover with a mouse,
- *  and on a click or tap -- a tablet has no hover -- or keyboard focus.
- *  The options sit inside the same box as the button, padded rather than
- *  spaced from it, so the pointer crossing between them never leaves. */
+/** A bar button whose options open below it: on hover with a mouse, and
+ *  on a click or tap -- a tablet has no hover -- or keyboard focus.
+ *
+ * Below, left edges lined up, and not beside it: beside, they lay over the
+ * bar's next buttons, which could not be reached while they were open --
+ * and the pointer on its way to one crosses this button and opens them.
+ * Below, they cover only the panes' bars for as long as they are open, off
+ * the path along the tool bar. Nor do they push the next buttons aside,
+ * which would move them away from the pointer heading for them.
+ *
+ * The options sit inside the same box as the button, padded rather than
+ * spaced from it, so the pointer crossing between them never leaves. */
 function Flyout({
   label,
   button,
@@ -194,7 +202,7 @@ function Flyout({
         {button.content}
       </button>
       {shown && (
-        <span className="absolute top-1/2 left-full z-30 -translate-y-1/2 pl-1">
+        <span className="absolute top-full left-0 z-30 pt-1">
           <span
             role="group"
             aria-label={label}
