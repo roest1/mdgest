@@ -144,3 +144,42 @@ test("a scroll after the layout holds still is a person's again", async () => {
   await scrollTo(markdown, room(markdown));
   await expect.poll(() => page.scrollTop, settle).toBeCloseTo(room(page), 0);
 });
+
+test("a layout reported between a person's scroll and its event does not swallow the scroll", async () => {
+  const { page, markdown } = panes();
+  await scrollTo(page, 800);
+  await expect.poll(() => markdown.scrollTop, settle).toBeCloseTo(300, 0);
+  // The markdown scrolled, and an observer heard from before its scroll
+  // event is sent -- with nothing in either pane another size. Taking the
+  // markdown's offset as the layout's would swallow the event, and the
+  // settle would put the markdown back under the pages.
+  markdown.scrollTop = room(markdown);
+  invalidateSync(DOC);
+  await frame();
+  await expect.poll(() => page.scrollTop, settle).toBeCloseTo(room(page), 0);
+  // Past the settle, and still where it was scrolled to.
+  await new Promise((done) => setTimeout(done, 200));
+  expect(markdown.scrollTop).toBe(room(markdown));
+  expect(page.scrollTop).toBeCloseTo(room(page), 0);
+});
+
+test("a scroll that brings in a layout of its own leads, and is not undone", async () => {
+  const { page, markdown } = panes();
+  await scrollTo(page, 800);
+  await expect.poll(() => markdown.scrollTop, settle).toBeCloseTo(300, 0);
+  // The markdown scrolled 300px, and what it brings into view laid out
+  // 100px taller, reported before the scroll event is sent: further than a
+  // layout 100px taller could move it, so the scroll is a person's.
+  markdown.scrollTop = 600;
+  resize(markdown, 1100);
+  invalidateSync(DOC);
+  await frame();
+  // Its view's line at 600 + 600/700 of 400, of 1100: on the pages, 1600
+  // of that fraction of 2000.
+  const y = ((600 + (600 / 700) * 400) / 1100) * 2000;
+  await expect.poll(() => page.scrollTop, settle).toBeCloseTo(y * 0.8, -1);
+  // Past the settle, and still where it was scrolled to.
+  await new Promise((done) => setTimeout(done, 200));
+  expect(markdown.scrollTop).toBe(600);
+  expect(page.scrollTop).toBeCloseTo(y * 0.8, -1);
+});

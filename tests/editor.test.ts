@@ -978,8 +978,20 @@ test("scrolling either pane takes the other to the same place", async () => {
   const heading = await page
     .getByRole("heading", { name: "Section 2" })
     .element();
-  const at = inContent(md, heading);
-  await scrollTo(md, at / (1 + md.clientHeight / room(md)));
+  // Aimed at where the title is printed once the pages above it are laid
+  // out, which until a scroll brings them into view they may not be: a
+  // page out of view is skipped at an estimate, and laid out as it comes
+  // in -- moving the title down past where it was aimed at. So scrolled
+  // again, as a person would, until the title and the markdown's length
+  // hold still.
+  let aimed = "";
+  for (let tries = 0; tries < 5; tries++) {
+    const at = inContent(md, heading);
+    const now = `${Math.round(at)}:${md.scrollHeight}`;
+    if (now === aimed) break;
+    aimed = now;
+    await scrollTo(md, at / (1 + md.clientHeight / room(md)));
+  }
   // By number: the column holds only the pages near the view, so which is
   // second in the DOM depends on where it is scrolled.
   const second = document.querySelector('[data-paper="2"]')!;

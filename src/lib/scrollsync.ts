@@ -78,12 +78,43 @@ const sizeOf = (el: HTMLElement): Size => ({
 const sameSize = (a: Size | undefined, b: Size): boolean =>
   a !== undefined && a.content === b.content && a.view === b.view;
 
-/** Take a pane's offset and size as they are, as its layout left them. */
+/** Whether a pane's layout could have put it at `top`, from `at` when it
+ *  was `was` and now that it is `now`. A layout moves an offset only by
+ *  clamping it to content grown shorter or to a view grown taller, or by
+ *  keeping in view what was there as what is above it changes height --
+ *  never by more than the content and the view changed size between them.
+ *  A pane the same size was not laid out anew, whatever reported it; and
+ *  one moved further than its size changed was scrolled by a person, in the
+ *  same frame as a layout: a page brought into view by the scroll, and laid
+ *  out as it comes. A small scroll in that same frame is not told from the
+ *  layout's, and is put back in step instead of leading. */
+function layoutCould(
+  was: Size | undefined,
+  at: number | undefined,
+  now: Size,
+  top: number,
+): boolean {
+  if (sameSize(was, now)) return false;
+  if (was === undefined || at === undefined) return true;
+  const changed =
+    Math.abs(now.content - was.content) + Math.abs(now.view - was.view);
+  // A px either way for the browser's rounding of the offset.
+  return Math.abs(top - at) <= changed + 1;
+}
+
+/** Take a pane's offset and size as they are, as its layout left them --
+ *  if its layout could have: an offset it has moved to otherwise was a
+ *  person's, with its scroll event still to come. An observer can be heard
+ *  between the two; taken here, that scroll would be seen to already, and
+ *  lead nothing. */
 function settled(link: Link, side: Side): void {
   const pane = link.panes[side];
   if (!pane) return;
-  link.at[side] = pane.scroller.scrollTop;
-  link.size[side] = sizeOf(pane.scroller);
+  const size = sizeOf(pane.scroller);
+  const top = pane.scroller.scrollTop;
+  if (!layoutCould(link.size[side], link.at[side], size, top)) return;
+  link.at[side] = top;
+  link.size[side] = size;
 }
 
 /** Whether `side` has been scrolled since this module last saw it. */
@@ -205,18 +236,23 @@ export function attachSync(
   const onScroll = () => {
     const el = pane.scroller;
     const was = link.size[side];
+    const from = link.at[side];
     const seen = !moved(link, side);
+    const now = sizeOf(el);
     link.at[side] = el.scrollTop;
-    link.size[side] = sizeOf(el);
+    link.size[side] = now;
     // Where it was left, or already was: nothing new.
     if (seen) return;
-    // Another size than at its last scroll: laid out anew, and this scroll
-    // is the layout's. The pane's own report of the layout comes after the
-    // scroll event when it is an observer's, so it is taken here as well.
-    if (!sameSize(was, link.size[side])) {
+    // Laid out anew, and this scroll the layout's. The pane's own report of
+    // the layout comes after the scroll event when it is an observer's, so
+    // it is taken here as well.
+    if (layoutCould(was, from, now, el.scrollTop)) {
       invalidateSync(docId);
       return;
     }
+    // A person's, as the pane was laid out anew: its blocks are somewhere
+    // else, and measured again for this follow.
+    if (!sameSize(was, now)) link.points = null;
     link.leader = side;
     follow(link, side);
   };
@@ -266,14 +302,17 @@ const SETTLE = 100;
  * laid out anew keeps its pixel offset, which is somewhere else in the
  * document now -- the pages' leader if neither has led yet.
  *
- * Where the layout has left each pane is taken as it is, so that a scroll
- * event still to come for it -- the layout's, not a person's -- leads
- * nothing. Called from a layout effect, that is before the event; called
- * from an observer, after it, and the scroll handler has seen the pane
- * resized for itself. And a pane found somewhere else once the layout has
- * held still was scrolled meanwhile by a person, whose scroll event is
- * still to come: that pane leads, rather than being put back where it was
- * before the event could say so. */
+ * Where the layout has left each pane another size is taken as it is, so
+ * that a scroll event still to come for it -- the layout's, not a
+ * person's -- leads nothing. Called from a layout effect, that is before
+ * the event; called from an observer, after it, and the scroll handler has
+ * seen the pane resized for itself. A pane its layout could not have put
+ * where it is -- the same size, or moved further than its size changed --
+ * is left alone: a scroll it has had since is a person's, whose event is
+ * still to come (`layoutCould`). And a pane found somewhere else once the
+ * layout has held still was scrolled meanwhile by a person, whose scroll
+ * event is still to come: that pane leads, rather than being put back
+ * where it was before the event could say so. */
 export function invalidateSync(docId: string): void {
   const link = links.get(docId);
   if (!link) return;
