@@ -208,8 +208,11 @@ const RenderedPiece = memo(
  *  drawn: about its height, so the scrollbar is about right, lined like
  *  text with a shimmer through it, and named by its page -- what is seen
  *  when a jump lands somewhere not drawn yet, for the moment until it is.
- *  The look is `.piece-wait` in index.css. */
-function Waiting({
+ *  The look is `.piece-wait` in index.css. Drawn once: each batch draws a
+ *  few pages and renders the list anew, and a book has a thousand of these
+ *  waiting in it; rendered again with every batch, they were a tenth of
+ *  the fill. */
+const Waiting = memo(function Waiting({
   page,
   height,
   row,
@@ -230,7 +233,7 @@ function Waiting({
       style={{ height, "--row": `${row}px` } as CSSProperties}
     />
   );
-}
+});
 
 /** The two views' line heights, in px: 15px type at 1.65, and the
  *  source's 12.5px at 1.55 (`.markdown` and `.source` in index.css). */
@@ -261,8 +264,10 @@ function renderedHeight(piece: Piece, analysis: Analysis): number {
 
 /** The pieces, each its own markdown, drawn a batch at a time by
  *  `useProgressive`: what is in view first, the rest after, each batch
- *  inside a frame, so a book does not hold the page for the minute its
- *  markdown takes to parse. */
+ *  inside a frame while a person's input waits and a few frames while none
+ *  does, so a book does not hold the page for the half minute its
+ *  markdown takes to parse whole -- which it is not, either: a page's
+ *  markdown parses alone in a fifth of the time it takes in the whole. */
 function Rendered({
   docId,
   analysis,
