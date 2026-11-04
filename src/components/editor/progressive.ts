@@ -20,9 +20,18 @@ export interface Item {
  *  there in the first frame, and a document that fits whole -- most do --
  *  is drawn in one go, as if nothing were drawn a piece at a time. */
 const FIRST_MS = 50;
-/** How long each later batch may hold it: inside a frame, with room left
- *  for the browser to lay out, paint, and answer a scroll or a key. */
-const BATCH_MS = 12;
+/** How long each later batch may hold it while a person's input waits to
+ *  be answered, in ms: inside a frame, with room left for the browser to
+ *  lay out, paint, and answer the scroll or the key. */
+const BUSY_MS = 12;
+/** How long one may hold it while nothing waits: a few frames. Around each
+ *  batch's drawing the page pays about as much again -- the timer, the list
+ *  rendered anew, style and layout -- so a book drawn a frame at a time took
+ *  twice its parsing to fill, and drawn a few frames at a time takes close
+ *  to it. Nothing is waiting, so nothing is held up; an input that arrives
+ *  mid-batch waits the batch out, once, and the batches after are a
+ *  frame's for a while (`RECENT_MS`). */
+const IDLE_MS = 40;
 /** What a unit costs before any has been timed: a character of the
  *  markdown pane, parsed and committed, on a laptop. Each batch timed
  *  replaces it, so a slower machine draws smaller batches. */
@@ -32,6 +41,31 @@ const TIMED_ABOVE = 2_000;
 /** How far outside the view a waiting piece is drawn first: a screen
  *  above and below, so a scroll arrives on what is drawn. */
 const NEAR = "100% 0px";
+
+/** How long after a person's last input a batch is still sized to a frame,
+ *  in ms. Input is not only what waits when a batch starts: a wheel turned
+ *  through the fill sends a tick every few dozen ms, each landing inside
+ *  whatever batch is running and waiting it out -- a third of the frames
+ *  dropped, measured, with batches of a few frames and only the pending
+ *  check below. So a person seen at the page keeps the batches small for
+ *  a moment after, long enough for the next tick of a wheel or the next
+ *  key, and the fill goes back to its stride once they stop. */
+const RECENT_MS = 250;
+/** The events a person's input arrives as: on the scroller, its scroll,
+ *  whatever moved it -- wheel, keys, the scrollbar, the other pane --
+ *  and on the window the rest, since the panes share one page. */
+const INPUT = ["wheel", "keydown", "pointerdown", "touchmove"] as const;
+
+/** Whether a person's input is waiting to be handled -- a scroll, a key, a
+ *  click the page has not answered yet -- as Chromium says
+ *  (`navigator.scheduling.isInputPending`). A browser that cannot say is
+ *  taken to have none waiting, and relies on `RECENT_MS`. */
+function inputPending(): boolean {
+  const scheduling = (
+    navigator as { scheduling?: { isInputPending?: () => boolean } }
+  ).scheduling;
+  return scheduling?.isInputPending?.() ?? false;
+}
 
 /** Which of `items` to draw now: the ones whose placeholders are in or
  *  near `root`'s view first, then the rest in order -- within `budget`,
@@ -56,9 +90,10 @@ function take(
   return out;
 }
 
-/** Draw `items` a batch at a time, each batch inside a frame's budget, so
- *  a long document never holds the page for longer than that: what is in
- *  view first, the rest after, until all are drawn. What is not drawn yet
+/** Draw `items` a batch at a time, each batch inside a budget -- a frame's
+ *  while a person's input waits, a few frames' while none does -- so a long
+ *  document never holds the page for longer than that: what is in view
+ *  first, the rest after, until all are drawn. What is not drawn yet
  *  stands in a placeholder given `wait(key)` as its ref, which is how this
  *  knows which are in view.
  *
@@ -83,6 +118,22 @@ export function useProgressive(
   const observer = useRef<IntersectionObserver | null>(null);
   const refs = useRef(new Map<number, RefCallback<HTMLElement>>());
   const timing = useRef<{ start: number; cost: number } | null>(null);
+  /** When a person last did something to the page, by `performance.now`. */
+  const lastInput = useRef(-Infinity);
+
+  useEffect(() => {
+    const el = root.current;
+    const seen = () => {
+      lastInput.current = performance.now();
+    };
+    const opts = { passive: true, capture: true } as const;
+    el?.addEventListener("scroll", seen, opts);
+    for (const type of INPUT) window.addEventListener(type, seen, opts);
+    return () => {
+      el?.removeEventListener("scroll", seen, opts);
+      for (const type of INPUT) window.removeEventListener(type, seen, opts);
+    };
+  }, [root]);
 
   // The observer wants its root, which is set after the placeholders'
   // refs run on the first commit: those found before it are observed now.
@@ -140,7 +191,10 @@ export function useProgressive(
     // input between batches. What is near the view is asked at the last
     // moment, so a jump made meanwhile is drawn next.
     const id = setTimeout(() => {
-      const next = take(items, shown, near.current, BATCH_MS / rate.current);
+      const busy =
+        inputPending() || performance.now() - lastInput.current < RECENT_MS;
+      const budget = busy ? BUSY_MS : IDLE_MS;
+      const next = take(items, shown, near.current, budget / rate.current);
       let cost = 0;
       for (const item of items)
         if (next.has(item.key) && !shown.has(item.key)) cost += item.cost;
