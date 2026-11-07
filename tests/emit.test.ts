@@ -11,6 +11,7 @@ import {
   type Page,
   type Role,
 } from "src/lib/analysis";
+import { blankEdits, type BlockEdit, type Edits } from "src/lib/edits";
 import { emit } from "src/lib/emit";
 
 function block(id: string, text: string, role: Role = "para"): Block {
@@ -63,6 +64,11 @@ const doc: Analysis = {
   ],
 };
 
+const withEdits = (blocks: Record<string, BlockEdit>): Edits => ({
+  ...blankEdits(),
+  blocks,
+});
+
 test("each block is numbered on its page and placed on its line", () => {
   const md = emit(doc, "doc.assets/");
   expect(md.text).toBe(
@@ -80,12 +86,13 @@ test("each block is numbered on its page and placed on its line", () => {
       "",
     ].join("\n"),
   );
+  const shown = { hidden: false, deleted: false };
   expect(md.blocks).toEqual({
-    p1b0: { id: "p1b0", page: 1, n: 1, from: 1, to: 1 },
-    p1b1: { id: "p1b1", page: 1, n: 2, from: 3, to: 3 },
-    p1b2: { id: "p1b2", page: 1, n: 3, from: 4, to: 4 },
-    p2i0: { id: "p2i0", page: 2, n: 1, from: 8, to: 8 },
-    p2b0: { id: "p2b0", page: 2, n: 2, from: 10, to: 10 },
+    p1b0: { id: "p1b0", page: 1, n: 1, from: 1, to: 1, ...shown },
+    p1b1: { id: "p1b1", page: 1, n: 2, from: 3, to: 3, ...shown },
+    p1b2: { id: "p1b2", page: 1, n: 3, from: 4, to: 4, ...shown },
+    p2i0: { id: "p2i0", page: 2, n: 1, from: 8, to: 8, ...shown },
+    p2b0: { id: "p2b0", page: 2, n: 2, from: 10, to: 10, ...shown },
   });
   // A block with no words is written nowhere and numbered nowhere.
   expect(md.order).toEqual(["p1b0", "p1b1", "p1b2", "p2i0", "p2b0"]);
@@ -123,4 +130,128 @@ test("a figure's path is a destination markdown reads whole", () => {
   expect(md.text).toBe(
     "![page 1 figure 1](My%20Report%20%28v2%29.assets/p1-i0.png)\n",
   );
+});
+
+test("a hidden block is a comment on its line, numbered on with the rest", () => {
+  const md = emit(
+    doc,
+    "doc.assets/",
+    withEdits({
+      p1b0: { hidden: true },
+      p1b2: { hidden: true },
+      p1b3: { hidden: true },
+    }),
+  );
+  // A heading's comment is the heading line; a list item's is indented into
+  // the item before it, so the list goes on past it.
+  expect(md.text).toBe(
+    [
+      "<!-- # Pumps -->",
+      "",
+      "1. Grease them.",
+      "   <!-- 1. Log it. -->",
+      "",
+      "---",
+      "",
+      "![page 2 figure 1](doc.assets/p2-i0.png)",
+      "",
+      "Done.",
+      "",
+    ].join("\n"),
+  );
+  expect(md.blocks.p1b0).toEqual({
+    id: "p1b0",
+    page: 1,
+    n: 1,
+    from: 1,
+    to: 1,
+    hidden: true,
+    deleted: false,
+  });
+  expect(md.blocks.p1b1).toMatchObject({ n: 2, from: 3, hidden: false });
+  expect(md.blocks.p1b2).toMatchObject({ n: 3, from: 4, to: 4, hidden: true });
+  // Hidden by hand, not by a setting.
+  expect(md.blocks.p1b0.furniture).toBeUndefined();
+  // A hidden block with no words is written nowhere, like a shown one.
+  expect(md.blocks.p1b3).toBeUndefined();
+  expect(md.order).toEqual(["p1b0", "p1b1", "p1b2", "p2i0", "p2b0"]);
+  expect(md.lines.map((l) => l.block)).toEqual([
+    "p1b0",
+    null,
+    "p1b1",
+    "p1b2",
+    null,
+    null,
+    null,
+    "p2i0",
+    null,
+    "p2b0",
+  ]);
+});
+
+test("a deleted block is written nowhere, gives up its number, and keeps its place in the order", () => {
+  const md = emit(doc, "doc.assets/", withEdits({ p1b1: { deleted: true } }));
+  expect(md.text).toBe(
+    [
+      "# Pumps",
+      "",
+      "1. Log it.",
+      "",
+      "---",
+      "",
+      "![page 2 figure 1](doc.assets/p2-i0.png)",
+      "",
+      "Done.",
+      "",
+    ].join("\n"),
+  );
+  expect(md.blocks.p1b1).toEqual({
+    id: "p1b1",
+    page: 1,
+    n: 0,
+    from: 0,
+    to: 0,
+    hidden: false,
+    deleted: true,
+  });
+  // The blocks after it count on without it, and the list counts from 1.
+  expect(md.blocks.p1b2).toMatchObject({ n: 2, from: 3, deleted: false });
+  expect(md.order).toEqual(["p1b0", "p1b1", "p1b2", "p2i0", "p2b0"]);
+  expect(md.lines.some((l) => l.block === "p1b1")).toBe(false);
+});
+
+test("a hidden figure and heading are commented as they would be written: path encoded, closing # escaped", () => {
+  const md = emit(
+    {
+      ...doc,
+      pages: [
+        page(
+          1,
+          [block("p1b0", "Pump No. #", "heading"), block("p1i0", "", "image")],
+          1,
+        ),
+      ],
+    },
+    "My Report (v2).assets/",
+    withEdits({ p1b0: { hidden: true }, p1i0: { hidden: true } }),
+  );
+  expect(md.text).toBe(
+    [
+      "<!-- # Pump No. \\# -->",
+      "",
+      "<!-- ![page 1 figure 1](My%20Report%20%28v2%29.assets/p1-i0.png) -->",
+      "",
+    ].join("\n"),
+  );
+  expect(md.blocks.p1i0).toMatchObject({ n: 2, from: 3, hidden: true });
+});
+
+test("a hidden figure whose picture was not kept is written nowhere, like a shown one", () => {
+  const md = emit(
+    { ...doc, pages: [page(1, [block("p1i0", "", "image")], 0)] },
+    "doc.assets/",
+    withEdits({ p1i0: { hidden: true } }),
+  );
+  expect(md.text).toBe("\n");
+  expect(md.blocks).toEqual({});
 });
