@@ -543,10 +543,11 @@ export function MarkdownPane({ docId }: { docId: string }) {
         )}
       </div>
 
-      {properties && reading?.status === "ready" && (
+      {properties && reading?.status === "ready" && list && (
         <MarkdownProperties
           docId={docId}
-          text={reading.markdown.text}
+          markdown={reading.markdown}
+          pieces={list}
           onClose={() => setProperties(false)}
         />
       )}
