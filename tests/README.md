@@ -49,6 +49,9 @@ its own test names.
 `blocks.test.ts` covers the page pane's side of an edit: a deleted block
 is left out of the scroll sync's pairs and its box carries no number, and a
 hidden one is kept in both.
+`measure.test.ts` covers what the markdown's Document properties say a
+file is: its lines, its comment lines read off the text, and the GFM
+constructs found a page at a time, as the pane renders it.
 
 **The workspace.** `workspace.test.ts` covers ids, the places a document has,
 and what `parseManifest` refuses; `upload.test.ts`, the file-type policy and

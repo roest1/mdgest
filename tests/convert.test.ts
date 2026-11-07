@@ -4,7 +4,13 @@
  *
  * As in `editor.test.ts`, nothing is mocked between the page and OPFS. The
  * workspace is committed through the engine, and the browser's copy of it
- * discarded before and after each test, so each starts from nothing. */
+ * discarded before and after each test, so each starts from nothing.
+ *
+ * A reading of the one-page document takes about a second on a machine held
+ * to two cores, which is `vi.waitFor`'s whole default, so a poll for the
+ * write going out failed on every slow run. Every poll here has `WAIT`: a
+ * budget on the order of the test's own, not a guess at how long the work
+ * takes, and short of the test's so that what did not come is named. */
 
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type * as Opfs from "src/lib/opfs";
@@ -30,6 +36,10 @@ const opfs = new Client(new URL("./worker.ts", import.meta.url)).bind<
 >("opfs");
 
 const closers: (() => Promise<void>)[] = [];
+
+/** How long a poll may take: well past the work on a slow machine, short
+ *  of the test's own 15 s, so a failure says what never came. */
+const WAIT = { timeout: 10_000 };
 
 /** The browser's workspace, staged on a first look and discarded, which
  *  empties OPFS. */
@@ -114,30 +124,23 @@ test("a reading is off its pages once the last is read, before it is written dow
 
   // The write held, the way the workspace lock would hold it under another
   // tab's commit: the pages are not needed for it, and are let go before.
-  let release!: () => void;
-  const held = new Promise<void>((r) => (release = r));
-  let written = false;
-  const write = engine.convert.bind(engine);
-  const spy = vi
-    .spyOn(engine, "convert")
-    .mockImplementation(async (...args) => {
-      await held;
-      written = true;
-      return write(...args);
-    });
+  const { release, spy, written } = holdWrite();
   try {
     done = false;
     const job = convert("pumps/a", pages);
     void readDone("pumps/a").then(() => (done = true));
     await Promise.resolve();
     expect(done).toBe(false);
-    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
-    await Promise.resolve();
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled(), WAIT);
     expect(done).toBe(true);
-    expect(written).toBe(false);
+    expect(written()).toBe(0);
     release();
     expect((await job).markdown.text).toBe(MARKDOWN);
   } finally {
+    // Let go whatever a failed assertion left held, so one failure does
+    // not strand a reading of `pumps/a` for every test after it.
+    release();
+    forgetReading("pumps/a");
     spy.mockRestore();
   }
 });
@@ -160,12 +163,14 @@ test("a reading that ends before its last page is off them when it ends", async 
 });
 
 /** `engine.convert` held until `release` is called, then doing what it
- *  does -- or, the first time, throwing `cause` instead. */
+ *  does -- or, the first time, throwing `cause` instead. `written()` is
+ *  how many writes have gone through to the engine. */
 function holdWrite(cause?: Error) {
   let release!: () => void;
   const held = new Promise<void>((r) => (release = r));
   const write = engine.convert.bind(engine);
   let first = true;
+  let writes = 0;
   const spy = vi
     .spyOn(engine, "convert")
     .mockImplementation(async (...args) => {
@@ -174,9 +179,10 @@ function holdWrite(cause?: Error) {
         first = false;
         throw cause;
       }
+      writes += 1;
       return write(...args);
     });
-  return { release, spy };
+  return { release, spy, written: () => writes };
 }
 
 test("a reading given up under its write ends as given up, and is cached", async () => {
@@ -184,7 +190,7 @@ test("a reading given up under its write ends as given up, and is cached", async
   const { release, spy } = holdWrite();
   try {
     const job = convert("pumps/a", pages);
-    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled(), WAIT);
     forgetReading("pumps/a");
     release();
     await expect(job).rejects.toHaveProperty("name", CANCELED);
@@ -195,6 +201,8 @@ test("a reading given up under its write ends as given up, and is cached", async
     expect(read).toBe(0);
     expect(again.markdown.text).toBe(MARKDOWN);
   } finally {
+    release();
+    forgetReading("pumps/a");
     spy.mockRestore();
   }
 });
@@ -205,7 +213,7 @@ test("what a given-up reading ends with is not shown over the next one's", async
   const readings = useEditor.getState;
   try {
     ensureRead("pumps/a", pages);
-    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled(), WAIT);
     // The tab closed under the write, and the document opened again before
     // the write came back -- failed. That failure is the first reading's.
     forgetReading("pumps/a");
@@ -213,14 +221,16 @@ test("what a given-up reading ends with is not shown over the next one's", async
     ensureRead("pumps/a", pages);
     expect(readings().readings["pumps/a"]?.status).toBe("reading");
     release();
-    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(2), WAIT);
     expect(readings().readings["pumps/a"]?.status).not.toBe("failed");
-    await vi.waitFor(() =>
-      expect(readings().readings["pumps/a"]?.status).toBe("ready"),
+    await vi.waitFor(
+      () => expect(readings().readings["pumps/a"]?.status).toBe("ready"),
+      WAIT,
     );
   } finally {
-    spy.mockRestore();
+    release();
     forgetReading("pumps/a");
+    spy.mockRestore();
   }
 });
 

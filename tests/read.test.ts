@@ -156,15 +156,20 @@ test("images that never arrive are waited for together, not in turn", async () =
     }),
   });
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-  let read: Awaited<ReturnType<typeof readPage>> | null = null;
+  let read: Promise<Awaited<ReturnType<typeof readPage>>>;
   try {
-    void readPage(page).then((r) => (read = r));
+    read = readPage(page);
     // One wait's length: enough for all three, if they are waited for at
     // once, and for the first alone if one after another.
     await vi.advanceTimersByTimeAsync(15_000);
   } finally {
     vi.useRealTimers();
   }
-  await vi.waitFor(() => expect(read).not.toBeNull(), { timeout: 2000 });
-  expect(read!.page.pictures).toHaveLength(3);
+  // Waited for in turn, the second wait is a fake timer that never fires
+  // now, and the reading never ends: the test's own timeout says so. What
+  // is left after the waits -- the page rendered once, three fallbacks cut
+  // from it and encoded -- is three seconds on a machine held to two cores
+  // and busy besides, so it is awaited, not polled for against a clock it
+  // ran past.
+  expect((await read).page.pictures).toHaveLength(3);
 });
