@@ -36,6 +36,10 @@ its pages once the last is read rather than once it is written down, given
 up under its write without showing it or over the next reading, and read
 again when the cached analysis cannot be used.
 
+`measure.test.ts` covers what the markdown's Document properties say a
+file is: its lines, its comment lines read off the text, and the GFM
+constructs found a page at a time, as the pane renders it.
+
 **The workspace.** `workspace.test.ts` covers ids, the places a document has,
 and what `parseManifest` refuses; `upload.test.ts`, the file-type policy and
 where an exported workspace sits in a drop; `unzip.test.ts`, what an archive
