@@ -114,8 +114,18 @@ export interface Picture {
   px: [number, number];
 }
 
-export type Role =
-  "heading" | "para" | "bullet" | "numbered" | "alpha" | "roman" | "image";
+/** Every role a block can have: what `structure.ts` assigns, and what an
+ *  edit may override a block to (`edits.ts` checks against this list). */
+export const ROLES = [
+  "heading",
+  "para",
+  "bullet",
+  "numbered",
+  "alpha",
+  "roman",
+  "image",
+] as const;
+export type Role = (typeof ROLES)[number];
 
 export const LIST_ROLES: readonly Role[] = [
   "bullet",

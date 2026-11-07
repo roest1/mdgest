@@ -25,17 +25,30 @@ document cannot be made to show: a font still loading when the text is read
 is waited for, not read as regular; and a picture whose pixels pdf.js cannot
 hand over is the page under it, cut from one render in the right place.
 `emit.test.ts` covers the map beside the markdown: each block's number on
-its page and the line it went on, which the numbered boxes read.
+its page and the line it went on, which the numbered boxes read, and what
+a hidden block -- a comment, numbered -- and a deleted one -- no line, no
+number -- leave in it.
 `pieces.test.ts` reads every case the same way and holds the markdown pane
 to drawing a page at a time: the pages' markdown, rendered each on its own,
 is the same HTML as the whole rendered at once, with every element marked
-by the same block.
+by the same block -- as read, and with a block hidden and one deleted on
+every page.
 `convert.test.ts` reads a document over the real engine: off its pages
 once and kept, from the cache after, one reading for two asks at once, off
 its pages once the last is read rather than once it is written down, given
 up under its write without showing it or over the next reading, and read
 again when the cached analysis cannot be used.
 
+**Editing.** Every edit is a decision about what a person meant.
+`edits.test.ts` covers hide and delete, the numbering blocks keep or give
+up, and that a decision comes back from `edits.json` as it went in;
+`furniture.test.ts`, what counts as a page number or a running header or
+footer, and what each setting writes. What each file asserts in full is
+its own test names.
+
+`blocks.test.ts` covers the page pane's side of an edit: a deleted block
+is left out of the scroll sync's pairs and its box carries no number, and a
+hidden one is kept in both.
 `measure.test.ts` covers what the markdown's Document properties say a
 file is: its lines, its comment lines read off the text, and the GFM
 constructs found a page at a time, as the pane renders it.
@@ -84,7 +97,12 @@ counts it by; the boxes let every click through to the page; the tool bar
 turns the text's boxes, the pictures' and the numbers off and on, for the
 editor rather than the one document; and a number hangs in the margin, but
 on a block printed to the page's edge stays on the paper, as does the box. These tests load the app's stylesheet, so what is hidden is hidden and what
-scrolls scrolls. `pdf.test.ts` covers pdf.js as `pdf.ts` sets it up: one
+scrolls scrolls. `scrollsync.test.ts` covers the sync itself on two bare
+scrollers -- what leads, what follows, and what a layout's own scroll
+does -- and where the markdown pane says its blocks are: measured on a
+page laid out, where a hidden block's comment has no element, and estimated
+down the box by line on a page not yet drawn, the hidden block with the
+rest. `pdf.test.ts` covers pdf.js as `pdf.ts` sets it up: one
 worker for every document, so letting one go never refuses the next; and
 what is read out of a document besides its pages -- its properties, its
 outline and where each entry points, on a page turned any way, and what is
