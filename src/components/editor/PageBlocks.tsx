@@ -11,9 +11,10 @@ import { drawnBox } from "./blocks";
  *
  * Which boxes are drawn, and whether the numbers are, is the tool bar's.
  * A box that is off still carries its note while the numbers are on. A
- * block the markdown did not write -- a text block with no words in it --
- * has a box but no number, since there is no line of the markdown for it
- * to be the number of.
+ * block the markdown did not write -- a text block with no words in it,
+ * or one deleted by an edit -- has a box but no number, since there is no
+ * line of the markdown for it to be the number of. A hidden block is
+ * written, as a comment, and keeps its number.
  *
  * Pictures first, then text, each in reading order: where a caption is
  * printed over a picture, its note stacks above the picture's box. Drawn,
@@ -47,7 +48,8 @@ export const PageBlocks = memo(function PageBlocks({
     <div aria-hidden className="pointer-events-none absolute inset-0">
       {ordered.map((block) => {
         const boxed = block.kind === "image" ? boxes.images : boxes.text;
-        const at = indices ? placed[block.id] : undefined;
+        const written = placed[block.id];
+        const at = indices && written && !written.deleted ? written : undefined;
         if (!boxed && !at) return null;
         const box = drawnBox(block.box, scale, page);
         return (

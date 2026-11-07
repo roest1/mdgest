@@ -46,6 +46,10 @@ up, and that a decision comes back from `edits.json` as it went in;
 footer, and what each setting writes. What each file asserts in full is
 its own test names.
 
+`blocks.test.ts` covers the page pane's side of an edit: a deleted block
+is left out of the scroll sync's pairs and its box carries no number, and a
+hidden one is kept in both.
+
 **The workspace.** `workspace.test.ts` covers ids, the places a document has,
 and what `parseManifest` refuses; `upload.test.ts`, the file-type policy and
 where an exported workspace sits in a drop; `unzip.test.ts`, what an archive
