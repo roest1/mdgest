@@ -114,19 +114,20 @@ describe("emit", () => {
 });
 
 describe("hide and delete are one choice", () => {
-  test("apply stores only what is on, and the tools turn the other off", () => {
+  test("apply stores only what is on, and setting either turns the other off", () => {
     const blocks = [doc.pages[0].blocks[1]];
-    const hidden = apply(blankEdits(), blocks, () => ({
+    const hidden = apply(blankEdits(), blocks, () => ({ hidden: true }));
+    expect(hidden.blocks.p1b1).toEqual({ hidden: true });
+    // A tool that sends only its own flag, and one that turns the other off
+    // itself, store the same.
+    const deleted = apply(hidden, blocks, () => ({ deleted: true }));
+    expect(deleted.blocks.p1b1).toEqual({ deleted: true });
+    const back = apply(deleted, blocks, () => ({
       hidden: true,
       deleted: false,
     }));
-    expect(hidden.blocks.p1b1).toEqual({ hidden: true });
-    const deleted = apply(hidden, blocks, () => ({
-      deleted: true,
-      hidden: false,
-    }));
-    expect(deleted.blocks.p1b1).toEqual({ deleted: true });
-    const restored = apply(deleted, blocks, () => ({ deleted: false }));
+    expect(back.blocks.p1b1).toEqual({ hidden: true });
+    const restored = apply(back, blocks, () => ({ hidden: false }));
     expect(restored.blocks.p1b1).toBeUndefined();
   });
 });

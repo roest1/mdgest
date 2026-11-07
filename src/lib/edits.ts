@@ -7,7 +7,7 @@
  * the joins; and the undo and redo stacks. Any other key is kept as it came,
  * so a field a newer build writes survives an older build's rewrite. */
 
-import type { Block, Role } from "./analysis";
+import { ROLES, type Block, type Role } from "./analysis";
 import { CHOICES, FURNITURE, type Choice, type Furniture } from "./furniture";
 import { isRecord } from "./workspace";
 
@@ -131,16 +131,6 @@ export function parseEdits(text: string): Edits {
   return checkEdits(value, "its edits.json");
 }
 
-const ROLES = new Set<string>([
-  "heading",
-  "para",
-  "bullet",
-  "numbered",
-  "alpha",
-  "roman",
-  "image",
-]);
-
 type Problem = (detail: string) => Error;
 
 /** `blocks` as overrides the editor can use, or `problem` thrown for the
@@ -156,7 +146,10 @@ function checkBlocks(
     const bad = (field: string) =>
       problem(`gives ${id} a ${field} it cannot have`);
     const { role, level, depth, break_before, break_after } = edit;
-    if (role !== undefined && !(typeof role === "string" && ROLES.has(role)))
+    if (
+      role !== undefined &&
+      !(typeof role === "string" && (ROLES as readonly string[]).includes(role))
+    )
       throw bad("role");
     if (
       level !== undefined &&
@@ -329,20 +322,23 @@ export function shape(block: Block, edit: BlockEdit | undefined): Shaped {
   };
 }
 
-/** What a tool sets on a block, by its shaped value. Breaks are on or off
- *  here; `apply` turns that into what is stored. */
-export interface Change {
-  role?: Role;
-  level?: number;
-  depth?: number;
-  bold?: boolean;
-  italic?: boolean;
-  quote?: boolean;
-  hidden?: boolean;
-  deleted?: boolean;
+/** What a tool sets on a block, by its shaped value: `BlockEdit`'s fields
+ *  but the breaks, which are on or off here; `apply` turns that into what
+ *  is stored. */
+export type Change = Pick<
+  BlockEdit,
+  | "role"
+  | "level"
+  | "depth"
+  | "bold"
+  | "italic"
+  | "quote"
+  | "hidden"
+  | "deleted"
+> & {
   breakBefore?: boolean;
   breakAfter?: boolean;
-}
+};
 
 /** The edits with `change(block)` made to each of `blocks`, as one undo
  *  step -- or the same edits when nothing would change, so a click that
@@ -381,6 +377,11 @@ export function apply(
       if (c[key]) entry[key] = true;
       else delete entry[key];
     }
+    // Hidden and deleted are one choice: a block is a comment or gone, not
+    // both. Setting either clears the other, whatever the tool sent, so no
+    // caller has to remember to; both at once is a delete.
+    if (c.deleted) delete entry.hidden;
+    else if (c.hidden) delete entry.deleted;
     const brk = (
       on: boolean | undefined,
       key: "break_before" | "break_after",
@@ -520,7 +521,7 @@ function restore(edits: Edits, s: Step): Edits {
 function step(edits: Edits, next: Required<Step>): Edits {
   if (
     sameBlocks(edits.blocks, next.blocks) &&
-    sameJoins(edits.joins, next.joins) &&
+    shallowEqual(edits.joins, next.joins) &&
     sameCuts(edits.cuts ?? {}, next.cuts) &&
     JSON.stringify(edits.inserts ?? []) === JSON.stringify(next.inserts) &&
     FURNITURE.every((kind) => (edits[kind] ?? "keep") === next[kind])
@@ -630,20 +631,13 @@ export function redo(edits: Edits): Edits {
   };
 }
 
-/** The one shallow record equality both comparisons are. */
+/** Shallow record equality: the joins', and each block's overrides'. */
 function shallowEqual(a: object, b: object): boolean {
   const [x, y] = [a, b] as Record<string, unknown>[];
   const keys = Object.keys(x);
   return (
     keys.length === Object.keys(y).length && keys.every((k) => x[k] === y[k])
   );
-}
-
-function sameJoins(
-  a: Record<string, string>,
-  b: Record<string, string>,
-): boolean {
-  return shallowEqual(a, b);
 }
 
 function sameCuts(

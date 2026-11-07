@@ -202,6 +202,11 @@ export function emit(
     };
     for (const raw of page.blocks) {
       const block = shape(raw, edits?.blocks[raw.id]);
+      // A block with no words -- blank text, or a picture that was not
+      // kept -- is written nowhere, shown, hidden or deleted alike, and is
+      // in neither map.
+      const words = block.kind === "image" ? figure(block) : inline(block);
+      if (!words) continue;
       // Page furniture takes the document's setting, unless the block was
       // hidden or deleted by hand -- that decision stands. Looked for only
       // under a setting that is not `keep`, so a block the setting names
@@ -240,8 +245,6 @@ export function emit(
         // it back is reading any line. A list item takes its kind's first
         // marker, since a comment is not counted in the list. A page
         // number hidden by the setting is the number it prints.
-        const words = block.kind === "image" ? figure(block) : inline(block);
-        if (!words) continue;
         const said =
           printed !== null
             ? `page ${printed}`
@@ -282,31 +285,25 @@ export function emit(
       // Each block is one line of the source; `at` is that line.
       let at: number;
       if (block.kind === "image") {
-        const pic = figure(block);
-        if (pic === null) continue;
         blank(page.n);
-        at = put(pic, block.id, page.n);
+        at = put(words, block.id, page.n);
         put("", null, page.n);
         inList = false;
+      } else if (block.role === "heading") {
+        blank(page.n);
+        at = put(heading(block, words), block.id, page.n);
+        put("", null, page.n);
+        inList = false;
+      } else if (item) {
+        if (!inList) blank(page.n);
+        at = put(`${item.indent}${item.marker} ${words}`, block.id, page.n);
+        listIndent = " ".repeat(item.indent.length + item.marker.length + 1);
+        inList = true;
       } else {
-        const text = inline(block);
-        if (!text) continue;
-        if (block.role === "heading") {
-          blank(page.n);
-          at = put(heading(block, text), block.id, page.n);
-          put("", null, page.n);
-          inList = false;
-        } else if (item) {
-          if (!inList) blank(page.n);
-          at = put(`${item.indent}${item.marker} ${text}`, block.id, page.n);
-          listIndent = " ".repeat(item.indent.length + item.marker.length + 1);
-          inList = true;
-        } else {
-          blank(page.n);
-          at = put(text, block.id, page.n);
-          put("", null, page.n);
-          inList = false;
-        }
+        blank(page.n);
+        at = put(words, block.id, page.n);
+        put("", null, page.n);
+        inList = false;
       }
       n += 1;
       blocks[block.id] = {

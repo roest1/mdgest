@@ -190,7 +190,11 @@ test("a hidden block is a comment on its line, numbered on with the rest", () =>
 });
 
 test("a deleted block is written nowhere, gives up its number, and keeps its place in the order", () => {
-  const md = emit(doc, "doc.assets/", withEdits({ p1b1: { deleted: true } }));
+  const md = emit(
+    doc,
+    "doc.assets/",
+    withEdits({ p1b1: { deleted: true }, p1b3: { deleted: true } }),
+  );
   expect(md.text).toBe(
     [
       "# Pumps",
@@ -218,6 +222,8 @@ test("a deleted block is written nowhere, gives up its number, and keeps its pla
   expect(md.blocks.p1b2).toMatchObject({ n: 2, from: 3, deleted: false });
   expect(md.order).toEqual(["p1b0", "p1b1", "p1b2", "p2i0", "p2b0"]);
   expect(md.lines.some((l) => l.block === "p1b1")).toBe(false);
+  // Deleted or not, a block with no words is in neither map.
+  expect(md.blocks.p1b3).toBeUndefined();
 });
 
 test("a hidden figure and heading are commented as they would be written: path encoded, closing # escaped", () => {
