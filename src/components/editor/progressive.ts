@@ -16,6 +16,21 @@ export interface Item {
   cost: number;
 }
 
+/** Work done for an item somewhere else before it is drawn -- the markdown
+ *  pane's pages parsed in workers -- so drawing it holds the page for less.
+ *  Only the first draw does that work itself, on the page's thread, so a
+ *  document that fits in it is there at once and asks nothing of this. */
+export interface Prepare {
+  /** Whether `key` is ready to be drawn. One that is not waits its turn
+   *  in its placeholder, however near the view, until it is. */
+  ready(key: number): boolean;
+  /** Start preparing what is still to draw, in the order `order` gives
+   *  their keys -- in or near the view first, asked again each time, so it
+   *  is the order of that moment -- calling `wake` when more is ready.
+   *  Returns how to stop. */
+  ahead(order: () => Iterable<number>, wake: () => void): () => void;
+}
+
 /** How long the first draw may hold the page, in ms: whatever fits is
  *  there in the first frame, and a document that fits whole -- most do --
  *  is drawn in one go, as if nothing were drawn a piece at a time. */
@@ -69,17 +84,19 @@ function inputPending(): boolean {
 
 /** Which of `items` to draw now: the ones whose placeholders are in or
  *  near `root`'s view first, then the rest in order -- within `budget`,
- *  but always at least one. */
+ *  but always at least one of those `ready` says may be. */
 function take(
   items: readonly Item[],
   shown: ReadonlySet<number>,
   near: ReadonlySet<number>,
   budget: number,
+  ready: (key: number) => boolean = () => true,
 ): Set<number> {
   const out = new Set(shown);
   let spent = 0;
   const fits = (item: Item) => {
     if (out.has(item.key)) return true;
+    if (!ready(item.key)) return true;
     if (spent > 0 && spent + item.cost > budget) return false;
     out.add(item.key);
     spent += item.cost;
@@ -100,10 +117,15 @@ function take(
  * The budget is in ms; what it buys is learned as it goes, from how long
  * each batch took to render and commit, so the batches size themselves to
  * the machine. Keyed, so `items` may change -- the same document written
- * anew after an edit -- and what was drawn stays drawn. */
+ * anew after an edit -- and what was drawn stays drawn.
+ *
+ * Given `prepare`, a batch after the first draws only what it says is
+ * ready, and the order it is prepared in is this one's: what is near the
+ * view, then the rest. */
 export function useProgressive(
   items: readonly Item[],
   root: RefObject<HTMLElement | null>,
+  prepare?: Prepare,
 ): {
   shown: ReadonlySet<number>;
   wait: (key: number) => RefCallback<HTMLElement>;
@@ -120,6 +142,13 @@ export function useProgressive(
   const timing = useRef<{ start: number; cost: number } | null>(null);
   /** When a person last did something to the page, by `performance.now`. */
   const lastInput = useRef(-Infinity);
+  /** Counted up when `prepare` says more is ready: a batch to try again. */
+  const [woken, setWoken] = useState(0);
+  // What `order` reads when it is asked, which is between renders.
+  const current = useRef({ items, shown });
+  useLayoutEffect(() => {
+    current.current = { items, shown };
+  }, [items, shown]);
 
   useEffect(() => {
     const el = root.current;
@@ -185,6 +214,21 @@ export function useProgressive(
   }, [shown]);
 
   const filling = items.some((item) => !shown.has(item.key));
+
+  // What is still to draw, near the view first: the order it is prepared
+  // in, asked each time more can be.
+  const order = useCallback(function* () {
+    const { items, shown } = current.current;
+    for (const { key } of items)
+      if (!shown.has(key) && near.current.has(key)) yield key;
+    for (const { key } of items)
+      if (!shown.has(key) && !near.current.has(key)) yield key;
+  }, []);
+  useEffect(() => {
+    if (!filling || !prepare) return;
+    return prepare.ahead(order, () => setWoken((n) => n + 1));
+  }, [filling, prepare, order]);
+
   useEffect(() => {
     if (!filling) return;
     // A task of its own, after this frame's: the browser paints and takes
@@ -194,16 +238,24 @@ export function useProgressive(
       const busy =
         inputPending() || performance.now() - lastInput.current < RECENT_MS;
       const budget = busy ? BUSY_MS : IDLE_MS;
-      const next = take(items, shown, near.current, budget / rate.current);
+      const next = take(
+        items,
+        shown,
+        near.current,
+        budget / rate.current,
+        prepare && ((key) => prepare.ready(key)),
+      );
       let cost = 0;
       for (const item of items)
         if (next.has(item.key) && !shown.has(item.key)) cost += item.cost;
+      // Nothing ready: the next batch is when `prepare` wakes this.
+      if (next.size === shown.size) return;
       timing.current = { start: performance.now(), cost };
       // Drawn now, in this task, so the time taken is the batch's own.
       flushSync(() => setShown(next));
     });
     return () => clearTimeout(id);
-  }, [items, shown, filling]);
+  }, [items, shown, filling, prepare, woken]);
 
   return { shown, wait, filling };
 }

@@ -68,6 +68,23 @@ export default defineConfig({
         find: /^src\//,
         replacement: fileURLToPath(new URL("./src/", import.meta.url)),
       },
+      // The markdown's parser decodes `&copy;` and its like with this
+      // package, whose browser build makes an element to do it with -- at
+      // import, so a worker, which has no `document`, fails to start, and
+      // the markdown pane's parsing falls back to the page's thread. Its
+      // `"worker"` export carries the table instead, but vite resolves a
+      // worker's imports as the page's, in dev and build alike, so that
+      // build is taken everywhere: its 12 KB (gzipped) of entities is the
+      // price of one parser for both threads.
+      {
+        find: /^decode-named-character-reference$/,
+        replacement: fileURLToPath(
+          new URL(
+            "./node_modules/decode-named-character-reference/index.js",
+            import.meta.url,
+          ),
+        ),
+      },
     ],
   },
   server: {

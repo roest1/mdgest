@@ -1,3 +1,4 @@
+import type { Element as HastElement } from "hast";
 import { SquarePen } from "lucide-react";
 import {
   createElement,
@@ -7,27 +8,26 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentType,
   type CSSProperties,
   type HTMLAttributes,
+  type JSX,
 } from "react";
-import ReactMarkdown, {
-  type Components,
-  type ExtraProps,
-} from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { Spinner } from "src/components/shared/Spinner";
 import type { Analysis } from "src/lib/analysis";
 import { useAssetUrl } from "src/lib/assets";
 import type { Markdown } from "src/lib/emit";
+import { parseAhead, ready, treeOf } from "src/lib/parse";
 import { pieces, samePiece, type Piece } from "src/lib/pieces";
 import { attachSync, invalidateSync, remeasureSync } from "src/lib/scrollsync";
 import { useEditor, type Reading } from "src/lib/store";
 import { assetsPrefix } from "src/lib/workspace";
 import { barButton } from "./controls";
+import { drawTree } from "./drawTree";
 import { MarkdownProperties } from "./MarkdownProperties";
 import { MoreMenu } from "./MoreMenu";
 import { Pane } from "./Pane";
-import { useProgressive } from "./progressive";
+import { useProgressive, type Prepare } from "./progressive";
 import { markdownTops, trackSkipped } from "./tops";
 
 /** How the markdown is shown: as it reads, or as its source. */
@@ -65,6 +65,19 @@ function ViewToggle({
 }
 
 // ---- rendered -------------------------------------------------------------
+
+/** What an element's component is given besides its props: the hast
+ *  element it is drawn from, whose position says which line it starts on. */
+interface ExtraProps {
+  node?: HastElement;
+}
+
+/** Components to draw elements with, by tag. */
+type Components = {
+  [Tag in keyof JSX.IntrinsicElements]?: ComponentType<
+    JSX.IntrinsicElements[Tag] & ExtraProps
+  >;
+};
 
 /** Each figure's size as the pane shows it, by its path in the assets
  *  folder: the size it is printed, in CSS px, which is 3/4 of a point. */
@@ -141,7 +154,7 @@ function Anchor({
 /** The elements a block can be written as. */
 const BLOCKS = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li"] as const;
 
-/** react-markdown's block elements, each marked with the block that wrote
+/** The markdown's block elements, each marked with the block that wrote
  *  it: the parser records on every node the source line it starts on, and
  *  the emitter records which block wrote each line. What the scroll sync
  *  finds a block's place in this pane by. A piece is parsed alone, so its
@@ -167,24 +180,32 @@ function marked(piece: Piece): Components {
   );
 }
 
-/** One page of the markdown, parsed and drawn on its own: drawn again
- *  only when what it says changes, so an edit costs its page and not the
- *  document. */
+/** One page of the markdown, drawn on its own from its tree -- parsed in a
+ *  worker ahead of it, or here if it was not (`parse.ts`): drawn again only
+ *  when what it says changes, so an edit costs its page and not the
+ *  document. Drawn as react-markdown drew it (`drawTree`), which
+ *  `pieces.test.ts` holds it to. */
 const RenderedPiece = memo(
   function RenderedPiece({
+    docId,
     piece,
     components,
     height,
   }: {
+    docId: string;
     piece: Piece;
     components: Components;
     /** Its estimated height: what it is taken to be while off screen,
      *  until it has been laid out once. */
     height: number;
   }) {
-    const all = useMemo(
-      () => ({ ...marked(piece), ...components }),
-      [piece, components],
+    const drawn = useMemo(
+      () =>
+        drawTree(treeOf(docId, piece.text), {
+          ...marked(piece),
+          ...components,
+        }),
+      [docId, piece, components],
     );
     return (
       <div
@@ -192,17 +213,41 @@ const RenderedPiece = memo(
         data-piece={piece.page}
         style={{ containIntrinsicSize: `auto ${height}px` }}
       >
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={all}>
-          {piece.text}
-        </ReactMarkdown>
+        {drawn}
       </div>
     );
   },
   (a, b) =>
+    a.docId === b.docId &&
     a.components === b.components &&
     a.height === b.height &&
     samePiece(a.piece, b.piece),
 );
+
+/** The pages' markdown parsed ahead of the view, in workers (`parse.ts`):
+ *  a page is ready to draw once it is parsed. */
+function useParsedAhead(docId: string, list: Piece[]): Prepare {
+  return useMemo(() => {
+    const textOf = new Map(list.map((p) => [p.page, p.text]));
+    return {
+      ready: (key) => {
+        const text = textOf.get(key);
+        return text === undefined || ready(docId, text);
+      },
+      ahead: (order, wake) =>
+        parseAhead(
+          docId,
+          function* () {
+            for (const key of order()) {
+              const text = textOf.get(key);
+              if (text !== undefined) yield text;
+            }
+          },
+          wake,
+        ),
+    };
+  }, [docId, list]);
+}
 
 /** Where a page of the markdown will be, while it waits its turn to be
  *  drawn: about its height, so the scrollbar is about right, lined like
@@ -267,7 +312,9 @@ function renderedHeight(piece: Piece, analysis: Analysis): number {
  *  inside a frame while a person's input waits and a few frames while none
  *  does, so a book does not hold the page for the half minute its
  *  markdown takes to parse whole -- which it is not, either: a page's
- *  markdown parses alone in a fifth of the time it takes in the whole. */
+ *  markdown parses alone in a fifth of the time it takes in the whole.
+ *  The first batch is parsed here; the rest in workers ahead of being
+ *  drawn, each batch drawing what has been parsed. */
 function Rendered({
   docId,
   analysis,
@@ -291,7 +338,8 @@ function Rendered({
     () => list.map((p) => renderedHeight(p, analysis)),
     [list, analysis],
   );
-  const { shown, wait, filling } = useProgressive(items, scroller);
+  const prepare = useParsedAhead(docId, list);
+  const { shown, wait, filling } = useProgressive(items, scroller, prepare);
   return (
     <article
       className="markdown mx-auto max-w-[72ch] px-8 pt-6 pb-24"
@@ -301,6 +349,7 @@ function Rendered({
         shown.has(piece.page) ? (
           <RenderedPiece
             key={piece.page}
+            docId={docId}
             piece={piece}
             components={components}
             height={heights[i]}

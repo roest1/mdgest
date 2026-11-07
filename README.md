@@ -29,7 +29,7 @@ app — no CDN, no fonts or workers fetched from anywhere else.
 | ui       | `react`, `react-router`, `tailwind`, `lucide-react` icons                                |
 | state    | `zustand` — one store for what both editor panes read                                    |
 | pdf      | `pdfjs-dist` 6 - drawing pages and reading them; its worker, cmaps and fonts same-origin |
-| markdown | `react-markdown` + `remark-gfm` for the rendered view                                    |
+| markdown | `micromark` + GFM, a page at a time in workers; `hast-util-to-jsx-runtime` draws it      |
 | fonts    | Literata (serif), Geist Sans (ui), JetBrains Mono (code) - self-hosted via `@fontsource` |
 | archives | `fflate` - unzip on the way in, zip on the way out                                       |
 | storage  | the browser's origin private file system (OPFS) — the workspace never leaves it          |
