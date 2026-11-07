@@ -44,6 +44,20 @@ describe("measure", () => {
     expect(measure("<!--->\n\nafter\n").commentLines).toBe(1);
   });
 
+  test("an escaped <!-- is text, as the emitter writes one a page prints", () => {
+    expect(measure("The tag \\<!-- opens.\n\nNext.\n").commentLines).toBe(0);
+    expect(measure("a \\\\<!-- x --> b\n").commentLines).toBe(1);
+  });
+
+  test("a comment never closed is a block to the end when it opens a line, and text inside one", () => {
+    expect(measure("words <!-- never closed\nmore\nmore\n").commentLines).toBe(
+      0,
+    );
+    expect(measure("<!-- never closed\nmore\nmore\n").commentLines).toBe(3);
+    expect(measure("> <!-- never\n> more\n").commentLines).toBe(2);
+    expect(measure("- <!-- never\n  more\n").commentLines).toBe(2);
+  });
+
   test("finds GFM in whichever page holds it, as the pane renders a page", () => {
     const pages = [
       "# One\n\nplain\n",
@@ -71,10 +85,26 @@ describe("measure", () => {
     expect(measure("see (https://example.com) here\n").gfm).toEqual([
       "bare links",
     ]);
+    expect(measure("see WWW.Example.com\n").gfm).toEqual(["bare links"]);
+    // A link that never closes leaves its URL bare.
+    expect(measure("see [y](https://example.com is nice\n").gfm).toEqual([
+      "bare links",
+    ]);
+    expect(measure("see <https://example.com is nice\n").gfm).toEqual([
+      "bare links",
+    ]);
     expect(measure("| a | b |\n|---|---|\n| 1 | 2 |\n").gfm).toEqual([
       "tables",
     ]);
     expect(measure("write to a@b.co\n").gfm).toEqual(["bare links"]);
+  });
+
+  test("a table in a quote is one, and a tilde after an escaped backslash strikes", () => {
+    expect(measure("> | a | b |\n> | - | - |\n> | 1 | 2 |\n").gfm).toEqual([
+      "tables",
+    ]);
+    expect(measure("a \\\\~x\\\\~ b\n").gfm).toEqual(["strikethrough"]);
+    expect(measure("a \\~x\\~ b\n").gfm).toEqual([]);
   });
 
   test("reads what the emitter writes as CommonMark", () => {
