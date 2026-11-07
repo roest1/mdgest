@@ -168,10 +168,8 @@ test("images that never arrive are waited for together, not in turn", async () =
   // Waited for in turn, the second wait is a fake timer that never fires
   // now, and the reading never ends: the test's own timeout says so. What
   // is left after the waits -- the page rendered once, three fallbacks cut
-  // from it and encoded -- takes real time, so it is awaited, not polled
-  // for against a clock it ran past on a slow machine.
+  // from it and encoded -- is three seconds on a machine held to two cores
+  // and busy besides, so it is awaited, not polled for against a clock it
+  // ran past.
   expect((await read).page.pictures).toHaveLength(3);
-  // Three seconds on a machine held to two cores and busy besides; the
-  // default would be a near thing. A reading that waits in turn never ends
-  // and this timeout catches it, whatever its length.
-}, 15_000);
+});
