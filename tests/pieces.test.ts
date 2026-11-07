@@ -1,6 +1,8 @@
 /** The markdown drawn a page at a time is the markdown drawn whole: every
  *  reader case, read the app's way, rendered in one piece and page by page
- *  to the same HTML -- the blocks each element is marked with included. */
+ *  to the same HTML -- the blocks each element is marked with included.
+ *  As read, and again with a block hidden and one deleted on every page:
+ *  a comment indented into a list, or opening a page, parts the same way. */
 
 import { createElement, type HTMLAttributes } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -10,7 +12,9 @@ import ReactMarkdown, {
 } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { describe, expect, test } from "vitest";
-import { emit, type SourceLine } from "src/lib/emit";
+import type { Analysis } from "src/lib/analysis";
+import { blankEdits, type BlockEdit, type Edits } from "src/lib/edits";
+import { emit, type Markdown, type SourceLine } from "src/lib/emit";
 import { openPdf } from "src/lib/pdf";
 import { pieces } from "src/lib/pieces";
 import { readPage } from "src/lib/read";
@@ -58,20 +62,34 @@ const html = (text: string, lines: SourceLine[]) =>
     ),
   );
 
+/** The second block of every page hidden and the third deleted, where a
+ *  page has them. */
+function hideAndDelete(analysis: Analysis): Edits {
+  const blocks: Record<string, BlockEdit> = {};
+  for (const page of analysis.pages) {
+    const [, second, third] = page.blocks;
+    if (second) blocks[second.id] = { hidden: true };
+    if (third) blocks[third.id] = { deleted: true };
+  }
+  return { ...blankEdits(), blocks };
+}
+
+function drawsTheSame(markdown: Markdown) {
+  const parts = pieces(markdown);
+  expect(parts.map((p) => p.text).join("")).toBe(markdown.text);
+  const whole = html(markdown.text, markdown.lines);
+  // Joined by the newline the whole puts between any two of its blocks:
+  // where one page ends and the next begins, nothing else.
+  expect(parts.map((p) => html(p.text, p.lines)).join("\n")).toBe(whole);
+}
+
 for (const [group, list] of Object.entries(cases)) {
   describe(group, () => {
     for (const c of list) {
       test(c.name, async () => {
-        const markdown = emit(
-          await read(await buildPdf(c.pages)),
-          "doc.assets/",
-        );
-        const parts = pieces(markdown);
-        expect(parts.map((p) => p.text).join("")).toBe(markdown.text);
-        const whole = html(markdown.text, markdown.lines);
-        // Joined by the newline the whole puts between any two of its
-        // blocks: where one page ends and the next begins, nothing else.
-        expect(parts.map((p) => html(p.text, p.lines)).join("\n")).toBe(whole);
+        const analysis = await read(await buildPdf(c.pages));
+        drawsTheSame(emit(analysis, "doc.assets/"));
+        drawsTheSame(emit(analysis, "doc.assets/", hideAndDelete(analysis)));
       });
     }
   });

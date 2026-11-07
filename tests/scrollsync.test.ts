@@ -1,9 +1,27 @@
 /** The scroll sync on two plain scrollers, with no document behind them:
  *  what leads, what follows, and what a layout's own scroll does. With no
  *  blocks in either, the ends are the only pairs, so the panes are lined up
- *  by proportion, and where each should be is arithmetic. */
+ *  by proportion, and where each should be is arithmetic. Then where the
+ *  markdown pane says its blocks are, on a page laid out and one not. */
 
-import { afterEach, expect, test } from "vitest";
+import { createElement, type HTMLAttributes } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ReactMarkdown, {
+  type Components,
+  type ExtraProps,
+} from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { afterEach, describe, expect, test } from "vitest";
+import { markdownTops } from "src/components/editor/tops";
+import {
+  ANALYSIS_FORMAT,
+  READER,
+  type Analysis,
+  type Block,
+} from "src/lib/analysis";
+import { blankEdits } from "src/lib/edits";
+import { emit, type SourceLine } from "src/lib/emit";
+import { pieces } from "src/lib/pieces";
 import { attachSync, invalidateSync } from "src/lib/scrollsync";
 
 const DOC = "sync-test";
@@ -182,4 +200,111 @@ test("a scroll that brings in a layout of its own leads, and is not undone", asy
   await new Promise((done) => setTimeout(done, 200));
   expect(markdown.scrollTop).toBe(600);
   expect(page.scrollTop).toBeCloseTo(y * 0.8, -1);
+});
+
+describe("where the markdown pane's blocks are", () => {
+  const text = (id: string, page: number, words: string): Block => ({
+    id,
+    kind: "text",
+    page,
+    box: { x: 0, y: 0, w: 100, h: 10 },
+    lines: [],
+    text: words,
+    role: "para",
+    level: 0,
+    depth: 0,
+    bold: false,
+    italic: false,
+    marker: "",
+    size: 10,
+    font: "Body",
+    picture: -1,
+  });
+  /** Two pages of three paragraphs. */
+  const doc: Analysis = {
+    format: ANALYSIS_FORMAT,
+    reader: READER,
+    bodySize: 10,
+    pages: [1, 2].map((n) => ({
+      n,
+      width: 600,
+      height: 800,
+      lines: [],
+      pictures: [],
+      blocks: [0, 1, 2].map((i) =>
+        text(`p${n}b${i}`, n, `Page ${n}, block ${i}.`),
+      ),
+    })),
+  };
+
+  /** One piece as the pane's rendered view draws it: react-markdown's
+   *  block elements, each marked with the block that wrote its line. */
+  function rendered(piece: { text: string; lines: SourceLine[] }): string {
+    const components: Components = Object.fromEntries(
+      ["p", "h1", "h2", "li"].map((tag) => [
+        tag,
+        ({ node, ...props }: HTMLAttributes<HTMLElement> & ExtraProps) =>
+          createElement(tag, {
+            ...props,
+            "data-block":
+              piece.lines[(node?.position?.start.line ?? 0) - 1]?.block ??
+              undefined,
+          }),
+      ]),
+    );
+    return renderToStaticMarkup(
+      createElement(
+        ReactMarkdown,
+        { remarkPlugins: [remarkGfm], components },
+        piece.text,
+      ),
+    );
+  }
+
+  test("a hidden block has no element on a page laid out, and is estimated by its line on one that is not", () => {
+    const md = emit(doc, "a/", {
+      ...blankEdits(),
+      blocks: { p1b1: { hidden: true }, p2b1: { hidden: true } },
+    });
+    const [one, two] = pieces(md);
+    const el = scroller(0);
+    el.replaceChildren();
+    const laid = document.createElement("div");
+    laid.dataset.piece = "1";
+    laid.innerHTML = rendered(one);
+    const wait = document.createElement("div");
+    wait.dataset.wait = "2";
+    wait.style.height = "300px";
+    el.append(laid, wait);
+    els = [el];
+    const tops = markdownTops(
+      el,
+      new Map([
+        [1, one],
+        [2, two],
+      ]),
+      new WeakSet(),
+    );
+    const top = (node: Element) =>
+      node.getBoundingClientRect().top - el.getBoundingClientRect().top;
+    // Page 1 is laid out: each block is where its element is. The hidden
+    // one is a comment, which renders no element, so it has no top: the
+    // sync interpolates across it between its neighbors, which pair.
+    expect(el.querySelector('[data-block="p1b1"]')).toBeNull();
+    expect(tops.has("p1b1")).toBe(false);
+    for (const id of ["p1b0", "p1b2"])
+      expect(tops.get(id)).toBe(top(el.querySelector(`[data-block="${id}"]`)!));
+    // Page 2 waits to be drawn: every block is put down its box by the
+    // line it was written on, the hidden one's comment line with the rest.
+    const line = (id: string) => two.lines.findIndex((l) => l.block === id);
+    for (const id of ["p2b0", "p2b1", "p2b2"]) {
+      expect(line(id)).toBeGreaterThan(0);
+      expect(tops.get(id)).toBeCloseTo(
+        top(wait) + (line(id) / two.lines.length) * 300,
+        5,
+      );
+    }
+    expect(tops.get("p2b0")!).toBeLessThan(tops.get("p2b1")!);
+    expect(tops.get("p2b1")!).toBeLessThan(tops.get("p2b2")!);
+  });
 });
