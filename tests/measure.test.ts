@@ -40,6 +40,8 @@ describe("measure", () => {
     expect(measure("<!-- a --> and <!-- b -->\nplain\n").commentLines).toBe(1);
     expect(measure("a\n<!-- open\nb\nc\n").commentLines).toBe(3);
     expect(measure("<!---->").commentLines).toBe(1);
+    expect(measure("<!-->\n\nafter\n").commentLines).toBe(1);
+    expect(measure("<!--->\n\nafter\n").commentLines).toBe(1);
   });
 
   test("finds GFM in whichever page holds it, as the pane renders a page", () => {
@@ -66,6 +68,9 @@ describe("measure", () => {
       measure("[site](https://example.com) and <https://example.com>\n").gfm,
     ).toEqual([]);
     expect(measure("see https://example.com\n").gfm).toEqual(["bare links"]);
+    expect(measure("see (https://example.com) here\n").gfm).toEqual([
+      "bare links",
+    ]);
     expect(measure("| a | b |\n|---|---|\n| 1 | 2 |\n").gfm).toEqual([
       "tables",
     ]);

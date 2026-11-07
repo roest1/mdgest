@@ -65,18 +65,19 @@ function gfmName(node: Node, text: string): string | null {
 }
 
 /** What a GFM construct cannot be written without, each as it would stand
- *  in the source and not escaped: a table's delimiter row, a `~`, a `[^`,
- *  a `[ ]` or `[x]`, a URL that no `(` or `<` makes a CommonMark link of,
- *  or an address. The emitter escapes `~`, `[` and `<` in what a page
- *  prints and writes a link as `[text](url)`, so its own pages pass; what
- *  a person typed is parsed to be sure. Wider than the constructs, never
- *  narrower: the parser decides, this only says where to ask it. */
+ *  in the source and not escaped: a table's delimiter row (which needs a
+ *  pipe: with none it is a setext underline), a `~`, a `[^`, a `[ ]` or
+ *  `[x]`, a URL that is not a link's destination after `](` or an autolink
+ *  in `<>`, or an address. The emitter escapes `~`, `[` and `<` in what a
+ *  page prints and writes a link as `[text](url)`, so its own pages pass;
+ *  what a person typed is parsed to be sure. Wider than the constructs,
+ *  never narrower: the parser decides, this only says where to ask it. */
 const MAY_HOLD_GFM = [
   /^(?=[^\n]*\|)(?=[^\n]*-)[ \t|:-]+$/m,
   /(?:^|[^\\])~/,
   /(?:^|[^\\])\[\^/,
   /(?:^|[^\\])\[[ xX]\]/,
-  /(?<![(<])(?:https?:\/\/|www\.)/,
+  /(?<!\]\(|<)(?:https?:\/\/|www\.)/,
   /\S@\S+\.\S/,
 ];
 
@@ -120,7 +121,8 @@ function commentLines(text: string): number {
     if (open < 0) return count;
     advance(open);
     const first = line;
-    const close = text.indexOf("-->", open + 4);
+    // From two in, so `<!-->` and `<!--->` close as CommonMark says they do.
+    const close = text.indexOf("-->", open + 2);
     const end = close < 0 ? text.length : close + 3;
     advance(end - 1);
     count += line - Math.max(first, counted + 1) + 1;
