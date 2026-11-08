@@ -32,7 +32,14 @@ number -- leave in it.
 to drawing a page at a time: the pages' markdown, rendered each on its own,
 is the same HTML as the whole rendered at once, with every element marked
 by the same block -- as read, and with a block hidden and one deleted on
-every page.
+every page. And each page drawn the pane's way, from the tree `toHast`
+parses it to, is the HTML react-markdown draws it as: on every case, and on
+markdown a person can write and the reader never does -- HTML, unsafe
+links, the rest of GFM. `hast.test.ts` covers that tree: its URL check
+answers as react-markdown's, it keeps no more of its positions than the
+pane reads, and it is parsed in a worker as the app builds one, to the
+same tree, the pages wanted first parsed first, and kept for nothing once
+its document is let go of.
 `convert.test.ts` reads a document over the real engine: off its pages
 once and kept, from the cache after, one reading for two asks at once, off
 its pages once the last is read rather than once it is written down, given

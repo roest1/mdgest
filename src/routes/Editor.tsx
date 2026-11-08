@@ -26,6 +26,7 @@ import { TABS } from "src/components/editor/transitions";
 import { Slide } from "src/components/shared/Slide";
 import { releaseAllAssets, releaseAssets } from "src/lib/assets";
 import { forgetReading } from "src/lib/convert";
+import { releaseAllParsed, releaseParsed } from "src/lib/parse";
 import { engine } from "src/lib/engine";
 import { useEditor } from "src/lib/store";
 import { messageOf } from "src/lib/words";
@@ -170,6 +171,7 @@ export default function Editor() {
   useEffect(
     () => () => {
       releaseAllAssets();
+      releaseAllParsed();
       for (const id of Object.keys(useEditor.getState().readings))
         forgetReading(id);
     },
@@ -207,6 +209,7 @@ export default function Editor() {
     for (const doc of wasOpen.current) {
       if (openDocs.includes(doc)) continue;
       releaseAssets(doc);
+      releaseParsed(doc);
       forgetReading(doc);
     }
     wasOpen.current = openDocs;
