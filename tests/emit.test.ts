@@ -13,6 +13,7 @@ import {
 } from "src/lib/analysis";
 import { blankEdits, type BlockEdit, type Edits } from "src/lib/edits";
 import { emit } from "src/lib/emit";
+import { measure } from "src/lib/measure";
 
 function block(id: string, text: string, role: Role = "para"): Block {
   return {
@@ -187,6 +188,38 @@ test("a hidden block is a comment on its line, numbered on with the rest", () =>
     null,
     "p2b0",
   ]);
+});
+
+test("every hidden block is one comment line, as the document properties count them", () => {
+  const tricky: Analysis = {
+    ...doc,
+    pages: [
+      ...doc.pages,
+      page(3, [
+        block("p3b0", "Flow --> out, then <!-- back"),
+        block("p3b1", "<!-- typed at the start of a line, and shown."),
+        block("p3b2", "After."),
+      ]),
+    ],
+  };
+  // A <!-- the page prints is escaped: left as typed at a line's start, it
+  // would open a comment that runs to the end of the file.
+  const none = emit(tricky, "doc.assets/");
+  expect(measure(none.text).commentLines).toBe(0);
+  // A heading, a list item indented into the one before, a figure, and a
+  // paragraph whose own --> would end its comment early if left as typed.
+  const hidden = ["p1b0", "p1b2", "p2i0", "p3b0"];
+  const md = emit(
+    tricky,
+    "doc.assets/",
+    withEdits(Object.fromEntries(hidden.map((id) => [id, { hidden: true }]))),
+  );
+  expect(measure(md.text).commentLines).toBe(hidden.length);
+  // And the lines counted are the hidden blocks' own.
+  const counted = md.text
+    .split("\n")
+    .flatMap((line, i) => (measure(line).commentLines ? [i + 1] : []));
+  expect(counted).toEqual(hidden.map((id) => md.blocks[id].from));
 });
 
 test("a deleted block is written nowhere, gives up its number, and keeps its place in the order", () => {
