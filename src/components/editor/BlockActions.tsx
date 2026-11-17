@@ -16,6 +16,10 @@ import { useEditor } from "src/lib/store";
  *  and on the page, lit as a row in the source. */
 const SELECTED = ".selection[data-block], [data-block][data-selected]";
 
+/** How far past the block's corner, up and to the right, `corner` hangs
+ *  the buttons, in px: clear of most of its first line. */
+export const OUT = 8;
+
 /** The hide and delete buttons of the selection, on the selected block
  *  under the pointer, in one pane's scroller: the page's, or the
  *  markdown's in either view. They act on the whole selection, whichever
@@ -27,8 +31,8 @@ const SELECTED = ".selection[data-block], [data-block][data-selected]";
  * scroller's content, so it scrolls with the block it is on, and drawn last
  * in it: the scroll sync reads the scroller's first child as its content.
  *
- * `corner` hangs it on the block's top-right corner, across from its note,
- * `reach` px out to sit on the ring, each button labeled; `line` sets it at
+ * `corner` hangs it off the block's top-right corner, across from its
+ * note, `OUT` px past the ring `reach` px out, each button labeled; `line` sets it at
  * the right end of the row, in it -- a source line, which is a row tall --
  * as icons alone, each saying what it does in its tip. */
 export function BlockActions({
@@ -71,7 +75,8 @@ export function BlockActions({
 
   // Where it goes, measured once the block is laid out and lit -- after an
   // edit too, which can take the block out of the view or redraw it -- and
-  // on every scroll, since a page laid out above it can move it. Written
+  // on every scroll and every change in the content's size, since what is
+  // laid out above it can move it. Written
   // to the element, not kept as state: it is the DOM's, read off the DOM.
   const box = useRef<HTMLDivElement>(null);
   const id = hovered?.dataset.block;
@@ -101,7 +106,7 @@ export function BlockActions({
       const y = at.top - frame.top - el.clientTop + el.scrollTop;
       const [left, top] =
         placement === "corner"
-          ? [x + reach, y - reach]
+          ? [x + reach + OUT, y - reach - OUT]
           : [x - 8, y + at.height / 2];
       me.style.left = `${left}px`;
       me.style.top = `${top}px`;
@@ -114,8 +119,13 @@ export function BlockActions({
       frame = requestAnimationFrame(place);
     };
     el.addEventListener("scroll", again);
+    // And whenever what it scrolls changes size: a figure that loads above
+    // the block, or a page drawn in, moves the block without a render here.
+    const resized = new ResizeObserver(again);
+    if (el.firstElementChild) resized.observe(el.firstElementChild);
     return () => {
       el.removeEventListener("scroll", again);
+      resized.disconnect();
       cancelAnimationFrame(frame);
     };
   });

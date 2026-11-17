@@ -15,6 +15,7 @@ import { RouterProvider, createMemoryRouter } from "react-router";
 import { commitEdits, saved } from "src/lib/editing";
 import { engine } from "src/lib/engine";
 import { useEditor, type Reading } from "src/lib/store";
+import { OUT } from "src/components/editor/BlockActions";
 import { inView, layout } from "src/components/editor/column";
 import Editor from "src/routes/Editor";
 // The app's own layout: which panes are hidden, and what scrolls.
@@ -1421,7 +1422,7 @@ const placedOf = (id: string) =>
 test("the selection's buttons hang on the selected block under the pointer, in either pane and view, and act on all of it", async () => {
   const { title, para } = await openedToEdit();
   // On the page, as soon as it is picked -- the pointer is already on it --
-  // at the box's top-right corner, across from its note.
+  // off the box's top-right corner, across from its note, `OUT` past it.
   await userEvent.click(boxOf(para.id));
   await expect.poll(offered).toEqual(["Hide", "Delete"]);
   // Labeled, so no tip saying it again.
@@ -1429,8 +1430,8 @@ test("the selection's buttons hang on the selected block under the pointer, in e
   pointAt(boxOf(para.id));
   const box = boxOf(para.id).getBoundingClientRect();
   let bar = actions()!.getBoundingClientRect();
-  expect(bar.right).toBeCloseTo(box.right, 0);
-  expect((bar.top + bar.bottom) / 2).toBeCloseTo(box.top, 0);
+  expect(bar.right).toBeCloseTo(box.right + OUT, 0);
+  expect((bar.top + bar.bottom) / 2).toBeCloseTo(box.top - OUT, 0);
   // Not on a block that is not selected.
   // The real pointer, which a dispatched event would not move: what is
   // under it is heard again as the buttons come and go.
@@ -1444,8 +1445,22 @@ test("the selection's buttons hang on the selected block under the pointer, in e
   await expect.poll(offered).toEqual(["Hide 2", "Delete 2"]);
   const lit = writtenBy(para.id).getBoundingClientRect();
   bar = actions()!.getBoundingClientRect();
-  // Out on the ring, its 4px reach past the element.
-  expect(bar.right).toBeCloseTo(lit.right + 4, 0);
+  // Off the ring, its 4px reach past the element, and `OUT` past that --
+  // once the layout settles: the figure above loads and moves it.
+  const middle = () => {
+    const at = actions()!.getBoundingClientRect();
+    return (at.top + at.bottom) / 2;
+  };
+  const ringTop = () => writtenBy(para.id).getBoundingClientRect().top - 4;
+  expect(bar.right).toBeCloseTo(lit.right + 4 + OUT, 0);
+  await expect.poll(() => middle() - (ringTop() - OUT)).toBeCloseTo(0, 0);
+  // And it follows the block when the layout moves it with nothing drawn
+  // again: here, room made above it by hand.
+  const before = ringTop();
+  writtenBy(title).style.paddingTop = "40px";
+  await expect.poll(ringTop).toBeGreaterThan(before + 30);
+  await expect.poll(() => middle() - (ringTop() - OUT)).toBeCloseTo(0, 0);
+  writtenBy(title).style.paddingTop = "";
   await page.getByRole("button", { name: "Hide 2" }).click();
   await expect.poll(() => placedOf(title)?.hidden).toBe(true);
   expect(placedOf(para.id)?.hidden).toBe(true);
