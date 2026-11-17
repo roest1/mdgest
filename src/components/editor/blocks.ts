@@ -96,3 +96,12 @@ function touches(a: Box, b: Box): boolean {
     a.x <= b.x + b.w && b.x <= a.x + a.w && a.y <= b.y + b.h && b.y <= a.y + a.h
   );
 }
+
+/** How far past a block's corner the selection's buttons hang
+ *  (`BlockActions`), in px, to the right and up: clear of most of its
+ *  first line. Further out on the page, whose boxes sit tight on small
+ *  text, than in the rendered view. */
+export const ACTIONS_OUT = {
+  markdown: { x: 8, y: 8 },
+  page: { x: 24, y: 12 },
+} as const;
