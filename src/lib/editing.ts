@@ -9,7 +9,7 @@
  * written next. Nothing between the first and the last of the run needs to
  * be on disk, and the last is what is. */
 
-import type { Edits } from "./edits";
+import { redo, revertToOriginal, undo, type Edits } from "./edits";
 import { emit } from "./emit";
 import { engine } from "./engine";
 import { actionsFor, hiding } from "./hiding";
@@ -59,6 +59,20 @@ export function actOnSelection(button: "hide" | "del"): void {
     selection.docId,
     hiding(selection.ids, reading.analysis, placed, offered.action),
   );
+}
+
+/** Take back `docId`'s last step, make again the one last taken back, or
+ *  take every decision back to the reader's as one step -- each nothing
+ *  when there is nothing to do. Undo and redo reach as far as the history
+ *  kept in `edits.json`, so past a reload too. */
+export function undoEdit(docId: string): void {
+  commitEdits(docId, undo);
+}
+export function redoEdit(docId: string): void {
+  commitEdits(docId, redo);
+}
+export function revertEdits(docId: string): void {
+  commitEdits(docId, revertToOriginal);
 }
 
 /** Settled once every edit of `docId` made so far has been written, or has

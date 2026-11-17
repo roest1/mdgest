@@ -631,6 +631,22 @@ export function redo(edits: Edits): Edits {
   };
 }
 
+/** Every decision taken back, so the document is as the reader wrote it,
+ *  as one step undo takes back: the history is kept, and so are `done`
+ *  and any field this build does not know. The same edits when nothing is
+ *  decided, so `revertToOriginal(e) === e` is whether there is anything
+ *  to revert. */
+export function revertToOriginal(edits: Edits): Edits {
+  return step(edits, {
+    blocks: {},
+    joins: {},
+    cuts: {},
+    inserts: [],
+    page_numbers: "keep",
+    headers_footers: "keep",
+  });
+}
+
 /** Shallow record equality: the joins', and each block's overrides'. */
 function shallowEqual(a: object, b: object): boolean {
   const [x, y] = [a, b] as Record<string, unknown>[];

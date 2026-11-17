@@ -58,5 +58,6 @@ for what it shows:
   takes the number and an inner memo the lines: 42ms to 33ms for a delete,
   353ms to 225ms in dev. Writing the number to the DOM from an effect
   measured the same, so the React way won.
-- **Add a scenario with the feature.** Undo, redo, and every edit after them
-  get a row here, early and mid book, in both views.
+- **Add a scenario with the feature.** Every edit gets a row here, early and
+  mid book, in both views, with what takes it back: undo, redo and revert
+  have theirs.
