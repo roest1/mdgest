@@ -12,6 +12,7 @@ import { page, userEvent } from "vitest/browser";
 import { createRoot, type Root } from "react-dom/client";
 import { createElement } from "react";
 import { RouterProvider, createMemoryRouter } from "react-router";
+import { commitEdits, saved } from "src/lib/editing";
 import { engine } from "src/lib/engine";
 import { useEditor, type Reading } from "src/lib/store";
 import { inView, layout } from "src/components/editor/column";
@@ -704,6 +705,41 @@ test("closing a document's tab lets go of its reading", async () => {
   await expect.poll(tabs).toEqual([]);
   // Once the tab's panes are gone, which is after the tab is.
   await expect.poll(() => useEditor.getState().readings["a"]).toBeUndefined();
+});
+
+test("an edit shows in the markdown at once, and is there when the document is opened again", async () => {
+  await workspace(await written());
+  mount("/edit/a");
+  const heading = page.getByRole("heading", { name: "Pump Care" });
+  await expect.element(heading, { timeout: 15_000 }).toBeVisible();
+  const { markdown } = await ready();
+  const id = markdown.order.find((b) => markdown.blocks[b].n === 1)!;
+  commitEdits("a", (edits) => ({
+    ...edits,
+    blocks: { ...edits.blocks, [id]: { hidden: true } },
+  }));
+  // Out of the rendered view, a comment in the source.
+  await expect.element(heading).not.toBeInTheDocument();
+  await page.getByRole("radio", { name: "raw" }).click();
+  await expect.poll(sourceLines).toContain("<!-- # Pump Care -->");
+  await saved("a");
+
+  // Closed, and opened again from the workspace: the edit is kept.
+  await page.getByRole("button", { name: "Close a" }).click();
+  await expect.poll(() => useEditor.getState().readings["a"]).toBeUndefined();
+  root!.unmount();
+  host!.remove();
+  mount("/edit/a");
+  await expect
+    .poll(() => readingOf()?.status, { timeout: 15_000 })
+    .toBe("ready");
+  // Rendered, with the rest of the page and without the heading.
+  await expect
+    .element(page.getByRole("link", { name: prose(1)[0] }))
+    .toBeVisible();
+  expect(document.querySelector(".markdown h1")).toBeNull();
+  await page.getByRole("radio", { name: "raw" }).click();
+  await expect.poll(sourceLines).toContain("<!-- # Pump Care -->");
 });
 
 test("a document of the same name in the next workspace is read afresh", async () => {

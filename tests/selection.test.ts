@@ -10,6 +10,7 @@ import {
   type Modifiers,
   type Selection,
 } from "src/lib/selection";
+import { blankEdits } from "src/lib/edits";
 import { useEditor } from "src/lib/store";
 
 /** Two pages of three blocks each, the middle one of page 1 deleted. */
@@ -148,10 +149,11 @@ describe("the store", () => {
   const ready = {
     status: "ready" as const,
     analysis: { pages: [] } as never,
+    edits: blankEdits(),
     markdown: { text: "", lines: [], blocks, order },
   };
 
-  test("picks through the reading's order, and lets go when the reading is set anew or forgotten", () => {
+  test("picks through the reading's order, keeps it through an edit, and lets go when read again or forgotten", () => {
     const { setReading, pick } = useEditor.getState();
     setReading("a", ready);
     pick("a", "p1b0", PLAIN, "page");
@@ -163,7 +165,11 @@ describe("the store", () => {
     // Another document's reading leaves it be.
     setReading("b", ready);
     expect(useEditor.getState().selection?.docId).toBe("a");
-    setReading("a", { ...ready });
+    // An edit: the same analysis, other edits and markdown.
+    setReading("a", { ...ready, edits: blankEdits() });
+    expect(useEditor.getState().selection?.ids).toHaveLength(3);
+    // Read again: another analysis, whose ids these may not be.
+    setReading("a", { ...ready, analysis: { pages: [] } as never });
     expect(useEditor.getState().selection).toBeNull();
     pick("a", "p1b0", PLAIN, "page");
     setReading("a", undefined);

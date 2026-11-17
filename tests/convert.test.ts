@@ -14,7 +14,7 @@
 
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type * as Opfs from "src/lib/opfs";
-import { READER } from "src/lib/analysis";
+import { READER, type Analysis } from "src/lib/analysis";
 import {
   CANCELED,
   convert,
@@ -22,10 +22,12 @@ import {
   forgetReading,
   readDone,
 } from "src/lib/convert";
+import { blankEdits, type Edits } from "src/lib/edits";
+import { emit } from "src/lib/emit";
 import { engine } from "src/lib/engine";
 import { openPdf, type PDFPageProxy } from "src/lib/pdf";
 import { useEditor } from "src/lib/store";
-import { cacheDir } from "src/lib/workspace";
+import { assetsPrefix, cacheDir, markdownPath } from "src/lib/workspace";
 import { buildPdf } from "./fixtures/pdf";
 import { prose, TOP, X } from "./cases/text";
 import { Client } from "./harness";
@@ -257,4 +259,92 @@ test("an analysis an older reader made is read again", async () => {
   expect(read).toBe(1);
   expect(again.analysis.reader).toBe(READER);
   expect((await engine.analysis("pumps/a"))?.reader).toBe(READER);
+});
+
+// ---- edits ----------------------------------------------------------------
+
+/** `analysis`'s first text block hidden: edits a person might make. */
+function hiding(analysis: Analysis): Edits {
+  const id = analysis.pages[0].blocks.find((b) => b.kind === "text")!.id;
+  return { ...blankEdits(), blocks: { [id]: { hidden: true } } };
+}
+const HIDDEN = `<!-- ${prose(1)[0]} -->`;
+
+test("edits are kept beside the read, and the next reading comes with them", async () => {
+  const pages = await committed();
+  const first = await convert("pumps/a", pages);
+  expect(first.edits).toEqual(blankEdits());
+  expect(await engine.edits("pumps/a")).toBeNull();
+
+  const edits = hiding(first.analysis);
+  const markdown = emit(first.analysis, assetsPrefix("pumps/a"), edits).text;
+  await engine.saveEdits("pumps/a", edits, markdown);
+  expect(await engine.edits("pumps/a")).toEqual(edits);
+  expect(await opfs("readText", markdownPath("pumps/a"))).toBe(markdown);
+
+  const again = await convert("pumps/a", pages);
+  expect(again.edits).toEqual(edits);
+  expect(again.markdown.text).toBe(markdown);
+  expect(again.markdown.text).toContain(HIDDEN);
+});
+
+test("a document read again keeps its edits, and writes its markdown with them", async () => {
+  const pages = await committed();
+  const first = await convert("pumps/a", pages);
+  const edits = hiding(first.analysis);
+  await engine.saveEdits(
+    "pumps/a",
+    edits,
+    emit(first.analysis, assetsPrefix("pumps/a"), edits).text,
+  );
+  // An analysis that cannot be used is read again, edits and all.
+  await opfs("writeText", [...cacheDir("pumps/a"), "analysis.json"], "{");
+  let read = 0;
+  const again = await convert("pumps/a", pages, () => read++);
+  expect(read).toBe(1);
+  expect(again.edits).toEqual(edits);
+  expect(await opfs("readText", markdownPath("pumps/a"))).toContain(HIDDEN);
+});
+
+test("an analysis an older reader made is kept, not read again, while there are edits on it", async () => {
+  const pages = await committed();
+  const first = await convert("pumps/a", pages);
+  const edits = hiding(first.analysis);
+  await engine.saveEdits(
+    "pumps/a",
+    edits,
+    emit(first.analysis, assetsPrefix("pumps/a"), edits).text,
+  );
+  const older = { ...first.analysis, reader: READER - 1 };
+  await opfs(
+    "writeText",
+    [...cacheDir("pumps/a"), "analysis.json"],
+    JSON.stringify(older),
+  );
+  let read = 0;
+  const again = await convert("pumps/a", pages, () => read++);
+  expect(read).toBe(0);
+  expect(again.analysis.reader).toBe(READER - 1);
+  expect(again.markdown.text).toContain(HIDDEN);
+});
+
+test("an edits.json that does not read fails the reading with what is wrong with it", async () => {
+  const pages = await committed();
+  await convert("pumps/a", pages);
+  await opfs("writeText", [...cacheDir("pumps/a"), "edits.json"], "{");
+  await expect(convert("pumps/a", pages)).rejects.toThrow(
+    "its edits.json is not valid JSON.",
+  );
+  // And the file is left as it was, for a person to see to.
+  expect(await opfs("readText", [...cacheDir("pumps/a"), "edits.json"])).toBe(
+    "{",
+  );
+});
+
+test("edits are refused for a document not read yet", async () => {
+  await committed();
+  await expect(
+    engine.saveEdits("pumps/a", blankEdits(), "text\n"),
+  ).rejects.toThrow("pumps/a has not been read, so there is nothing to edit.");
+  expect(await engine.edits("pumps/a")).toBeNull();
 });
