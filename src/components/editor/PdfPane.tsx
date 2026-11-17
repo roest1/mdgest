@@ -32,7 +32,7 @@ import {
 import { human, messageOf } from "src/lib/words";
 import { sourcePath } from "src/lib/workspace";
 import { iconButton } from "./controls";
-import { pageTops, swept } from "./blocks";
+import { ACTIONS_OUT, pageTops, swept } from "./blocks";
 import { GAP, inView, layout, PAD, rowLeft, type Row } from "./column";
 import { MoreMenu } from "./MoreMenu";
 import { BlockActions } from "./BlockActions";
@@ -802,6 +802,7 @@ export function PdfPane({ docId }: { docId: string }) {
               docId={docId}
               scroller={scroller}
               placement="corner"
+              out={ACTIONS_OUT.page}
             />
           )}
           {marquee && (

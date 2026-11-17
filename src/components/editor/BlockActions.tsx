@@ -10,15 +10,12 @@ import {
 import { Eye, EyeOff, RotateCcw, Trash2 } from "lucide-react";
 import { actOnSelection } from "src/lib/editing";
 import { actionsFor } from "src/lib/hiding";
+import { ACTIONS_OUT } from "./blocks";
 import { useEditor } from "src/lib/store";
 
 /** A selected block as each surface marks it: ringed in the rendered view
  *  and on the page, lit as a row in the source. */
 const SELECTED = ".selection[data-block], [data-block][data-selected]";
-
-/** How far past the block's corner, up and to the right, `corner` hangs
- *  the buttons, in px: clear of most of its first line. */
-export const OUT = 8;
 
 /** The hide and delete buttons of the selection, on the selected block
  *  under the pointer, in one pane's scroller: the page's, or the
@@ -32,7 +29,7 @@ export const OUT = 8;
  * in it: the scroll sync reads the scroller's first child as its content.
  *
  * `corner` hangs it off the block's top-right corner, across from its
- * note, `OUT` px past the ring `reach` px out, each button labeled; `line` sets it at
+ * note, `out` past the ring `reach` px out, each button labeled; `line` sets it at
  * the right end of the row, in it -- a source line, which is a row tall --
  * as icons alone, each saying what it does in its tip. */
 export function BlockActions({
@@ -40,11 +37,13 @@ export function BlockActions({
   scroller,
   placement,
   reach = 0,
+  out = ACTIONS_OUT.markdown,
 }: {
   docId: string;
   scroller: RefObject<HTMLElement | null>;
   placement: "corner" | "line";
   reach?: number;
+  out?: { x: number; y: number };
 }) {
   // The block the pointer is on: the innermost one under it -- a list
   // item's paragraph is the item's. Kept whether or not it is selected, so
@@ -106,7 +105,7 @@ export function BlockActions({
       const y = at.top - frame.top - el.clientTop + el.scrollTop;
       const [left, top] =
         placement === "corner"
-          ? [x + reach + OUT, y - reach - OUT]
+          ? [x + reach + out.x, y - reach - out.y]
           : [x - 8, y + at.height / 2];
       me.style.left = `${left}px`;
       me.style.top = `${top}px`;
