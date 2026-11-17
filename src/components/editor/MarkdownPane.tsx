@@ -1,8 +1,10 @@
 import type { Element as HastElement } from "hast";
 import { SquarePen } from "lucide-react";
 import {
+  createContext,
   createElement,
   memo,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -16,10 +18,11 @@ import {
 import { Spinner } from "src/components/shared/Spinner";
 import type { Analysis } from "src/lib/analysis";
 import { useAssetUrl } from "src/lib/assets";
-import type { Markdown } from "src/lib/emit";
+import type { Markdown, Placed } from "src/lib/emit";
 import { parseAhead, ready, treeOf } from "src/lib/parse";
 import { pieces, samePiece, type Piece } from "src/lib/pieces";
 import { attachSync, invalidateSync, remeasureSync } from "src/lib/scrollsync";
+import { modifiers, offBlocks } from "src/lib/selection";
 import { useEditor, type Reading } from "src/lib/store";
 import { assetsPrefix } from "src/lib/workspace";
 import { barButton } from "./controls";
@@ -29,6 +32,9 @@ import { MoreMenu } from "./MoreMenu";
 import { Pane } from "./Pane";
 import { useProgressive, type Prepare } from "./progressive";
 import { markdownTops, trackSkipped } from "./tops";
+import { NONE, useSelected } from "./useSelected";
+
+const NO_PLACED: Record<string, Placed> = {};
 
 /** How the markdown is shown: as it reads, or as its source. */
 type View = "rendered" | "raw";
@@ -154,11 +160,28 @@ function Anchor({
 /** The elements a block can be written as. */
 const BLOCKS = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li"] as const;
 
+/** What a page of the markdown has selected: the ids, and the blocks the
+ *  numbers on their notes are read off. Handed down through the page's
+ *  drawn tree rather than into it, so a selection draws the elements whose
+ *  block it changed again and leaves the tree as it was built. */
+const Lit = createContext<{
+  ids: ReadonlySet<string>;
+  blocks: Record<string, Placed>;
+}>({ ids: NONE, blocks: {} });
+
+/** The block a list item was written by, to what is nested in it: a
+ *  paragraph inside an item starts on the item's line, so it is the item's
+ *  block too, and the item alone is lit. */
+const Within = createContext<string | undefined>(undefined);
+
 /** The markdown's block elements, each marked with the block that wrote
  *  it: the parser records on every node the source line it starts on, and
  *  the emitter records which block wrote each line. What the scroll sync
- *  finds a block's place in this pane by. A piece is parsed alone, so its
- *  line 1 is its own first line. */
+ *  finds a block's place in this pane by, and what a click picks. Lit when
+ *  its block is selected, with the block's number on a note: on the
+ *  element itself, so a selection moves nothing, and the note in a slot of
+ *  its own ahead of the children, so they are not remade with it. A piece
+ *  is parsed alone, so its line 1 is its own first line. */
 function marked(piece: Piece): Components {
   const blockAt = (line: number | undefined) =>
     line === undefined
@@ -169,12 +192,35 @@ function marked(piece: Piece): Components {
       tag,
       function Marked({
         node,
+        className,
+        children,
         ...props
       }: HTMLAttributes<HTMLElement> & ExtraProps) {
-        return createElement(tag, {
-          ...props,
-          "data-block": blockAt(node?.position?.start.line),
-        });
+        const id = blockAt(node?.position?.start.line);
+        const lit = useContext(Lit);
+        const within = useContext(Within);
+        const at = id !== undefined && id !== within && lit.ids.has(id);
+        const element = createElement(
+          tag,
+          {
+            ...props,
+            className:
+              [className, at ? "selection" : ""].filter(Boolean).join(" ") ||
+              undefined,
+            "data-block": id,
+          },
+          at ? (
+            <span className="note" aria-hidden>
+              {lit.blocks[id]?.n}
+            </span>
+          ) : null,
+          children,
+        );
+        return tag === "li" && id !== undefined ? (
+          <Within.Provider value={id}>{element}</Within.Provider>
+        ) : (
+          element
+        );
       },
     ]),
   );
@@ -191,6 +237,8 @@ const RenderedPiece = memo(
     piece,
     components,
     height,
+    selected,
+    blocks,
   }: {
     docId: string;
     piece: Piece;
@@ -198,6 +246,9 @@ const RenderedPiece = memo(
     /** Its estimated height: what it is taken to be while off screen,
      *  until it has been laid out once. */
     height: number;
+    /** The ids selected on its page (`useSelected`). */
+    selected: ReadonlySet<string>;
+    blocks: Record<string, Placed>;
   }) {
     const drawn = useMemo(
       () =>
@@ -207,13 +258,14 @@ const RenderedPiece = memo(
         }),
       [docId, piece, components],
     );
+    const lit = useMemo(() => ({ ids: selected, blocks }), [selected, blocks]);
     return (
       <div
         className="piece"
         data-piece={piece.page}
         style={{ containIntrinsicSize: `auto ${height}px` }}
       >
-        {drawn}
+        <Lit.Provider value={lit}>{drawn}</Lit.Provider>
       </div>
     );
   },
@@ -221,6 +273,8 @@ const RenderedPiece = memo(
     a.docId === b.docId &&
     a.components === b.components &&
     a.height === b.height &&
+    a.selected === b.selected &&
+    a.blocks === b.blocks &&
     samePiece(a.piece, b.piece),
 );
 
@@ -318,13 +372,17 @@ function renderedHeight(piece: Piece, analysis: Analysis): number {
 function Rendered({
   docId,
   analysis,
+  blocks,
   list,
   scroller,
+  selected,
 }: {
   docId: string;
   analysis: Analysis;
+  blocks: Record<string, Placed>;
   list: Piece[];
   scroller: React.RefObject<HTMLDivElement | null>;
+  selected: (page: number) => ReadonlySet<string>;
 }) {
   const components = useMemo(
     () => ({ a: Anchor, img: figureFor(docId, figureSizes(analysis)) }),
@@ -353,6 +411,8 @@ function Rendered({
             piece={piece}
             components={components}
             height={heights[i]}
+            selected={selected(piece.page)}
+            blocks={blocks}
           />
         ) : (
           <Waiting
@@ -383,7 +443,16 @@ function kindOf(line: string): Kind {
 
 /** One page of the source, its lines numbered on from the pages before. */
 const RawPiece = memo(
-  function RawPiece({ piece, height }: { piece: Piece; height: number }) {
+  function RawPiece({
+    piece,
+    height,
+    selected,
+  }: {
+    piece: Piece;
+    height: number;
+    /** The ids selected on its page (`useSelected`). */
+    selected: ReadonlySet<string>;
+  }) {
     return (
       <ol
         className="source piece"
@@ -398,6 +467,9 @@ const RawPiece = memo(
             key={i}
             data-kind={kindOf(line.text)}
             data-block={line.block ?? undefined}
+            data-selected={
+              line.block !== null && selected.has(line.block) ? "" : undefined
+            }
           >
             {line.text}
           </li>
@@ -408,6 +480,7 @@ const RawPiece = memo(
   (a, b) =>
     a.piece.from === b.piece.from &&
     a.height === b.height &&
+    a.selected === b.selected &&
     samePiece(a.piece, b.piece),
 );
 
@@ -431,10 +504,12 @@ function Raw({
   markdown,
   list,
   scroller,
+  selected,
 }: {
   markdown: Markdown;
   list: Piece[];
   scroller: React.RefObject<HTMLDivElement | null>;
+  selected: (page: number) => ReadonlySet<string>;
 }) {
   const items = useMemo(
     () => list.map((p) => ({ key: p.page, cost: p.text.length })),
@@ -452,7 +527,12 @@ function Raw({
     >
       {list.map((piece, i) =>
         shown.has(piece.page) ? (
-          <RawPiece key={piece.page} piece={piece} height={heights[i]} />
+          <RawPiece
+            key={piece.page}
+            piece={piece}
+            height={heights[i]}
+            selected={selected(piece.page)}
+          />
         ) : (
           <Waiting
             key={piece.page}
@@ -537,6 +617,26 @@ export function MarkdownPane({ docId }: { docId: string }) {
   const markdown = reading?.status === "ready" ? reading.markdown : null;
   const list = useMemo(() => markdown && pieces(markdown), [markdown]);
   useScrollSync(docId, list, view, scroller);
+  const blocks = markdown?.blocks ?? NO_PLACED;
+  const selected = useSelected(docId, blocks);
+
+  /** A click on what a block wrote picks it, through the keys held, as a
+   *  click on its box does; a click off every block lets the selection go.
+   *  Not a click on a link, which goes where it points, nor one ending a
+   *  drag over the words, which selected them to copy. */
+  const onClick = (e: React.MouseEvent) => {
+    const target = e.target as Element;
+    if (target.closest("a")) return;
+    const el = target.closest<HTMLElement>("[data-block]");
+    if (!el) {
+      if (offBlocks(e)) useEditor.getState().deselect();
+      return;
+    }
+    if (!(window.getSelection()?.isCollapsed ?? true)) return;
+    useEditor
+      .getState()
+      .pick(docId, el.dataset.block!, modifiers(e), "markdown");
+  };
 
   return (
     <Pane
@@ -565,17 +665,35 @@ export function MarkdownPane({ docId }: { docId: string }) {
         />
       }
     >
-      <div ref={scroller} className="h-full overflow-y-auto">
+      <div
+        ref={scroller}
+        className="h-full overflow-y-auto"
+        onClick={onClick}
+        // A shift-click on a block would also extend the browser's own
+        // text selection from wherever it last was.
+        onMouseDown={(e) =>
+          e.shiftKey &&
+          (e.target as Element).closest("[data-block]") &&
+          e.preventDefault()
+        }
+      >
         {reading?.status === "ready" && list ? (
           view === "rendered" ? (
             <Rendered
               docId={docId}
               analysis={reading.analysis}
+              blocks={blocks}
               list={list}
               scroller={scroller}
+              selected={selected}
             />
           ) : (
-            <Raw markdown={reading.markdown} list={list} scroller={scroller} />
+            <Raw
+              markdown={reading.markdown}
+              list={list}
+              scroller={scroller}
+              selected={selected}
+            />
           )
         ) : reading?.status === "failed" ? (
           <p className="p-6 text-center text-sm text-red-300">

@@ -69,3 +69,13 @@ export function inView(rows: Row[], top: number, height: number, end: boolean) {
   if (end) current = rows.length - 1;
   return { first, last, current: rows[current].pages[0].n };
 }
+
+/** Where a row starts across the column, in CSS px: centered in a pane
+ *  `paneWidth` wide, not in the column -- a landscape page wider than the
+ *  pane widens the column, and centering in that would push every portrait
+ *  page off to the right. A row too wide to center starts at the left
+ *  edge, so all of its overflow is to the right, where it can be scrolled
+ *  to. */
+export function rowLeft(row: Row, paneWidth: number): number {
+  return PAD + Math.max(0, (paneWidth - 2 * PAD - row.width) / 2);
+}

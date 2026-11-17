@@ -136,8 +136,27 @@ function Empty({ missing }: { missing: string | null }) {
   );
 }
 
+/** Escape lets the selection go, from anywhere but a field -- the page
+ *  number's box and the workspace's name give up what was typed on it,
+ *  and only that -- and not while a menu or a dialog is open, which
+ *  Escape closes instead. */
+function useEscapeDeselects() {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (document.querySelector('dialog[open], [role="menu"]')) return;
+      useEditor.getState().deselect();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+}
+
 export default function Editor() {
   const asked = useParams()["*"] || "";
+  useEscapeDeselects();
   const [sidebar, setSidebar] = useState(true);
   const [workspace, setWorkspace] = useState<string | null>(null);
   const navigate = useNavigate();
