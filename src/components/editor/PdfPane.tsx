@@ -10,10 +10,11 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { Spinner } from "src/components/shared/Spinner";
-import type { Block } from "src/lib/analysis";
+import type { Block, Box } from "src/lib/analysis";
 import { ensureRead, readDone } from "src/lib/convert";
 import type { Placed } from "src/lib/emit";
 import { engine } from "src/lib/engine";
+import { modifiers, offBlocks } from "src/lib/selection";
 import { useEditor, type Boxes } from "src/lib/store";
 import { attachSync, invalidateSync } from "src/lib/scrollsync";
 import {
@@ -31,8 +32,8 @@ import {
 import { human, messageOf } from "src/lib/words";
 import { sourcePath } from "src/lib/workspace";
 import { iconButton } from "./controls";
-import { pageTops } from "./blocks";
-import { GAP, inView, layout, PAD, type Row } from "./column";
+import { pageTops, swept } from "./blocks";
+import { GAP, inView, layout, PAD, rowLeft, type Row } from "./column";
 import { MoreMenu } from "./MoreMenu";
 import { PageBlocks } from "./PageBlocks";
 import { PageCanvas } from "./PageCanvas";
@@ -45,6 +46,7 @@ import {
 } from "./PdfSidebar";
 import { PropertiesDialog, type PropertyGroups } from "./PropertiesDialog";
 import { Snapshots } from "./snapshots";
+import { useSelected } from "./useSelected";
 
 /** CSS px per PDF point at 100%: a point is 1/72 in, a CSS px 1/96. */
 const PX_PER_PT = 96 / 72;
@@ -55,6 +57,13 @@ const ZOOMS = [
 ];
 const MIN_ZOOM = ZOOMS[0];
 const MAX_ZOOM = ZOOMS.at(-1)!;
+/** How far a press off every block moves, in CSS px, before it is a lasso
+ *  rather than a click on bare paper. */
+const LASSO_SLOP = 4;
+/** How near the pane's edge a lasso scrolls it, in CSS px, and how fast at
+ *  the edge and past it, in px a frame. */
+const EDGE = 32;
+const EDGE_SPEED = 24;
 
 interface Loaded {
   doc: PDFDocumentProxy;
@@ -163,6 +172,7 @@ const NO_SIZES: { w: number; h: number }[] = [];
  *  ready: no boxes, and no row drawn again for a fresh empty one. */
 const NO_PAGES: Block[][] = [];
 const NO_PLACED: Record<string, Placed> = {};
+const NO_BLOCKS: Block[] = [];
 
 const when = (d: Date | null) =>
   d
@@ -481,6 +491,12 @@ export function PdfPane({ docId }: { docId: string }) {
   const placed = read?.markdown.blocks ?? NO_PLACED;
   const boxes = useEditor((s) => s.boxes);
   const indices = useEditor((s) => s.indices);
+  const selected = useSelected(docId, placed);
+  const onPick = useCallback(
+    (id: string, e: React.MouseEvent) =>
+      useEditor.getState().pick(docId, id, modifiers(e), "page"),
+    [docId],
+  );
   useLayoutEffect(() => {
     topsRef.current = tops;
     invalidateSync(docId);
@@ -530,6 +546,130 @@ export function PdfPane({ docId }: { docId: string }) {
     },
     [loaded],
   );
+
+  // The box being drawn, in the scroller's content px, while one is.
+  const [marquee, setMarquee] = useState<Box | null>(null);
+  // Whether the last press drew a lasso, which makes the click it ends in
+  // no click on bare paper.
+  const lassoed = useRef(false);
+
+  /** A press off every block that moves draws a box, and every block it
+   *  touches is selected -- a region the reading order runs through, like a
+   *  sidebar or a column of a table. With the toggle key held the blocks
+   *  are added to what was selected. Near the pane's edge it scrolls on;
+   *  Escape puts the selection back as it was. */
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    lassoed.current = false;
+    const el = scroller.current;
+    // A touch drags the pane, as it does everywhere.
+    if (!el || !read || e.button !== 0 || e.pointerType === "touch") return;
+    if ((e.target as Element).closest("[data-block]")) return;
+    // Nor on the scrollbars, which are in the box but past its client area.
+    const at = el.getBoundingClientRect();
+    if (e.clientX - at.left >= el.clientLeft + el.clientWidth) return;
+    if (e.clientY - at.top >= el.clientTop + el.clientHeight) return;
+
+    const { selection: before, lasso } = useEditor.getState();
+    const base = e.ctrlKey || e.metaKey ? before : null;
+    const blocksOf = (n: number) => blocks[n - 1] ?? NO_BLOCKS;
+    const width = el.clientWidth;
+    // Content px, held to the content: a box past it would make it longer,
+    // and the edge scroll would chase the box for ever.
+    const toContent = (x: number, y: number) => {
+      const r = el.getBoundingClientRect();
+      const cx = x - r.left - el.clientLeft + el.scrollLeft;
+      const cy = y - r.top - el.clientTop + el.scrollTop;
+      return {
+        x: Math.min(el.scrollWidth, Math.max(0, cx)),
+        y: Math.min(el.scrollHeight, Math.max(0, cy)),
+      };
+    };
+    const start = toContent(e.clientX, e.clientY);
+    let pointer = { x: e.clientX, y: e.clientY };
+    let moved = false;
+    let last: string | null = null;
+    let frame = 0;
+
+    const update = () => {
+      const p = toContent(pointer.x, pointer.y);
+      const box = {
+        x: Math.min(start.x, p.x),
+        y: Math.min(start.y, p.y),
+        w: Math.abs(p.x - start.x),
+        h: Math.abs(p.y - start.y),
+      };
+      setMarquee(box);
+      const hits = swept(rows, box, blocksOf, scale, (row) =>
+        rowLeft(row, width),
+      );
+      // Every move is a frame, and most of them touch the same blocks.
+      const key = hits.join(" ");
+      if (key !== last) lasso(docId, hits, base, "page");
+      last = key;
+    };
+    // Faster the nearer the edge, and flat out past it.
+    const speed = (v: number, lo: number, hi: number) => {
+      if (v < lo + EDGE)
+        return -EDGE_SPEED * Math.min(1, (lo + EDGE - v) / EDGE);
+      if (v > hi - EDGE)
+        return EDGE_SPEED * Math.min(1, (v - hi + EDGE) / EDGE);
+      return 0;
+    };
+    const edgeScroll = () => {
+      const r = el.getBoundingClientRect();
+      const left = r.left + el.clientLeft;
+      const top = r.top + el.clientTop;
+      // The scroll event that follows redraws the box.
+      el.scrollBy(
+        speed(pointer.x, left, left + el.clientWidth),
+        speed(pointer.y, top, top + el.clientHeight),
+      );
+      frame = requestAnimationFrame(edgeScroll);
+    };
+
+    const onMove = (ev: PointerEvent) => {
+      pointer = { x: ev.clientX, y: ev.clientY };
+      if (!moved) {
+        if (
+          Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) <
+          LASSO_SLOP
+        )
+          return;
+        moved = true;
+        window.getSelection()?.removeAllRanges();
+        el.addEventListener("scroll", update);
+        frame = requestAnimationFrame(edgeScroll);
+      }
+      update();
+    };
+    // Ahead of the editor's own Escape, which would deselect.
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key !== "Escape" || !moved) return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      useEditor.setState({ selection: before });
+      end();
+    };
+    // A drag from bare paper would otherwise select the text it runs over,
+    // in the bars and the other pane.
+    const noSelect = (ev: Event) => ev.preventDefault();
+    const end = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      window.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("selectstart", noSelect);
+      el.removeEventListener("scroll", update);
+      cancelAnimationFrame(frame);
+      setMarquee(null);
+      lassoed.current = moved;
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    window.addEventListener("keydown", onKey, true);
+    document.addEventListener("selectstart", noSelect);
+  };
 
   // The next step either way, or undefined at that end of `ZOOMS` -- which
   // is also what disables the button, so "can zoom" and "do zoom" cannot
@@ -603,6 +743,11 @@ export function PdfPane({ docId }: { docId: string }) {
         <div
           ref={scroller}
           onScroll={onScroll}
+          onPointerDown={onPointerDown}
+          onClick={(e) => {
+            if (lassoed.current) lassoed.current = false;
+            else if (offBlocks(e)) useEditor.getState().deselect();
+          }}
           className="relative min-w-0 flex-1 overflow-auto bg-ground [scrollbar-gutter:stable]"
         >
           {problem ? (
@@ -613,15 +758,10 @@ export function PdfPane({ docId }: { docId: string }) {
             </div>
           ) : (
             // The whole column's size, and in it only the rows near the
-            // view, each where `layout` puts it: a re-lay -- every frame of
-            // a drag -- touches a handful of rows however long the
-            // document is, and a row that leaves takes its canvas with it.
-            //
-            // Each row centered in the pane, not in the column: a landscape
-            // page wider than the pane widens the column, and centering in
-            // that would push every portrait page off to the right. A row
-            // too wide to center starts at the left edge instead, so all of
-            // its overflow is to the right, where it can be scrolled to.
+            // view, each where `layout` puts it and centered as `rowLeft`
+            // says: a re-lay -- every frame of a drag -- touches a handful
+            // of rows however long the document is, and a row that leaves
+            // takes its canvas with it.
             <div
               className="relative"
               style={{ width: column.width, height: column.height }}
@@ -638,12 +778,24 @@ export function PdfPane({ docId }: { docId: string }) {
                   placed={placed}
                   boxes={boxes}
                   indices={indices}
-                  left={
-                    PAD + Math.max(0, (paneWidth - 2 * PAD - row.width) / 2)
-                  }
+                  selected={selected}
+                  onPick={onPick}
+                  left={rowLeft(row, paneWidth)}
                 />
               ))}
             </div>
+          )}
+          {marquee && (
+            <div
+              data-lasso
+              className="pointer-events-none absolute z-30 rounded-[2px] border border-accent-lit/70 bg-accent-lit/10"
+              style={{
+                left: marquee.x,
+                top: marquee.y,
+                width: marquee.w,
+                height: marquee.h,
+              }}
+            />
           )}
         </div>
       </div>
@@ -664,60 +816,79 @@ export function PdfPane({ docId }: { docId: string }) {
  *  what the pages are drawn at, which lags the boxes while the pane is
  *  resized. The blocks' boxes are the layout's, at `scale`, so they stay on
  *  the page's box every frame of a resize, over a picture stretched to it. */
-const PageRow = memo(function PageRow({
-  row,
-  pages,
-  scale,
-  drawScale,
-  snapshots,
-  blocks,
-  placed,
-  boxes,
-  indices,
-  left,
-}: {
-  row: Row;
-  pages: PDFPageProxy[];
-  scale: number;
-  drawScale: number;
-  snapshots: Snapshots;
-  /** Every page's blocks, by page number less one. */
-  blocks: Block[][];
-  placed: Record<string, Placed>;
-  boxes: Boxes;
-  indices: boolean;
-  left: number;
-}) {
-  return (
-    <div
-      className="absolute flex items-start"
-      style={{ gap: GAP, top: row.top, left, height: row.height }}
-    >
-      {row.pages.map((p) => (
-        <div
-          key={p.n}
-          data-paper={p.n}
-          className="relative bg-white shadow-lg shadow-black/50"
-          style={{ width: p.w, height: p.h }}
-        >
-          <PageCanvas
-            page={pages[p.n - 1]}
-            scale={drawScale}
-            active
-            snapshots={snapshots}
-          />
-          {blocks[p.n - 1] && (
-            <PageBlocks
-              blocks={blocks[p.n - 1]}
-              placed={placed}
-              scale={scale}
-              page={p}
-              boxes={boxes}
-              indices={indices}
+const PageRow = memo(
+  function PageRow({
+    row,
+    pages,
+    scale,
+    drawScale,
+    snapshots,
+    blocks,
+    placed,
+    boxes,
+    indices,
+    selected,
+    onPick,
+    left,
+  }: {
+    row: Row;
+    pages: PDFPageProxy[];
+    scale: number;
+    drawScale: number;
+    snapshots: Snapshots;
+    /** Every page's blocks, by page number less one. */
+    blocks: Block[][];
+    placed: Record<string, Placed>;
+    boxes: Boxes;
+    indices: boolean;
+    /** The ids selected on a page: the same set while a page's part of the
+     *  selection is unchanged (`useSelected`). */
+    selected: (page: number) => ReadonlySet<string>;
+    onPick: (id: string, e: React.MouseEvent) => void;
+    left: number;
+  }) {
+    return (
+      <div
+        className="absolute flex items-start"
+        style={{ gap: GAP, top: row.top, left, height: row.height }}
+      >
+        {row.pages.map((p) => (
+          <div
+            key={p.n}
+            data-paper={p.n}
+            className="relative bg-white shadow-lg shadow-black/50"
+            style={{ width: p.w, height: p.h }}
+          >
+            <PageCanvas
+              page={pages[p.n - 1]}
+              scale={drawScale}
+              active
+              snapshots={snapshots}
             />
-          )}
-        </div>
-      ))}
-    </div>
-  );
-});
+            {blocks[p.n - 1] && (
+              <PageBlocks
+                blocks={blocks[p.n - 1]}
+                placed={placed}
+                scale={scale}
+                page={p}
+                boxes={boxes}
+                indices={indices}
+                selected={selected(p.n)}
+                onPick={onPick}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  },
+  // The selection is a new function with every change of it; the row draws
+  // again only when one of its own pages' part of it changed.
+  (a, b) => {
+    for (const key of Object.keys(a) as (keyof typeof a)[]) {
+      if (key === "selected") continue;
+      if (a[key] !== b[key]) return false;
+    }
+    return a.row.pages.every((p) => a.selected(p.n) === b.selected(p.n));
+  },
+);

@@ -282,6 +282,22 @@
   .piece {
     content-visibility: auto;
   }
+  /* `content-visibility` contains a piece's paint as well as its layout: a
+     piece draws nothing past its own box, on screen or not. A selection's
+     ring and its note stand out past the text they mark, so a rendered
+     piece reaches into the article's side padding (32px), and the first one
+     into its top padding, by as much as it gives back -- the text stays
+     where it was, and only where the piece may paint grows. The first
+     piece's top is the one the text's own top margin does not already
+     clear: every later page opens on its rule. */
+  .markdown > .piece {
+    margin-inline: -28px;
+    padding-inline: 28px;
+  }
+  .markdown > .piece:first-child {
+    margin-top: -20px;
+    padding-top: 20px;
+  }
 
   /* A page of the markdown not drawn yet (`Waiting`, MarkdownPane.tsx), in
      either view: its page named at the top, then lines like the view's
@@ -357,14 +373,168 @@
     @apply text-muted;
   }
 
+  /* ── selection ──────────────────────────────────────────────────────
+     One accent at a few strengths, so a white page and the dark panes share
+     a look: a fill under the block, a ring around it, and a glint -- a band
+     of light -- crossing both now and then, so a selection reads at a
+     glance. The strengths are variables because paper is the other way
+     round: the glint is white, which is light against the panes and is the
+     paper itself on a page, so `.on-paper` makes it the accent and pales
+     the ring a little for it to show against. Reduced motion stills the
+     glint (the rule at the end of the file) and keeps the ring and fill.
+
+     The band moves against the intuition of `background-position`: at
+     `100% 0%` the image's top-right corner sits on the box's top-right, so
+     its center -- where the band is -- lies off the bottom-left, and moving
+     to `0% 100%` carries the band up and across. */
+  .selection {
+    --glint: white;
+    --fill: 12%; /* of the accent, under the text */
+    --edge: 60%; /* of the accent, on the ring */
+    --sweep: 0.08; /* how much of the band crosses the fill */
+    --reach: 0px; /* how far past the element the ring is drawn */
+    border-radius: 3px;
+    background: color-mix(
+      in srgb,
+      var(--color-accent-lit) var(--fill),
+      transparent
+    );
+    box-shadow: 0 0 0 1px
+      color-mix(in srgb, var(--color-accent-lit) var(--edge), transparent);
+  }
+  .selection::before,
+  .selection::after {
+    content: "";
+    position: absolute;
+    inset: calc(-1px - var(--reach));
+    border-radius: inherit;
+    pointer-events: none;
+    background-image: linear-gradient(
+      to top right,
+      transparent 38%,
+      var(--glint) 50%,
+      transparent 62%
+    );
+    background-size: 250% 250%;
+    animation: glint 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+  .selection.on-paper {
+    --glint: var(--color-accent);
+    --edge: 50%;
+    --sweep: 0.12;
+  }
+  .selection::before {
+    opacity: var(--sweep);
+  }
+  .selection::after {
+    opacity: 0.9;
+    padding: 1px; /* the ring's width: what the mask keeps */
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+  }
+
+  /* In the rendered view a block is picked by clicking what it wrote. The
+     innermost one under the pointer is tinted: an item's paragraph is the
+     item's own block. */
+  .markdown [data-block] {
+    cursor: pointer;
+  }
+  .markdown [data-block]:hover:not(:has([data-block]:hover)):not(.selection) {
+    background: color-mix(in srgb, var(--color-accent-lit) 6%, transparent);
+  }
+  /* Selected, the block stands a little off its text without moving it:
+     the fill is spread past the element by a shadow, not padding, and the
+     ring is an outline at the same reach, with the glint drawn out to it.
+     Not a second shadow for the ring: a shadow is a filled band, and one
+     under the fill would be a thick bar of the ring's color. */
+  .markdown .selection {
+    --reach: 4px;
+    position: relative;
+    box-shadow: 0 0 0 var(--reach)
+      color-mix(in srgb, var(--color-accent-lit) var(--fill), transparent);
+    outline: 1px solid
+      color-mix(in srgb, var(--color-accent-lit) var(--edge), transparent);
+    outline-offset: var(--reach);
+  }
+  /* Its number on a note at the corner, as on the page: a small square of
+     paper set a little askew, above the glint. */
+  .markdown .selection > .note {
+    position: absolute;
+    z-index: 1;
+    top: -14px;
+    left: -18px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 2px;
+    font: 700 12px/20px var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-style: normal;
+    text-align: center;
+    color: var(--color-note-ink);
+    background: linear-gradient(
+      color-mix(in srgb, var(--color-note) 100%, white 14%),
+      var(--color-note)
+    );
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.4),
+      0 0 0 0.5px rgb(0 0 0 / 0.1);
+    transform: rotate(-6deg);
+    pointer-events: none;
+    user-select: none;
+  }
+  /* An item's note goes beside its marker, which hangs left of it. */
+  .markdown li.selection > .note {
+    left: -40px;
+  }
+
+  /* The source view has no box to draw: a selected line is one of the rows
+     already there, so it takes the fill, lights its number, and the band
+     crosses it. On one clock with every other glint, so across a run of
+     selected lines the bands line up into one. */
+  .source > li[data-block] {
+    cursor: pointer;
+  }
+  .source > li[data-block]:hover {
+    background: color-mix(in srgb, var(--color-accent-lit) 6%, transparent);
+  }
+  .source > li[data-selected] {
+    position: relative;
+    background: color-mix(in srgb, var(--color-accent-lit) 12%, transparent);
+    @apply text-ink;
+  }
+  .source > li[data-selected]::before {
+    @apply text-accent-lit;
+  }
+  .source > li[data-selected]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: linear-gradient(
+      100deg,
+      transparent 40%,
+      white 50%,
+      transparent 60%
+    );
+    background-size: 250% 100%;
+    opacity: 0.16;
+    animation: glint-row 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
   /* ── the page pane's blocks ───────────────────────────────────────── */
 
   /* A block's box over the page: a gray hairline around everything that
      was read, so what the reading found -- and what it missed -- is seen
      at a glance. On the page's white whatever the theme, so in grays that
-     read on paper. `quiet` is a box turned off in the tool bar, there only
-     to carry its note. Placed by `--box-x` and `--box-y`, its corner on
-     the page, which its note reads as well. */
+     read on paper. Placed by `--box-x` and `--box-y`, its corner on the
+     page, which its note reads as well. One the markdown wrote is picked
+     by clicking it (`pick`): under the pointer its ring takes the accent,
+     so what would be picked is seen before it is. Selected, it takes
+     `.selection` as well, whose ring and fill win, and its note goes
+     yellow. */
   .hit {
     position: absolute;
     left: var(--box-x);
@@ -373,8 +543,22 @@
     box-shadow: 0 0 0 1px
       color-mix(in srgb, var(--color-faint) 55%, transparent);
   }
-  .hit.quiet {
+  .hit.pick {
+    cursor: pointer;
+  }
+  .hit.pick:hover:not(.selection) {
+    background: color-mix(in srgb, var(--color-accent-lit) 7%, transparent);
+    box-shadow: 0 0 0 1px
+      color-mix(in srgb, var(--color-accent) 55%, transparent);
+  }
+  /* A box turned off in the tool bar: still there to be picked, and ringed
+     under the pointer, but drawn with nothing until then. */
+  .hit.quiet:not(.selection):not(.pick:hover) {
     box-shadow: none;
+  }
+  /* Above its neighbors, and its note above theirs. */
+  .hit.selection {
+    z-index: 1;
   }
   /* The block's number, on a small gray tag set a little askew as a
      stuck-on thing is: the number the markdown counts it by. It hangs off
@@ -412,9 +596,38 @@
     transform: rotate(-6deg);
     user-select: none;
   }
+  .hit.selection > .note {
+    color: var(--color-note-ink);
+    background: linear-gradient(
+      color-mix(in srgb, var(--color-note) 100%, white 14%),
+      var(--color-note)
+    );
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.4),
+      0 0 0 0.5px rgb(0 0 0 / 0.1);
+  }
 }
 
 /* ── motion ─────────────────────────────────────────────────────────── */
+/* The band of light across a selection, and across a selected source line. */
+@keyframes glint {
+  0% {
+    background-position: 100% 0%;
+  }
+  92%,
+  100% {
+    background-position: 0% 100%;
+  }
+}
+@keyframes glint-row {
+  0% {
+    background-position: 100% 0;
+  }
+  92%,
+  100% {
+    background-position: 0% 0;
+  }
+}
 /* The sweep through a page of the markdown waiting to be drawn. */
 @keyframes piece-wait {
   from {

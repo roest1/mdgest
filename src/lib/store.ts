@@ -7,6 +7,13 @@
 import { create } from "zustand";
 import type { Analysis } from "./analysis";
 import type { Markdown } from "./emit";
+import {
+  lassoed,
+  picked,
+  type Modifiers,
+  type Selection,
+  type Side,
+} from "./selection";
 
 /** Anything the editor keys by document id, made without a prototype the
  *  way a manifest is (`workspace.ts`, `Manifest`). An id is a file name and
@@ -48,19 +55,59 @@ interface EditorState {
   /** Whether each block's number is shown on its box. */
   indices: boolean;
   setIndices: (indices: boolean) => void;
+  /** The blocks selected, of one document at a time (`selection.ts`). A
+   *  reading set anew or forgotten lets go of its document's selection:
+   *  the ids are that reading's. */
+  selection: Selection | null;
+  /** A click on block `id` of `docId` in the pane `from`. */
+  pick: (docId: string, id: string, modifiers: Modifiers, from: Side) => void;
+  /** A lasso over the blocks `hits` of `docId`: they become the selection,
+   *  or are added to `base`, the selection as the lasso began. */
+  lasso: (
+    docId: string,
+    hits: string[],
+    base: Selection | null,
+    from: Side,
+  ) => void;
+  deselect: () => void;
 }
 
-export const useEditor = create<EditorState>()((set) => ({
+export const useEditor = create<EditorState>()((set, get) => ({
   readings: byId(),
   setReading: (docId, reading) =>
     set((s) => {
       const readings = byId(s.readings);
       if (reading) readings[docId] = reading;
       else delete readings[docId];
-      return { readings };
+      const selection = s.selection?.docId === docId ? null : s.selection;
+      return { readings, selection };
     }),
   boxes: { text: true, images: true },
   setBoxes: (boxes) => set((s) => ({ boxes: { ...s.boxes, ...boxes } })),
   indices: true,
   setIndices: (indices) => set({ indices }),
+  selection: null,
+  pick: (docId, id, modifiers, from) => {
+    const reading = get().readings[docId];
+    if (reading?.status !== "ready") return;
+    const { order, blocks } = reading.markdown;
+    set({
+      selection: picked(
+        get().selection,
+        docId,
+        order,
+        blocks,
+        id,
+        modifiers,
+        from,
+      ),
+    });
+  },
+  lasso: (docId, hits, base, from) => {
+    const reading = get().readings[docId];
+    if (reading?.status !== "ready") return;
+    const { order, blocks } = reading.markdown;
+    set({ selection: lassoed(docId, order, blocks, hits, base, from) });
+  },
+  deselect: () => set({ selection: null }),
 }));

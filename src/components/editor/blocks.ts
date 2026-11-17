@@ -3,8 +3,9 @@
  *  note with its number goes is the stylesheet's (`.hit > .note` in
  *  index.css), from the box's place on the page. */
 
-import type { Analysis, Box } from "src/lib/analysis";
+import type { Analysis, Block, Box } from "src/lib/analysis";
 import type { Placed } from "src/lib/emit";
+import { GAP, type Row } from "./column";
 
 /** Around a block, a little outside the text, in CSS px: the box the
  *  page's reading gives is the glyphs' own, and a line drawn on it would
@@ -57,4 +58,41 @@ export function pageTops(
     }
   }
   return out;
+}
+
+/** Every block a lasso's box touches, the box in the column's content px:
+ *  each block's box as drawn (`drawnBox`), on the rows laid out at
+ *  `scale`, each row starting `left(row)` across. Worked out from the
+ *  layout rather than the DOM, like `pageTops`: the pages a lasso runs
+ *  onto as it scrolls the pane have no block elements yet. In the order
+ *  the pages are, which the selection puts in the markdown's. */
+export function swept(
+  rows: Row[],
+  box: Box,
+  blocksOf: (page: number) => Block[],
+  scale: number,
+  left: (row: Row) => number,
+): string[] {
+  const hits: string[] = [];
+  for (const row of rows) {
+    if (row.top > box.y + box.h || row.top + row.height < box.y) continue;
+    let x = left(row);
+    for (const page of row.pages) {
+      const local = { ...box, x: box.x - x, y: box.y - row.top };
+      for (const block of blocksOf(page.n)) {
+        if (touches(local, drawnBox(block.box, scale, page)))
+          hits.push(block.id);
+      }
+      x += page.w + GAP;
+    }
+  }
+  return hits;
+}
+
+/** Whether two boxes overlap, edges touching included: a lasso drawn
+ *  exactly to a box's edge takes it. */
+function touches(a: Box, b: Box): boolean {
+  return (
+    a.x <= b.x + b.w && b.x <= a.x + a.w && a.y <= b.y + b.h && b.y <= a.y + a.h
+  );
 }

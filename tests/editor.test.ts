@@ -64,6 +64,7 @@ afterEach(async () => {
   // the mount.
   useEditor.getState().setBoxes({ text: true, images: true });
   useEditor.getState().setIndices(true);
+  useEditor.getState().deselect();
   await discard();
 });
 
@@ -812,13 +813,13 @@ test("every block the page read is boxed where it is printed, numbered as the ma
   ).toEqual(blocks.map((_, i) => i + 1));
   expect(boxesOn()[0].dataset.kind).toBe("image");
 
-  // Drawn only: what is under a box is what a click reaches.
+  // And a click on one reaches it, to pick its block.
   const box = boxesOn()[0].getBoundingClientRect();
   const under = document.elementFromPoint(
     box.left + box.width / 2,
     box.top + box.height / 2,
   );
-  expect(under?.closest(".hit")).toBeNull();
+  expect(under?.closest(".hit")).toBe(boxesOn()[0]);
 });
 
 test("the tool bar turns the boxes and the numbers off and on, for every document", async () => {
@@ -835,16 +836,18 @@ test("the tool bar turns the boxes and the numbers off and on, for every documen
   await expect.poll(() => numbersOn()).toEqual([]);
   expect(boxesOn()).toHaveLength(all);
 
-  // The text's boxes off: the picture's alone.
+  // The text's boxes off: the picture's alone is ringed, and every block
+  // is still there to be clicked.
   await toggleBoxes("text");
   await expect
-    .poll(() => boxesOn().map((b) => b.dataset.kind))
+    .poll(() => ringed().map((b) => b.dataset.kind))
     .toEqual(["image"]);
+  expect(boxesOn()).toHaveLength(all);
 
-  // Both off: nothing over the page at all.
+  // Both off: nothing ringed over the page, every block still clickable.
   await toggleBoxes("images");
-  await expect.poll(() => boxesOn().length).toBe(0);
-  expect(paper().querySelector("[aria-hidden] [data-block]")).toBeNull();
+  await expect.poll(() => ringed().length).toBe(0);
+  expect(boxesOn()).toHaveLength(all);
 
   // The numbers on again, with no boxes: each on a box that draws nothing.
   // Clicked with the flyout still open, which lies clear of the button.
@@ -1082,3 +1085,230 @@ test("a long document's markdown is there at once, and the rest drawn in while t
     watch.disconnect();
   }
 }, 90_000);
+
+// ---- selecting blocks -----------------------------------------------------
+
+/** The ids selected, in the markdown's order, or none. */
+const selectedIds = () => useEditor.getState().selection?.ids ?? [];
+/** Block `id`'s box on page 1, and what it wrote in the markdown pane. */
+const boxOf = (id: string) =>
+  paper().querySelector<HTMLElement>(`[data-block="${id}"]`)!;
+const writtenBy = (id: string) =>
+  document.querySelector<HTMLElement>(`.markdown [data-block="${id}"]`)!;
+/** `a` open with its markdown shown and its page drawn: its blocks, in
+ *  the markdown's order, text only -- a click on the figure's box is a
+ *  click on the figure, which these do not need. */
+async function opened(): Promise<string[]> {
+  await workspace(await written());
+  mount("/edit/a");
+  const { markdown } = await ready();
+  await pagesDrawn();
+  await expect
+    .element(page.getByRole("heading", { name: "Pump Care" }))
+    .toBeVisible();
+  return markdown.order.filter((id) => id.includes("b"));
+}
+/** A press on page 1's bare paper at (`x`, `y`) on it, dragged to each
+ *  point in turn and let go, with `keys` held -- as a mouse does it, which
+ *  ends in a click where it was let go. `during` runs before the release. */
+function drag(
+  points: [number, number][],
+  keys: { ctrlKey?: boolean } = {},
+  during?: () => void,
+) {
+  const p = paper().getBoundingClientRect();
+  const at = ([x, y]: [number, number]) => ({
+    clientX: p.left + x,
+    clientY: p.top + y,
+    bubbles: true,
+    button: 0,
+    pointerType: "mouse",
+    ...keys,
+  });
+  const [first, ...rest] = points;
+  paper().dispatchEvent(new PointerEvent("pointerdown", at(first)));
+  for (const point of rest)
+    window.dispatchEvent(new PointerEvent("pointermove", at(point)));
+  during?.();
+  const last = points.at(-1)!;
+  window.dispatchEvent(new PointerEvent("pointerup", at(last)));
+  paper().dispatchEvent(new MouseEvent("click", at(last)));
+}
+/** Where block `id`'s box is on page 1. */
+const placeOf = (id: string) => onPaper(boxOf(id));
+
+test("a block is selected by a click on its box or on what it wrote, and let go by a click again", async () => {
+  const [heading, para] = await opened();
+  await userEvent.click(boxOf(para));
+  expect(selectedIds()).toEqual([para]);
+  expect(boxOf(para).matches(".selection.on-paper")).toBe(true);
+  // Lit in the markdown pane too, with its number on a note.
+  expect(writtenBy(para).matches(".selection")).toBe(true);
+  expect(writtenBy(para).querySelector(".note")?.textContent).toBe(
+    boxOf(para).querySelector(".note")?.textContent,
+  );
+
+  // A click in the markdown pane picks there, and the page shows it.
+  await userEvent.click(writtenBy(heading));
+  expect(selectedIds()).toEqual([heading]);
+  await expect.poll(() => boxOf(heading).matches(".selection")).toBe(true);
+  expect(boxOf(para).matches(".selection")).toBe(false);
+  // Again on the one selected lets it go.
+  await userEvent.click(writtenBy(heading));
+  expect(selectedIds()).toEqual([]);
+  await expect.poll(() => document.querySelector(".selection")).toBeNull();
+});
+
+test("a selection in the markdown is drawn whole: its ring, glint and note inside the box its page may paint in", async () => {
+  // The first block of the first page: the top and the left are the edges
+  // nothing before it clears. Then a paragraph -- not the second block,
+  // whose words are a link, which a click follows rather than picks.
+  const ids = await opened();
+  for (const id of [ids[0], ids[2]]) {
+    await userEvent.click(writtenBy(id));
+    await expect.poll(() => writtenBy(id).matches(".selection")).toBe(true);
+    const el = writtenBy(id);
+    // A piece paints nothing past its padding box (`content-visibility`).
+    const piece = el.closest(".piece")!.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    // The ring and the glint, an outline 1px wide at the reach, and the
+    // note, turned a little, so measured with room for its corners.
+    const reach = 4 + 1;
+    expect(box.left - reach).toBeGreaterThanOrEqual(piece.left);
+    expect(box.right + reach).toBeLessThanOrEqual(piece.right);
+    expect(box.top - reach).toBeGreaterThanOrEqual(piece.top);
+    const note = el.querySelector(".note")!.getBoundingClientRect();
+    expect(note.left - 2).toBeGreaterThanOrEqual(piece.left);
+    expect(note.top - 2).toBeGreaterThanOrEqual(piece.top);
+    // The ring is a line, not a band: past the fill, nothing but the 1px.
+    const style = getComputedStyle(el);
+    expect(style.outlineWidth).toBe("1px");
+    expect(style.boxShadow.match(/rgb/g)).toHaveLength(1);
+  }
+});
+
+test("shift ranges from the block picked last, and ctrl toggles one, in either pane", async () => {
+  const ids = await opened();
+  expect(ids.length).toBeGreaterThanOrEqual(4);
+  await userEvent.click(boxOf(ids[1]));
+  await userEvent.click(writtenBy(ids[3]), { modifiers: ["Shift"] });
+  expect(selectedIds()).toEqual(ids.slice(1, 4));
+  // The other way, from the same anchor.
+  await userEvent.click(boxOf(ids[0]), { modifiers: ["Shift"] });
+  expect(selectedIds()).toEqual(ids.slice(0, 2));
+  await userEvent.click(writtenBy(ids[3]), { modifiers: ["Control"] });
+  expect(selectedIds()).toEqual([ids[0], ids[1], ids[3]]);
+  await userEvent.click(boxOf(ids[0]), { modifiers: ["Control"] });
+  expect(selectedIds()).toEqual([ids[1], ids[3]]);
+  // A shift-click leaves no text selected behind it.
+  expect(window.getSelection()?.isCollapsed ?? true).toBe(true);
+});
+
+test("a click off every block, or Escape, lets the selection go -- but not Escape in the page box", async () => {
+  const [, para] = await opened();
+  await userEvent.click(boxOf(para));
+  await userEvent.click(paper(), { position: { x: 4, y: 4 } });
+  expect(selectedIds()).toEqual([]);
+
+  await userEvent.click(writtenBy(para));
+  // The article's top padding, over its middle.
+  const article = document.querySelector<HTMLElement>(".markdown")!;
+  await userEvent.click(article, {
+    position: { x: article.offsetWidth / 2, y: 4 },
+  });
+  expect(selectedIds()).toEqual([]);
+
+  await userEvent.click(boxOf(para));
+  await page.getByLabelText("Page").click();
+  await userEvent.keyboard("{Escape}");
+  expect(selectedIds()).toEqual([para]);
+  (document.activeElement as HTMLElement | null)?.blur();
+  await userEvent.keyboard("{Escape}");
+  expect(selectedIds()).toEqual([]);
+});
+
+test("a click on a link, or one ending a drag over the words, picks nothing", async () => {
+  await opened();
+  const link = page.getByRole("link", { name: prose(1)[0] }).element();
+  // Not followed here: the test's page is the editor.
+  const stay = (e: Event) => e.preventDefault();
+  document.addEventListener("click", stay, true);
+  try {
+    link.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+  } finally {
+    document.removeEventListener("click", stay, true);
+  }
+  expect(selectedIds()).toEqual([]);
+
+  const words = document.querySelector<HTMLElement>(".markdown h1")!;
+  window.getSelection()!.selectAllChildren(words);
+  words.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  expect(selectedIds()).toEqual([]);
+  window.getSelection()!.removeAllRanges();
+});
+
+test("a box drawn from bare paper selects every block it touches, adds to the selection with ctrl, and Escape puts it back", async () => {
+  const ids = await opened();
+  const [a, b, c] = ids.map(placeOf);
+  // From the margin left of the blocks, down through the first two.
+  drag([
+    [a.x - 10, a.y - 2],
+    [a.x - 5, a.y + 2],
+    [a.x + 20, b.y + 2],
+  ]);
+  expect(selectedIds()).toEqual(ids.slice(0, 2));
+  expect(document.querySelector("[data-lasso]")).toBeNull();
+  // The click it ended in let nothing go.
+  await expect.poll(() => boxOf(ids[0]).matches(".selection")).toBe(true);
+
+  // Held ctrl, a box over the third adds it.
+  drag(
+    [
+      [c.x - 10, c.y - 2],
+      [c.x + 20, c.y + 2],
+    ],
+    { ctrlKey: true },
+  );
+  expect(selectedIds()).toEqual(ids.slice(0, 3));
+
+  // Escape mid-drag puts back what was selected before it.
+  drag(
+    [
+      [c.x - 10, c.y - 2],
+      [c.x + 20, c.y + 2],
+    ],
+    {},
+    () => {
+      expect(selectedIds()).toEqual([ids[2]]);
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    },
+  );
+  expect(selectedIds()).toEqual(ids.slice(0, 3));
+
+  // A press that barely moves is a click on the paper, which lets go.
+  drag([
+    [a.x - 10, a.y - 2],
+    [a.x - 9, a.y - 1],
+  ]);
+  expect(selectedIds()).toEqual([]);
+});
+
+test("a selected box is ringed and numbered whatever the tool bar says, and an unselected one ringed under the pointer", async () => {
+  const [, para, other] = await opened();
+  await page.getByRole("button", { name: "Indices" }).click();
+  await toggleBoxes("text");
+  await expect.poll(() => numbersOn()).toEqual([]);
+  await userEvent.click(boxOf(para));
+  expect(numbersOn()).toEqual([
+    String((await ready()).markdown.blocks[para].n),
+  ]);
+  const ring = (el: HTMLElement) => getComputedStyle(el).boxShadow;
+  expect(ring(boxOf(para))).not.toBe("none");
+  expect(ring(boxOf(other))).toBe("none");
+  await userEvent.hover(boxOf(other));
+  expect(ring(boxOf(other))).not.toBe("none");
+});

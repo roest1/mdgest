@@ -1,4 +1,4 @@
-import { memo, type CSSProperties } from "react";
+import { memo, type CSSProperties, type MouseEvent } from "react";
 import type { Block } from "src/lib/analysis";
 import type { Placed } from "src/lib/emit";
 import type { Boxes } from "src/lib/store";
@@ -10,18 +10,19 @@ import { drawnBox } from "./blocks";
  *  and where, so what it missed is seen as well -- the text with no box.
  *
  * Which boxes are drawn, and whether the numbers are, is the tool bar's.
- * A box that is off still carries its note while the numbers are on. A
+ * A box that is off is still there to be clicked, and is ringed under the
+ * pointer; a selected one is ringed and numbered whatever the tool bar
+ * says, since the number is how its block is found in the markdown. A
  * block the markdown did not write -- a text block with no words in it,
  * or one deleted by an edit -- has a box but no number, since there is no
- * line of the markdown for it to be the number of. A hidden block is
- * written, as a comment, and keeps its number.
+ * line of the markdown for it to be the number of, and is not selected by
+ * a click. A hidden block is written, as a comment, and keeps its number.
  *
  * Pictures first, then text, each in reading order: where a caption is
- * printed over a picture, its note stacks above the picture's box. Drawn,
- * not interactive -- nothing is picked off the page yet -- so the layer
- * lets every pointer event through, and is hidden from assistive tech,
- * which reads the same blocks as the markdown. The look is `.hit` and
- * `.note` in index.css. */
+ * printed over a picture, its note stacks above the picture's box, and a
+ * click there is the caption's. Hidden from assistive tech, which reads
+ * the same blocks as the markdown; nothing here is reached by the keys
+ * yet. The look is `.hit`, `.selection` and `.note` in index.css. */
 export const PageBlocks = memo(function PageBlocks({
   blocks,
   placed,
@@ -29,6 +30,8 @@ export const PageBlocks = memo(function PageBlocks({
   page,
   boxes,
   indices,
+  selected,
+  onPick,
 }: {
   blocks: Block[];
   placed: Record<string, Placed>;
@@ -38,26 +41,36 @@ export const PageBlocks = memo(function PageBlocks({
   page: { w: number; h: number };
   boxes: Boxes;
   indices: boolean;
+  /** The ids selected on this page. */
+  selected: ReadonlySet<string>;
+  onPick: (id: string, e: MouseEvent) => void;
 }) {
-  if (!boxes.text && !boxes.images && !indices) return null;
   const ordered = [
     ...blocks.filter((b) => b.kind === "image"),
     ...blocks.filter((b) => b.kind !== "image"),
   ];
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0">
+    <div aria-hidden className="absolute inset-0">
       {ordered.map((block) => {
         const boxed = block.kind === "image" ? boxes.images : boxes.text;
         const written = placed[block.id];
-        const at = indices && written && !written.deleted ? written : undefined;
-        if (!boxed && !at) return null;
+        const pickable = written !== undefined && !written.deleted;
+        const on = pickable && selected.has(block.id);
+        const at = pickable && (indices || on) ? written : undefined;
         const box = drawnBox(block.box, scale, page);
         return (
           <div
             key={block.id}
             data-block={block.id}
             data-kind={block.kind}
-            className={boxed ? "hit" : "hit quiet"}
+            className={[
+              "hit",
+              boxed ? "" : "quiet",
+              pickable ? "pick" : "",
+              on ? "selection on-paper" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
             // Where it is on the page, as properties the note reads too:
             // it keeps itself on the paper from them.
             style={
@@ -68,6 +81,11 @@ export const PageBlocks = memo(function PageBlocks({
                 height: box.h,
               } as CSSProperties
             }
+            onClick={pickable ? (e) => onPick(block.id, e) : undefined}
+            // A shift-click extends the browser's own text selection from
+            // wherever it last was, across the bars' labels, unless the
+            // press is taken here.
+            onMouseDown={(e) => e.shiftKey && e.preventDefault()}
           >
             {at && <span className="note">{at.n}</span>}
           </div>
