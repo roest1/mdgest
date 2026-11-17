@@ -6,6 +6,7 @@
 
 import { create } from "zustand";
 import type { Analysis } from "./analysis";
+import type { Edits } from "./edits";
 import type { Markdown } from "./emit";
 import {
   lassoed,
@@ -36,11 +37,19 @@ export interface Boxes {
 }
 
 /** Where a document's reading stands. `reading` counts pages as they are
- *  read; `ready` carries the analysis and the markdown emitted from it --
- *  the same text the engine wrote to the workspace. */
+ *  read; `ready` carries the analysis, the edits a person made to it, and
+ *  the markdown emitted from both -- the same text the engine wrote to the
+ *  workspace, or is about to (`editing.ts`). `unsaved` says why the last
+ *  edit was not kept, until one is. */
 export type Reading =
   | { status: "reading"; page: number; pages: number }
-  | { status: "ready"; analysis: Analysis; markdown: Markdown }
+  | {
+      status: "ready";
+      analysis: Analysis;
+      edits: Edits;
+      markdown: Markdown;
+      unsaved?: string;
+    }
   | { status: "failed"; problem: string };
 
 interface EditorState {
@@ -56,8 +65,9 @@ interface EditorState {
   indices: boolean;
   setIndices: (indices: boolean) => void;
   /** The blocks selected, of one document at a time (`selection.ts`). A
-   *  reading set anew or forgotten lets go of its document's selection:
-   *  the ids are that reading's. */
+   *  reading forgotten, or set on another analysis -- read again -- lets go
+   *  of its document's selection: the ids are that analysis's. An edit
+   *  keeps the analysis, and the selection with it. */
   selection: Selection | null;
   /** A click on block `id` of `docId` in the pane `from`. */
   pick: (docId: string, id: string, modifiers: Modifiers, from: Side) => void;
@@ -79,7 +89,13 @@ export const useEditor = create<EditorState>()((set, get) => ({
       const readings = byId(s.readings);
       if (reading) readings[docId] = reading;
       else delete readings[docId];
-      const selection = s.selection?.docId === docId ? null : s.selection;
+      const was = s.readings[docId];
+      const same =
+        reading?.status === "ready" &&
+        was?.status === "ready" &&
+        was.analysis === reading.analysis;
+      const selection =
+        s.selection?.docId === docId && !same ? null : s.selection;
       return { readings, selection };
     }),
   boxes: { text: true, images: true },

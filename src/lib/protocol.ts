@@ -14,6 +14,7 @@
  */
 
 import type { Analysis } from "./analysis";
+import type { Edits } from "./edits";
 
 // ---- staging --------------------------------------------------------------
 
@@ -131,6 +132,19 @@ export interface Engine {
    *  page afterwards. */
   convert: {
     params: { docId: string; analysis: Analysis; figures: Figure[] };
+    /** The edits the markdown was written with: the ones already in the
+     *  cache, which a document read again keeps. */
+    result: Edits | null;
+  };
+  /** A document's edits, as `.mdgest/<id>.pdf/edits.json` holds them, or
+   *  null when nobody has made any. Rejects with what is wrong with a file
+   *  that does not read, rather than answering none. */
+  edits: { params: { docId: string }; result: Edits | null };
+  /** Keep a document's edits and write its markdown again with them.
+   *  `markdown` is the text the page just emitted for the screen. Refused
+   *  for a document that has not been read. */
+  saveEdits: {
+    params: { docId: string; edits: Edits; markdown: string };
     result: void;
   };
   /** One of a document's figures, as `convert` wrote it, or null when there

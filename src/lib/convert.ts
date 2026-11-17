@@ -13,6 +13,7 @@
  * (`forgetReading`). */
 
 import { READER, UNUSABLE_ANALYSIS, type Analysis } from "./analysis";
+import { blankEdits, isBlank, type Edits } from "./edits";
 import { emit, type Markdown } from "./emit";
 import { engine } from "./engine";
 import type { PDFPageProxy } from "./pdf";
@@ -25,6 +26,8 @@ import { assetsPrefix } from "./workspace";
 
 export interface Converted {
   analysis: Analysis;
+  /** What a person decided about it, blank when nobody has. */
+  edits: Edits;
   markdown: Markdown;
 }
 
@@ -119,12 +122,25 @@ async function run(
   offPages: () => void,
   onPage?: (page: number, pages: number) => void,
 ): Promise<Converted> {
-  let analysis = await engine.analysis(docId).catch(rereadable);
+  // The edits with the analysis: an `edits.json` that does not read fails
+  // the reading with what is wrong with it, rather than opening as none and
+  // being written over by the next edit.
+  let [analysis, edits] = await Promise.all([
+    engine.analysis(docId).catch(rereadable),
+    engine.edits(docId),
+  ]);
   if (job.canceled) throw canceled();
   // One an older reader made is read again, the way a `READER` bump says:
-  // its blocks may not be this reader's. Nothing is lost while there are no
-  // edits; once there are, the edits' feature asks before dropping them.
-  if (analysis && analysis.reader !== READER) analysis = null;
+  // its blocks may not be this reader's. Not while there are edits, though:
+  // they name the blocks of this analysis, and a reading again numbers them
+  // afresh, so the edits would land on other blocks or on none. Those keep
+  // the read they were made on until a person says to read it again.
+  if (
+    analysis &&
+    analysis.reader !== READER &&
+    (edits === null || isBlank(edits))
+  )
+    analysis = null;
   if (!analysis) {
     const read: ReadPage[] = [];
     const figures: Figure[] = [];
@@ -137,12 +153,19 @@ async function run(
     }
     offPages();
     analysis = structure(read);
-    await engine.convert(docId, analysis, figures);
+    // The engine writes the markdown with the edits it holds, and answers
+    // them -- the same file read above, unless it changed in between.
+    edits = await engine.convert(docId, analysis, figures);
     // Given up under the write: it is in the cache, where the next reading
     // finds it, but this one shows nothing of it.
     if (job.canceled) throw canceled();
   }
-  return { analysis, markdown: emit(analysis, assetsPrefix(docId)) };
+  const kept = edits ?? blankEdits();
+  return {
+    analysis,
+    edits: kept,
+    markdown: emit(analysis, assetsPrefix(docId), kept),
+  };
 }
 
 /** Have `docId` read for the panes, its reading kept in the store as it
@@ -168,8 +191,8 @@ export function ensureRead(docId: string, pages: PDFPageProxy[]): void {
   });
   mine.hear.add((page, of) => publish({ status: "reading", page, pages: of }));
   mine.job.then(
-    ({ analysis, markdown }) =>
-      publish({ status: "ready", analysis, markdown }),
+    ({ analysis, edits, markdown }) =>
+      publish({ status: "ready", analysis, edits, markdown }),
     (cause: unknown) => {
       if (cause instanceof Error && cause.name === CANCELED) return;
       publish({

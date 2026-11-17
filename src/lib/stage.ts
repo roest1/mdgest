@@ -32,6 +32,7 @@ import {
   RESERVE,
 } from "./limits";
 import { parseAnalysis, type Analysis } from "./analysis";
+import { parseEdits, type Edits } from "./edits";
 import { emit } from "./emit";
 import { bare } from "./exchange";
 import * as opfs from "./opfs";
@@ -1042,6 +1043,16 @@ export function source(docId: string): Promise<Uint8Array<ArrayBuffer>> {
 }
 
 const ANALYSIS = "analysis.json";
+const EDITS = "edits.json";
+
+/** A document's edits as its cache holds them, or null when nobody has
+ *  made any. A file that does not read throws what is wrong with it, rather
+ *  than reading as none: none would be written over on the next edit, and
+ *  the decisions in it lost. Called under the lock. */
+async function readEdits(docId: string): Promise<Edits | null> {
+  const text = await opfs.readText([...cacheDir(docId), EDITS]);
+  return text === null ? null : parseEdits(text);
+}
 
 /** One committed document's analysis, or null when it has not been read.
  *  Null rather than an error: a document that is in the workspace and not
@@ -1056,12 +1067,15 @@ export function analysis(docId: string): Promise<Analysis | null> {
 
 /** Keep a document's read and write its markdown. The figures replace
  *  whatever was in the assets folder: a re-read names them from scratch,
- *  and a stale one would otherwise sit beside the new set. */
+ *  and a stale one would otherwise sit beside the new set. A document read
+ *  again with its edits in the cache keeps them, and its markdown carries
+ *  them; they are answered, which the page would otherwise come straight
+ *  back for. */
 export function convert(
   docId: string,
   analysis: Analysis,
   figures: Figure[],
-): Promise<void> {
+): Promise<Edits | null> {
   return locked(async () => {
     if ((await opfs.size(sourcePath(docId))) === null) {
       throw new Error(`${docId} is not in this workspace.`);
@@ -1078,7 +1092,12 @@ export function convert(
     // is near enough for figuring room; a zero free means the browser would
     // not say, and `writeFile` still reports a real full disk in words if
     // it comes to that.
-    const markdown = emit(analysis, assetsPrefix(docId)).text;
+    const edits = await readEdits(docId);
+    const markdown = emit(
+      analysis,
+      assetsPrefix(docId),
+      edits ?? undefined,
+    ).text;
     const json = `${JSON.stringify(analysis, null, 1)}\n`;
     let writing = markdown.length + json.length;
     for (const { bytes } of figures) writing += bytes.byteLength;
@@ -1102,6 +1121,39 @@ export function convert(
     }
     await opfs.writeText(markdownPath(docId), markdown);
     await opfs.writeText([...cacheDir(docId), ANALYSIS], json);
+    return edits;
+  });
+}
+
+/** One committed document's edits, or null when nobody has made any. */
+export function edits(docId: string): Promise<Edits | null> {
+  return locked(() => readEdits(docId));
+}
+
+/** Keep a document's edits, and write its markdown again with them. The
+ *  markdown comes from the page, which has just emitted it for the screen:
+ *  emit is pure and shared, so it is the text this side would make, without
+ *  reading the analysis back to make it. Each call writes both files whole,
+ *  each replaced rather than written in place (`writeText`), and a call
+ *  made after another lands after it, since the lock grants in the order
+ *  asked. The edits go first: they are what nothing can make again, and a
+ *  markdown left behind by a write cut short is made again by the next. */
+export function saveEdits(
+  docId: string,
+  edits: Edits,
+  markdown: string,
+): Promise<void> {
+  return locked(async () => {
+    if ((await opfs.size([...cacheDir(docId), ANALYSIS])) === null) {
+      throw new Error(
+        `${docId} has not been read, so there is nothing to edit.`,
+      );
+    }
+    await opfs.writeText(
+      [...cacheDir(docId), EDITS],
+      `${JSON.stringify(edits, null, 1)}\n`,
+    );
+    await opfs.writeText(markdownPath(docId), markdown);
   });
 }
 

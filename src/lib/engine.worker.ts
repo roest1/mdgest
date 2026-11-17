@@ -48,6 +48,9 @@ const handlers: Handlers = {
   analysis: ({ docId }) => stage.analysis(docId),
   convert: ({ docId, analysis, figures }) =>
     stage.convert(docId, analysis, figures),
+  edits: ({ docId }) => stage.edits(docId),
+  saveEdits: ({ docId, edits, markdown }) =>
+    stage.saveEdits(docId, edits, markdown),
   asset: ({ docId, name }) => stage.asset(docId, name),
   assetBytes: ({ docId }) => stage.assetBytes(docId),
 };

@@ -1,4 +1,5 @@
 import type { Analysis } from "./analysis";
+import type { Edits } from "./edits";
 import {
   type Call,
   type Failure,
@@ -125,6 +126,9 @@ export const engine = {
       { docId, analysis, figures },
       figures.map((f) => f.bytes),
     ),
+  edits: (docId: string) => call("edits", { docId }),
+  saveEdits: (docId: string, edits: Edits, markdown: string) =>
+    call("saveEdits", { docId, edits, markdown }),
   asset: (docId: string, name: string) => call("asset", { docId, name }),
   assetBytes: (docId: string) => call("assetBytes", { docId }),
 };
