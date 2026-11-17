@@ -12,6 +12,7 @@ import { defaultUrlTransform } from "react-markdown";
 import { afterEach, expect, test, vi } from "vitest";
 import { safeUrl, toHast } from "src/lib/hast";
 import {
+  type ParseAsk,
   parseAhead,
   ready,
   releaseAllParsed,
@@ -90,27 +91,32 @@ test("pages are parsed ahead in workers to the tree the page's thread parses, th
   // every page is then "ready" to parse on the page's thread, which would
   // pass the rest of this unseen. So: it says so, and must not.
   const warn = vi.spyOn(console, "warn");
+  // What each worker is handed, in the order handed. Which worker answers
+  // first is the scheduler's: on four cores busy with the rest of the suite,
+  // the worker given the first batch can start last.
+  const post = vi.spyOn(Worker.prototype, "postMessage");
   const texts = pages(400);
   // The last pages first, as a view taken to the end of a book wants.
   const wanted = [...texts].reverse();
   const isReady = (t: string) => ready("doc", t);
-  let first: boolean[] | null = null;
   let done!: () => void;
   const all = new Promise<void>((resolve) => (done = resolve));
   const stop = parseAhead(
     "doc",
     () => wanted.filter((t) => !isReady(t)),
     () => {
-      first ??= [isReady(texts[0]), isReady(texts.at(-1)!)];
       if (texts.every(isReady)) done();
     },
   );
   await all;
   stop();
+  const asks = post.mock.calls.map(([ask]) => (ask as ParseAsk).texts);
+  post.mockRestore();
   expect(warn).not.toHaveBeenCalled();
-  // Told of the first batches before the last: the page wanted first was
-  // parsed, the page wanted last not yet.
-  expect(first).toEqual([false, true]);
+  // Handed out in the order wanted, each page once: the page wanted first
+  // went in the first batch, the page wanted last in the last.
+  expect(asks.length).toBeGreaterThan(1);
+  expect(asks.flat()).toEqual(wanted);
   for (const text of texts) expect(treeOf("doc", text)).toEqual(toHast(text));
 });
 
