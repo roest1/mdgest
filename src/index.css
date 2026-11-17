@@ -282,6 +282,22 @@
   .piece {
     content-visibility: auto;
   }
+  /* `content-visibility` contains a piece's paint as well as its layout: a
+     piece draws nothing past its own box, on screen or not. A selection's
+     ring and its note stand out past the text they mark, so a rendered
+     piece reaches into the article's side padding (32px), and the first one
+     into its top padding, by as much as it gives back -- the text stays
+     where it was, and only where the piece may paint grows. The first
+     piece's top is the one the text's own top margin does not already
+     clear: every later page opens on its rule. */
+  .markdown > .piece {
+    margin-inline: -28px;
+    padding-inline: 28px;
+  }
+  .markdown > .piece:first-child {
+    margin-top: -20px;
+    padding-top: 20px;
+  }
 
   /* A page of the markdown not drawn yet (`Waiting`, MarkdownPane.tsx), in
      either view: its page named at the top, then lines like the view's
@@ -430,15 +446,17 @@
   }
   /* Selected, the block stands a little off its text without moving it:
      the fill is spread past the element by a shadow, not padding, and the
-     ring and glint drawn out to the same reach. */
+     ring is an outline at the same reach, with the glint drawn out to it.
+     Not a second shadow for the ring: a shadow is a filled band, and one
+     under the fill would be a thick bar of the ring's color. */
   .markdown .selection {
     --reach: 4px;
     position: relative;
-    box-shadow:
-      0 0 0 var(--reach)
-        color-mix(in srgb, var(--color-accent-lit) var(--fill), transparent),
-      0 0 0 calc(var(--reach) + 1px)
-        color-mix(in srgb, var(--color-accent-lit) var(--edge), transparent);
+    box-shadow: 0 0 0 var(--reach)
+      color-mix(in srgb, var(--color-accent-lit) var(--fill), transparent);
+    outline: 1px solid
+      color-mix(in srgb, var(--color-accent-lit) var(--edge), transparent);
+    outline-offset: var(--reach);
   }
   /* Its number on a note at the corner, as on the page: a small square of
      paper set a little askew, above the glint. */

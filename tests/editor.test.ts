@@ -1159,6 +1159,34 @@ test("a block is selected by a click on its box or on what it wrote, and let go 
   await expect.poll(() => document.querySelector(".selection")).toBeNull();
 });
 
+test("a selection in the markdown is drawn whole: its ring, glint and note inside the box its page may paint in", async () => {
+  // The first block of the first page: the top and the left are the edges
+  // nothing before it clears. Then a paragraph -- not the second block,
+  // whose words are a link, which a click follows rather than picks.
+  const ids = await opened();
+  for (const id of [ids[0], ids[2]]) {
+    await userEvent.click(writtenBy(id));
+    await expect.poll(() => writtenBy(id).matches(".selection")).toBe(true);
+    const el = writtenBy(id);
+    // A piece paints nothing past its padding box (`content-visibility`).
+    const piece = el.closest(".piece")!.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    // The ring and the glint, an outline 1px wide at the reach, and the
+    // note, turned a little, so measured with room for its corners.
+    const reach = 4 + 1;
+    expect(box.left - reach).toBeGreaterThanOrEqual(piece.left);
+    expect(box.right + reach).toBeLessThanOrEqual(piece.right);
+    expect(box.top - reach).toBeGreaterThanOrEqual(piece.top);
+    const note = el.querySelector(".note")!.getBoundingClientRect();
+    expect(note.left - 2).toBeGreaterThanOrEqual(piece.left);
+    expect(note.top - 2).toBeGreaterThanOrEqual(piece.top);
+    // The ring is a line, not a band: past the fill, nothing but the 1px.
+    const style = getComputedStyle(el);
+    expect(style.outlineWidth).toBe("1px");
+    expect(style.boxShadow.match(/rgb/g)).toHaveLength(1);
+  }
+});
+
 test("shift ranges from the block picked last, and ctrl toggles one, in either pane", async () => {
   const ids = await opened();
   expect(ids.length).toBeGreaterThanOrEqual(4);
