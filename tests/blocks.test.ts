@@ -85,6 +85,7 @@ describe("PageBlocks", () => {
     host.innerHTML = renderToStaticMarkup(
       createElement(PageBlocks, {
         blocks,
+        lines: [],
         placed: md.blocks,
         scale: 1,
         page: { w: 600, h: 800 },
@@ -122,13 +123,22 @@ describe("PageBlocks", () => {
     expect(host.querySelector(".note")).toBeNull();
   });
 
-  test("only a block the markdown wrote is picked: not a deleted one, nor one with no words", () => {
+  test("a block the markdown placed is picked, a deleted one too -- here is where it is restored -- but not one with no words", () => {
     const host = drawn({ text: true, images: true }, true);
     expect(
       [...host.querySelectorAll<HTMLElement>(".pick")].map(
         (el) => el.dataset.block,
       ),
-    ).toEqual(["p1b0", "p1b1"]);
+    ).toEqual(["p1b0", "p1b1", "p1b2"]);
+  });
+
+  test("a hidden block is veiled and a deleted one marked, whatever the tool bar says", () => {
+    const host = drawn({ text: false, images: false }, false);
+    const at = (id: string) =>
+      host.querySelector<HTMLElement>(`[data-block="${id}"]`)!;
+    expect(at("p1b1").querySelector(".veil")).not.toBeNull();
+    expect(at("p1b2").matches(".deleted-block")).toBe(true);
+    expect(at("p1b0").querySelector(".veil, .strike, .cross")).toBeNull();
   });
 
   test("a selected block is ringed and numbered whatever the tool bar says", () => {

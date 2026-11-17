@@ -39,6 +39,10 @@
   /* the sticky note on a selection: paper and the pencil on it */
   --color-note: #f3d35f;
   --color-note-ink: #3a2f06;
+
+  /* a deleted block's strike, on the page's white: red-600, which reads on
+     paper where the panes' lighter reds would wash out */
+  --color-strike: #dc2626;
 }
 
 /* ── base ───────────────────────────────────────────────────────────── */
@@ -372,6 +376,10 @@
   .source > li[data-kind="image"] {
     @apply text-muted;
   }
+  /* A hidden block's comment: there in the source, gone from the page. */
+  .source > li[data-kind="comment"] {
+    @apply text-faint italic;
+  }
 
   /* ── selection ──────────────────────────────────────────────────────
      One accent at a few strengths, so a white page and the dark panes share
@@ -407,7 +415,10 @@
     content: "";
     position: absolute;
     inset: calc(-1px - var(--reach));
-    border-radius: inherit;
+    /* The ring's own corners: an outline or a shadow spread out from the
+       element rounds its corners out by as much, so a band inheriting the
+       element's 3px would be squarer than the ring it lies on. */
+    border-radius: calc(4px + var(--reach));
     pointer-events: none;
     background-image: linear-gradient(
       to top right,
@@ -508,6 +519,9 @@
   .source > li[data-selected]::before {
     @apply text-accent-lit;
   }
+  .source > li[data-selected][data-kind="comment"] {
+    @apply text-muted;
+  }
   .source > li[data-selected]::after {
     content: "";
     position: absolute;
@@ -559,6 +573,39 @@
   /* Above its neighbors, and its note above theirs. */
   .hit.selection {
     z-index: 1;
+  }
+  /* What an edit did, drawn whatever the tool bar says (PageBlocks.tsx).
+     Hidden: a veil of the notes' paper gray, so the words show faint
+     through it. Deleted: each line struck through in red, a picture
+     corner to corner, and the box ringed in a faint red. */
+  .hit > .veil,
+  .hit > .cross {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+  .hit > .veil {
+    background: rgb(214 209 200 / 0.8);
+  }
+  .hit > .cross {
+    background: linear-gradient(
+      to top right,
+      transparent calc(50% - 1.5px),
+      var(--color-strike) calc(50% - 1.5px) calc(50% + 1.5px),
+      transparent calc(50% + 1.5px)
+    );
+  }
+  .hit > .strike {
+    position: absolute;
+    height: 1.5px;
+    translate: 0 -50%;
+    background: var(--color-strike);
+    pointer-events: none;
+  }
+  .hit.deleted-block:not(.selection):not(.pick:hover) {
+    box-shadow: 0 0 0 1px
+      color-mix(in srgb, var(--color-strike) 45%, transparent);
   }
   /* The block's number, on a small gray tag set a little askew as a
      stuck-on thing is: the number the markdown counts it by. It hangs off

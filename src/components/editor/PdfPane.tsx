@@ -10,7 +10,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { Spinner } from "src/components/shared/Spinner";
-import type { Block, Box } from "src/lib/analysis";
+import type { Block, Box, Line } from "src/lib/analysis";
 import { ensureRead, readDone } from "src/lib/convert";
 import type { Placed } from "src/lib/emit";
 import { engine } from "src/lib/engine";
@@ -35,6 +35,7 @@ import { iconButton } from "./controls";
 import { pageTops, swept } from "./blocks";
 import { GAP, inView, layout, PAD, rowLeft, type Row } from "./column";
 import { MoreMenu } from "./MoreMenu";
+import { BlockActions } from "./BlockActions";
 import { PageBlocks } from "./PageBlocks";
 import { PageCanvas } from "./PageCanvas";
 import { Pane } from "./Pane";
@@ -173,6 +174,8 @@ const NO_SIZES: { w: number; h: number }[] = [];
 const NO_PAGES: Block[][] = [];
 const NO_PLACED: Record<string, Placed> = {};
 const NO_BLOCKS: Block[] = [];
+const NO_LINES: Line[][] = [];
+const NO_LINE: Line[] = [];
 
 const when = (d: Date | null) =>
   d
@@ -484,9 +487,17 @@ export function PdfPane({ docId }: { docId: string }) {
   const topsRef = useRef(tops);
   // What each page draws over itself: its blocks, numbered as the markdown
   // counts them, once the reading is ready.
+  // The analysis's, so the same arrays across edits, which place the
+  // blocks anew and read nothing again.
+  const analysis = read?.analysis;
   const blocks = useMemo(
-    () => read?.analysis.pages.map((p) => p.blocks) ?? NO_PAGES,
-    [read],
+    () => analysis?.pages.map((p) => p.blocks) ?? NO_PAGES,
+    [analysis],
+  );
+  // And the lines they were read from: a deleted block's are struck out.
+  const lines = useMemo(
+    () => analysis?.pages.map((p) => p.lines) ?? NO_LINES,
+    [analysis],
   );
   const placed = read?.markdown.blocks ?? NO_PLACED;
   const boxes = useEditor((s) => s.boxes);
@@ -775,6 +786,7 @@ export function PdfPane({ docId }: { docId: string }) {
                   drawScale={drawScale}
                   snapshots={snapshots}
                   blocks={blocks}
+                  lines={lines}
                   placed={placed}
                   boxes={boxes}
                   indices={indices}
@@ -784,6 +796,13 @@ export function PdfPane({ docId }: { docId: string }) {
                 />
               ))}
             </div>
+          )}
+          {ready && (
+            <BlockActions
+              docId={docId}
+              scroller={scroller}
+              placement="corner"
+            />
           )}
           {marquee && (
             <div
@@ -824,6 +843,7 @@ const PageRow = memo(
     drawScale,
     snapshots,
     blocks,
+    lines,
     placed,
     boxes,
     indices,
@@ -838,6 +858,8 @@ const PageRow = memo(
     snapshots: Snapshots;
     /** Every page's blocks, by page number less one. */
     blocks: Block[][];
+    /** Every page's lines, the same way. */
+    lines: Line[][];
     placed: Record<string, Placed>;
     boxes: Boxes;
     indices: boolean;
@@ -868,6 +890,7 @@ const PageRow = memo(
             {blocks[p.n - 1] && (
               <PageBlocks
                 blocks={blocks[p.n - 1]}
+                lines={lines[p.n - 1] ?? NO_LINE}
                 placed={placed}
                 scale={scale}
                 page={p}

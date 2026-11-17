@@ -1220,6 +1220,9 @@ test("a selection in the markdown is drawn whole: its ring, glint and note insid
     const style = getComputedStyle(el);
     expect(style.outlineWidth).toBe("1px");
     expect(style.boxShadow.match(/rgb/g)).toHaveLength(1);
+    // The glint's band lies on the ring, corners and all: an outline rounds
+    // out by its offset and width, 3 + 4 + 1.
+    expect(getComputedStyle(el, "::after").borderTopRightRadius).toBe("8px");
   }
 });
 
@@ -1347,4 +1350,198 @@ test("a selected box is ringed and numbered whatever the tool bar says, and an u
   expect(ring(boxOf(other))).toBe("none");
   await userEvent.hover(boxOf(other));
   expect(ring(boxOf(other))).not.toBe("none");
+});
+
+// ---- hiding and deleting --------------------------------------------------
+
+/** `a.pdf` for hiding and deleting: a title, a paragraph of three lines, one
+ *  of a line, and a picture. */
+const toEdit = async () =>
+  new File(
+    [
+      await buildPdf([
+        (pen) => {
+          pen.text(X, TOP, "Pump Care", { size: 16, face: "bold" });
+          pen.lines(X, TOP + PARAGRAPH, prose(3));
+          pen.text(X, TOP + 3 * PARAGRAPH, prose(1, 3)[0]);
+          pen.image(X, TOP + 5 * PARAGRAPH, 200, 120, [100, 60]);
+        },
+      ]),
+    ],
+    "a.pdf",
+  );
+
+/** `a` open for editing: its title, three-line paragraph, one-line
+ *  paragraph and picture, by id. */
+async function openedToEdit() {
+  await workspace(await toEdit());
+  mount("/edit/a");
+  const { analysis } = await ready();
+  await pagesDrawn();
+  await expect
+    .element(page.getByRole("heading", { name: "Pump Care" }))
+    .toBeVisible();
+  const blocks = analysis.pages[0].blocks;
+  const text = blocks.filter((b) => b.kind === "text");
+  const picture = blocks.find((b) => b.kind === "image")!;
+  return {
+    title: text[0].id,
+    para: text[1],
+    line: text[2].id,
+    picture: picture.id,
+  };
+}
+
+/** The pointer come onto `el`, as the buttons hear it. Not Playwright's
+ *  hover: the locator vitest builds for a box or a page is from the text
+ *  in it and around it, which the buttons, appearing, change -- so it
+ *  never holds still long enough to be hovered. */
+const pointAt = (el: Element) =>
+  el.dispatchEvent(
+    new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }),
+  );
+/** The selection's buttons, where they are shown, or null. */
+const actions = () =>
+  Array.from(
+    document.querySelectorAll<HTMLElement>("[data-block-actions]"),
+  ).find((el) => !el.hidden) ?? null;
+/** What the buttons shown say: their labels, or the tip of one that is
+ *  an icon alone -- parked while the pointer is on it (`Tooltip.tsx`). */
+const offered = () =>
+  Array.from(
+    actions()?.querySelectorAll<HTMLElement>("button") ?? [],
+    (b) => b.textContent?.trim() || b.title || b.dataset.title,
+  );
+/** Block `id`'s placing in the markdown, as it stands. */
+const placedOf = (id: string) =>
+  readingOf()?.status === "ready"
+    ? (readingOf() as Extract<Reading, { status: "ready" }>).markdown.blocks[id]
+    : undefined;
+
+test("the selection's buttons hang on the selected block under the pointer, in either pane and view, and act on all of it", async () => {
+  const { title, para } = await openedToEdit();
+  // On the page, as soon as it is picked -- the pointer is already on it --
+  // at the box's top-right corner, across from its note.
+  await userEvent.click(boxOf(para.id));
+  await expect.poll(offered).toEqual(["Hide", "Delete"]);
+  // Labeled, so no tip saying it again.
+  expect(actions()!.querySelector("[title], [data-title]")).toBeNull();
+  pointAt(boxOf(para.id));
+  const box = boxOf(para.id).getBoundingClientRect();
+  let bar = actions()!.getBoundingClientRect();
+  expect(bar.right).toBeCloseTo(box.right, 0);
+  expect((bar.top + bar.bottom) / 2).toBeCloseTo(box.top, 0);
+  // Not on a block that is not selected.
+  // The real pointer, which a dispatched event would not move: what is
+  // under it is heard again as the buttons come and go.
+  await userEvent.hover(boxOf(title));
+  await expect.poll(actions).toBeNull();
+
+  // Two selected, from the markdown: the buttons say so, and act on both.
+  await userEvent.click(writtenBy(title), { modifiers: ["Shift"] });
+  expect(selectedIds()).toEqual([title, para.id]);
+  pointAt(writtenBy(para.id));
+  await expect.poll(offered).toEqual(["Hide 2", "Delete 2"]);
+  const lit = writtenBy(para.id).getBoundingClientRect();
+  bar = actions()!.getBoundingClientRect();
+  // Out on the ring, its 4px reach past the element.
+  expect(bar.right).toBeCloseTo(lit.right + 4, 0);
+  await page.getByRole("button", { name: "Hide 2" }).click();
+  await expect.poll(() => placedOf(title)?.hidden).toBe(true);
+  expect(placedOf(para.id)?.hidden).toBe(true);
+  // The button is not a click off every block: the selection stands.
+  expect(selectedIds()).toEqual([title, para.id]);
+  // Gone from the rendered view; veiled on the page, numbered still.
+  await expect
+    .element(page.getByRole("heading", { name: "Pump Care" }))
+    .not.toBeInTheDocument();
+  // Nor its comment, as text: a comment is drawn as nothing.
+  expect(document.querySelector(".markdown")!.textContent).not.toContain(
+    "<!--",
+  );
+  for (const id of [title, para.id]) {
+    expect(boxOf(id).querySelector(".veil")).not.toBeNull();
+    expect(boxOf(id).querySelector(".note")).not.toBeNull();
+  }
+
+  // In the source: a comment, grayed, with Show at the end of its line --
+  // icons alone, in the line, each saying what it does in its tip.
+  await page.getByRole("radio", { name: "raw" }).click();
+  await expect.poll(sourceLines).toContain("<!-- # Pump Care -->");
+  const row = document.querySelector<HTMLElement>(
+    `.source > li[data-block="${title}"]`,
+  )!;
+  expect(row.dataset.kind).toBe("comment");
+  pointAt(row);
+  await expect
+    .poll(offered)
+    .toEqual(["Show all 2 selected blocks", "Delete all 2 selected blocks"]);
+  expect(actions()!.textContent).toBe("");
+  const line = row.getBoundingClientRect();
+  bar = actions()!.getBoundingClientRect();
+  expect(bar.right).toBeLessThanOrEqual(line.right);
+  expect((bar.top + bar.bottom) / 2).toBeCloseTo(
+    (line.top + line.bottom) / 2,
+    0,
+  );
+  await page
+    .getByRole("button", { name: "Show all 2 selected blocks" })
+    .click();
+  await expect.poll(sourceLines).toContain("# Pump Care");
+  expect(placedOf(para.id)?.hidden).toBe(false);
+});
+
+test("a deleted block is struck through on the page and restored from there, and kept", async () => {
+  const { para, line, picture } = await openedToEdit();
+  expect(para.lines).toHaveLength(3);
+  await userEvent.click(boxOf(para.id));
+  pointAt(boxOf(para.id));
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect.poll(() => placedOf(para.id)?.deleted).toBe(true);
+  // Out of the markdown; on the page, unnumbered, each line struck.
+  expect(writtenBy(para.id)).toBeNull();
+  const struck = boxOf(para.id);
+  expect(struck.querySelector(".note")).toBeNull();
+  const strikes = Array.from(struck.querySelectorAll(".strike"), (s) =>
+    s.getBoundingClientRect(),
+  );
+  expect(strikes).toHaveLength(3);
+  const at = struck.getBoundingClientRect();
+  for (const s of strikes) {
+    expect(s.top).toBeGreaterThan(at.top);
+    expect(s.bottom).toBeLessThan(at.bottom);
+  }
+  expect(strikes[1].top - strikes[0].top).toBeGreaterThan(8);
+
+  // Still selected, and only Restore offered: it has nothing to hide.
+  expect(selectedIds()).toEqual([para.id]);
+  await expect.poll(offered).toEqual(["Restore"]);
+  await page.getByRole("button", { name: "Restore" }).click();
+  await expect.poll(() => placedOf(para.id)?.deleted).toBe(false);
+  expect(boxOf(para.id).querySelector(".strike")).toBeNull();
+  expect(boxOf(para.id).querySelector(".note")).not.toBeNull();
+
+  // Deleted again, and a picture: crossed corner to corner.
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect.poll(() => placedOf(para.id)?.deleted).toBe(true);
+  await userEvent.click(boxOf(picture));
+  pointAt(boxOf(picture));
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect.poll(() => placedOf(picture)?.deleted).toBe(true);
+  expect(boxOf(picture).querySelector(".cross")).not.toBeNull();
+
+  // Closed, and opened again: kept.
+  await saved("a");
+  await page.getByRole("button", { name: "Close a" }).click();
+  await expect.poll(() => readingOf()).toBeUndefined();
+  root!.unmount();
+  host!.remove();
+  mount("/edit/a");
+  await ready();
+  await pagesDrawn();
+  await expect
+    .poll(() => boxOf(para.id)?.querySelectorAll(".strike").length)
+    .toBe(3);
+  expect(boxOf(picture).querySelector(".cross")).not.toBeNull();
+  expect(placedOf(line)?.deleted).toBe(false);
 });

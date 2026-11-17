@@ -23,6 +23,7 @@ import { parseAhead, ready, treeOf } from "src/lib/parse";
 import { pieces, samePiece, type Piece } from "src/lib/pieces";
 import { attachSync, invalidateSync, remeasureSync } from "src/lib/scrollsync";
 import { modifiers, offBlocks } from "src/lib/selection";
+import { BlockActions } from "./BlockActions";
 import { useEditor, type Reading } from "src/lib/store";
 import { assetsPrefix } from "src/lib/workspace";
 import { barButton } from "./controls";
@@ -248,6 +249,7 @@ const RenderedPiece = memo(
     height: number;
     /** The ids selected on its page (`useSelected`). */
     selected: ReadonlySet<string>;
+    /** Every block, for the numbers on its selected ones' notes. */
     blocks: Record<string, Placed>;
   }) {
     const drawn = useMemo(
@@ -269,14 +271,28 @@ const RenderedPiece = memo(
       </div>
     );
   },
+  // An edit places every block anew, and a book has a thousand pages
+  // drawn: each draws again only if what it says changed, or the number
+  // on one of its notes did -- not for every edit to any page.
   (a, b) =>
     a.docId === b.docId &&
     a.components === b.components &&
     a.height === b.height &&
     a.selected === b.selected &&
-    a.blocks === b.blocks &&
+    sameNotes(a.selected, a.blocks, b.blocks) &&
     samePiece(a.piece, b.piece),
 );
+
+/** Whether the selected blocks `ids` are numbered the same in `a` and `b`. */
+function sameNotes(
+  ids: ReadonlySet<string>,
+  a: Record<string, Placed>,
+  b: Record<string, Placed>,
+): boolean {
+  if (a === b) return true;
+  for (const id of ids) if (a[id]?.n !== b[id]?.n) return false;
+  return true;
+}
 
 /** The pages' markdown parsed ahead of the view, in workers (`parse.ts`):
  *  a page is ready to draw once it is parsed. */
@@ -432,16 +448,25 @@ function Rendered({
 
 /** What a line of source is, for the gutter's tinting. Coarse on purpose:
  *  the source view is for checking the markdown, not highlighting it. */
-type Kind = "heading" | "rule" | "image" | "text";
+type Kind = "heading" | "rule" | "image" | "comment" | "text";
 
 function kindOf(line: string): Kind {
+  // A hidden block: the line it would be, commented out -- indented into
+  // the item before it when it is inside a list.
+  if (line.trimStart().startsWith("<!--")) return "comment";
   if (/^#{1,6}\s/.test(line)) return "heading";
   if (/^(---+|```)\s*$/.test(line)) return "rule";
   if (line.startsWith("![")) return "image";
   return "text";
 }
 
-/** One page of the source, its lines numbered on from the pages before. */
+/** One page of the source, its lines numbered on from the pages before.
+ *  Two parts, since an edit renumbers more than it rewrites: a line added
+ *  or taken out moves where every page after it starts, which this, the
+ *  list, takes as one counter on itself, and changes no line of theirs,
+ *  which `RawLines` draws -- and draws again only when they change.
+ *  Measured on a 792-page book (`bench/`): a delete early in it drew every
+ *  page after it again, line by line, for a fifth of its time. */
 const RawPiece = memo(
   function RawPiece({
     piece,
@@ -462,18 +487,7 @@ const RawPiece = memo(
           containIntrinsicSize: `auto ${height}px`,
         }}
       >
-        {piece.lines.map((line, i) => (
-          <li
-            key={i}
-            data-kind={kindOf(line.text)}
-            data-block={line.block ?? undefined}
-            data-selected={
-              line.block !== null && selected.has(line.block) ? "" : undefined
-            }
-          >
-            {line.text}
-          </li>
-        ))}
+        <RawLines piece={piece} selected={selected} />
       </ol>
     );
   },
@@ -482,6 +496,32 @@ const RawPiece = memo(
     a.height === b.height &&
     a.selected === b.selected &&
     samePiece(a.piece, b.piece),
+);
+
+/** A page's lines, for `RawPiece`: each marked with the block that wrote
+ *  it, and lit when that block is selected. */
+const RawLines = memo(
+  function RawLines({
+    piece,
+    selected,
+  }: {
+    piece: Piece;
+    selected: ReadonlySet<string>;
+  }) {
+    return piece.lines.map((line, i) => (
+      <li
+        key={i}
+        data-kind={kindOf(line.text)}
+        data-block={line.block ?? undefined}
+        data-selected={
+          line.block !== null && selected.has(line.block) ? "" : undefined
+        }
+      >
+        {line.text}
+      </li>
+    ));
+  },
+  (a, b) => a.selected === b.selected && samePiece(a.piece, b.piece),
 );
 
 /** How tall a page of the source is: a row a line, and a row more for
@@ -667,7 +707,7 @@ export function MarkdownPane({ docId }: { docId: string }) {
     >
       <div
         ref={scroller}
-        className="h-full overflow-y-auto"
+        className="relative h-full overflow-y-auto"
         onClick={onClick}
         // A shift-click on a block would also extend the browser's own
         // text selection from wherever it last was.
@@ -707,6 +747,17 @@ export function MarkdownPane({ docId }: { docId: string }) {
             <Spinner />
             {progress(reading)}
           </p>
+        )}
+        {reading?.status === "ready" && (
+          // Keyed by the view, so one view's hovered block is not the
+          // other's: each draws its blocks anew.
+          <BlockActions
+            key={view}
+            docId={docId}
+            scroller={scroller}
+            placement={view === "rendered" ? "corner" : "line"}
+            reach={view === "rendered" ? 4 : 0}
+          />
         )}
       </div>
 

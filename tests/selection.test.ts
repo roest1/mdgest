@@ -9,6 +9,7 @@ import {
   selectedByPage,
   type Modifiers,
   type Selection,
+  type Side,
 } from "src/lib/selection";
 import { blankEdits } from "src/lib/edits";
 import { useEditor } from "src/lib/store";
@@ -34,11 +35,15 @@ const PLAIN: Modifiers = { range: false, toggle: false };
 const SHIFT: Modifiers = { range: true, toggle: false };
 const CTRL: Modifiers = { range: false, toggle: true };
 
-/** Clicks in turn, each on what the last left, as the store makes them. */
-function clicks(...steps: [string, Modifiers][]): Selection | null {
+/** Clicks in turn, each on what the last left, as the store makes them:
+ *  on the page, unless the markdown is named first. */
+function clicks(...steps: ([string, Modifiers] | Side)[]): Selection | null {
   let s: Selection | null = null;
-  for (const [id, mods] of steps)
-    s = picked(s, "a", order, blocks, id, mods, "page");
+  let from: Side = "page";
+  for (const step of steps) {
+    if (typeof step === "string") from = step;
+    else s = picked(s, "a", order, blocks, step[0], step[1], from);
+  }
   return s;
 }
 
@@ -61,9 +66,14 @@ describe("a click", () => {
     expect(down).toMatchObject({ anchor: "p1b2", focus: "p2b1" });
     // From the same anchor, the other way: the range is re-drawn, not added to.
     const up = clicks(["p1b2", PLAIN], ["p2b1", SHIFT], ["p1b0", SHIFT]);
-    // The deleted block between is not one to select.
-    expect(up?.ids).toEqual(["p1b0", "p1b2"]);
+    // The deleted block between is in it: on the page its box is there.
+    expect(up?.ids).toEqual(["p1b0", "p1b1", "p1b2"]);
     expect(up?.anchor).toBe("p1b2");
+  });
+
+  test("with shift in the markdown, leaves out a deleted block it cannot show", () => {
+    const up = clicks("markdown", ["p1b2", PLAIN], ["p1b0", SHIFT]);
+    expect(up?.ids).toEqual(["p1b0", "p1b2"]);
   });
 
   test("with shift and nothing selected, selects the one block", () => {
@@ -82,8 +92,14 @@ describe("a click", () => {
 
   test("on a block the markdown did not write changes nothing", () => {
     const s = clicks(["p1b0", PLAIN]);
-    expect(picked(s, "a", order, blocks, "p1b1", PLAIN, "page")).toBe(s);
     expect(picked(s, "a", order, blocks, "p9b9", CTRL, "page")).toBe(s);
+    expect(picked(s, "a", order, blocks, "p9b9", PLAIN, "markdown")).toBe(s);
+  });
+
+  test("on a deleted block selects it on the page, and nothing from the markdown", () => {
+    expect(clicks(["p1b1", PLAIN])?.ids).toEqual(["p1b1"]);
+    const s = clicks("markdown", ["p1b0", PLAIN]);
+    expect(picked(s, "a", order, blocks, "p1b1", PLAIN, "markdown")).toBe(s);
   });
 
   test("in another document starts afresh, whatever keys are held", () => {
@@ -128,7 +144,13 @@ describe("a lasso", () => {
   test("sweeping nothing, or only what is not written, leaves what it began with", () => {
     const base = clicks(["p2b2", PLAIN]);
     expect(lassoed("a", order, blocks, [], base, "page")).toBe(base);
-    expect(lassoed("a", order, blocks, ["p1b1"], null, "page")).toBeNull();
+    expect(lassoed("a", order, blocks, ["p9b9"], null, "page")).toBeNull();
+  });
+
+  test("takes a deleted block it sweeps, to be restored", () => {
+    expect(
+      lassoed("a", order, blocks, ["p1b1", "p1b2"], null, "page")?.ids,
+    ).toEqual(["p1b1", "p1b2"]);
   });
 });
 
@@ -136,7 +158,7 @@ test("the selection is cut into its pages", () => {
   const s = clicks(["p1b0", PLAIN], ["p2b1", SHIFT]);
   const by = selectedByPage(s, "a", blocks);
   expect([...by.keys()]).toEqual([1, 2]);
-  expect([...by.get(1)!]).toEqual(["p1b0", "p1b2"]);
+  expect([...by.get(1)!]).toEqual(["p1b0", "p1b1", "p1b2"]);
   expect([...by.get(2)!]).toEqual(["p2b0", "p2b1"]);
   expect(selectedByPage(s, "b", blocks).size).toBe(0);
 });

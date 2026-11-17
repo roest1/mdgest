@@ -11,7 +11,12 @@
  * hast with HTML kept as `raw`, then react-markdown's own pass over the
  * tree -- every URL a property carries made safe, and HTML written out as
  * the text it is. That pass is done here rather than before rendering, so
- * a tree is safe from the moment it exists, wherever it is kept. */
+ * a tree is safe from the moment it exists, wherever it is kept.
+ *
+ * One departure from react-markdown: an HTML comment is drawn as nothing,
+ * not as its text -- as a browser, GitHub or any editor's preview draws
+ * one. A hidden block is written as a comment (`emit.ts`), to be in the
+ * source and gone from the rendered view. */
 
 import type { Element, ElementContent, Root, RootContent } from "hast";
 import { urlAttributes } from "html-url-attributes";
@@ -58,16 +63,24 @@ function safeProperties(element: Element): void {
   }
 }
 
-/** Walk `children` in place: HTML becomes its text, URLs are made safe,
- *  and each node keeps of its position only where an element starts and
- *  ends, by line and column -- what the pane marks a block by. The rest --
+/** Whether `html`, a piece of HTML the markdown holds, is one comment and
+ *  nothing else. */
+export function isComment(html: string): boolean {
+  return /^<!--(?:(?!-->)[\s\S])*-->$/.test(html.trim());
+}
+
+/** Walk `children` in place: a comment goes, other HTML becomes its text,
+ *  URLs are made safe, and each node keeps of its position only where an
+ *  element starts and ends, by line and column -- what the pane marks a
+ *  block by. The rest --
  *  every text node's, every offset -- was more than half of a book's tree,
  *  and is copied to the page and kept for nothing. */
 function clean(children: (RootContent | ElementContent)[]): void {
   for (let i = 0; i < children.length; i++) {
     const node = children[i];
     if (node.type === "raw") {
-      children[i] = { type: "text", value: node.value };
+      if (isComment(node.value)) children.splice(i--, 1);
+      else children[i] = { type: "text", value: node.value };
       continue;
     }
     if (node.type !== "element") {

@@ -1,5 +1,5 @@
 import { memo, type CSSProperties, type MouseEvent } from "react";
-import type { Block } from "src/lib/analysis";
+import type { Block, Line } from "src/lib/analysis";
 import type { Placed } from "src/lib/emit";
 import type { Boxes } from "src/lib/store";
 import { drawnBox } from "./blocks";
@@ -13,10 +13,15 @@ import { drawnBox } from "./blocks";
  * A box that is off is still there to be clicked, and is ringed under the
  * pointer; a selected one is ringed and numbered whatever the tool bar
  * says, since the number is how its block is found in the markdown. A
- * block the markdown did not write -- a text block with no words in it,
- * or one deleted by an edit -- has a box but no number, since there is no
- * line of the markdown for it to be the number of, and is not selected by
- * a click. A hidden block is written, as a comment, and keeps its number.
+ * text block with no words in it is written nowhere: it has a box but no
+ * number, and is not selected by a click.
+ *
+ * What an edit did is drawn whatever the tool bar says, since it is the
+ * document's and not a way of looking at it. A hidden block is written, as
+ * a comment: it keeps its number, under a gray veil that leaves its words
+ * faint. A deleted one is written nowhere, so it has no number, and each
+ * of its lines is struck through in red -- a picture, corner to corner. It
+ * is still picked by a click: here is the only place it can be restored.
  *
  * Pictures first, then text, each in reading order: where a caption is
  * printed over a picture, its note stacks above the picture's box, and a
@@ -25,6 +30,7 @@ import { drawnBox } from "./blocks";
  * yet. The look is `.hit`, `.selection` and `.note` in index.css. */
 export const PageBlocks = memo(function PageBlocks({
   blocks,
+  lines,
   placed,
   scale,
   page,
@@ -34,6 +40,8 @@ export const PageBlocks = memo(function PageBlocks({
   onPick,
 }: {
   blocks: Block[];
+  /** The page's lines, which a block's `lines` index. */
+  lines: Line[];
   placed: Record<string, Placed>;
   /** CSS px per point: what the page's own box was laid out at. */
   scale: number;
@@ -54,9 +62,11 @@ export const PageBlocks = memo(function PageBlocks({
       {ordered.map((block) => {
         const boxed = block.kind === "image" ? boxes.images : boxes.text;
         const written = placed[block.id];
-        const pickable = written !== undefined && !written.deleted;
+        const pickable = written !== undefined;
+        const deleted = written?.deleted ?? false;
         const on = pickable && selected.has(block.id);
-        const at = pickable && (indices || on) ? written : undefined;
+        const at =
+          pickable && !deleted && (indices || on) ? written : undefined;
         const box = drawnBox(block.box, scale, page);
         return (
           <div
@@ -67,6 +77,8 @@ export const PageBlocks = memo(function PageBlocks({
               "hit",
               boxed ? "" : "quiet",
               pickable ? "pick" : "",
+              written?.hidden ? "hidden-block" : "",
+              deleted ? "deleted-block" : "",
               on ? "selection on-paper" : "",
             ]
               .filter(Boolean)
@@ -87,6 +99,28 @@ export const PageBlocks = memo(function PageBlocks({
             // press is taken here.
             onMouseDown={(e) => e.shiftKey && e.preventDefault()}
           >
+            {written?.hidden && <span className="veil" />}
+            {deleted && block.kind === "image" && <span className="cross" />}
+            {deleted &&
+              block.kind === "text" &&
+              block.lines.map((i) => {
+                const line = lines[i];
+                if (!line) return null;
+                // Through the middle of the line, across its glyphs, in
+                // the box's own px.
+                const mid = (line.box.y + line.box.h / 2) * scale - box.y;
+                return (
+                  <span
+                    key={i}
+                    className="strike"
+                    style={{
+                      left: line.box.x * scale - box.x,
+                      top: mid,
+                      width: line.box.w * scale,
+                    }}
+                  />
+                );
+              })}
             {at && <span className="note">{at.n}</span>}
           </div>
         );
