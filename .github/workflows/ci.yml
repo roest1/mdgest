@@ -57,3 +57,15 @@ jobs:
 
       - name: build
         run: bun run build
+
+  # ── The one required check ─────────────────────────────────────────────────
+  ci-ok:
+    name: ci ok
+    if: always()
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: jq -e 'all(.[]; .result == "success")' <<<"$NEEDS" >/dev/null
