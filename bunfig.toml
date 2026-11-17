@@ -1,5 +1,0 @@
-# `bun run` runs a script's tools on Bun, not Node. Without this, a tool
-# whose bin starts `#!/usr/bin/env node` (vite, vitest, tsc, prettier) runs
-# on whatever Node is on PATH, and Vite 8 needs Node ^20.19 || >=22.12.
-[run]
-bun = true
