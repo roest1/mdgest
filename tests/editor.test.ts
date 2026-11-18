@@ -1770,3 +1770,33 @@ test("the page column ends far enough below the last page to scroll it clear of 
   expect(bar.top).toBeLessThan(view.bottom);
   expect(paper().getBoundingClientRect().bottom).toBeLessThanOrEqual(bar.top);
 });
+
+test("scrolling the pages keeps the current page's thumbnail lit and in sight", async () => {
+  await workspace(pdf(40));
+  mount("/edit/a");
+  await pagesDrawn();
+  await page.getByTitle("Show sidebar").click();
+  const strip = () => document.querySelector<HTMLElement>('[role="tabpanel"]')!;
+  const lit = () => strip().querySelector<HTMLElement>('[aria-current="page"]');
+  await expect.poll(() => lit()?.dataset.page ?? lit()?.title).toBeTruthy();
+  /** Whether the lit thumbnail is wholly inside what the strip shows. */
+  const inSight = () => {
+    const thumb = lit()?.getBoundingClientRect();
+    const view = strip().getBoundingClientRect();
+    return (
+      !!thumb && thumb.top >= view.top - 1 && thumb.bottom <= view.bottom + 1
+    );
+  };
+  // Three quarters down the book, then back to the start.
+  for (const at of [0.75, 0.4, 0]) {
+    const scroller = pdfScroller();
+    await scrollTo(scroller, room(scroller) * at);
+    const want = at === 0 ? "Page 1" : null;
+    await expect
+      .poll(() => lit()?.title, settle)
+      .toSatisfy((t: string | undefined) =>
+        want ? t === want : !!t && t !== "Page 1",
+      );
+    await expect.poll(inSight, settle).toBe(true);
+  }
+});
