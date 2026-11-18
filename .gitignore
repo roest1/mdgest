@@ -27,5 +27,8 @@ dist-ssr
 .vitest/
 tests/out/
 
+# The benchmarks' review report: `bun run bench:report` writes it
+bench/accuracy/out/
+
 # Python's, from the peers' shared helper
 __pycache__/

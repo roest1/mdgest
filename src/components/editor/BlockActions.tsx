@@ -210,9 +210,10 @@ export function BlockActions({
                 : label
           }
           className={[
-            "flex h-6 items-center gap-1 rounded text-muted hover:bg-ground hover:text-ink",
+            // Pointed at, the word and icon brighten; no ground behind them.
+            "flex h-6 items-center gap-1 rounded text-muted transition-colors",
             iconsOnly ? "w-6 justify-center" : "px-1.5",
-            action === "delete" ? "hover:text-red-300" : "",
+            action === "delete" ? "hover:text-red-300" : "hover:text-ink",
           ].join(" ")}
           onClick={press(key)}
         >

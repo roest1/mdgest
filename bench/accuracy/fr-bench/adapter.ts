@@ -18,7 +18,7 @@
 import { readFile, readdir, rm, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Input, Score, Tally } from "../adapter.ts";
+import type { Input, Scored, Tally, Verdict } from "../adapter.ts";
 import { workDir } from "../cache.ts";
 import type { Benchmark } from "../manifest.ts";
 import { python, scorerOf } from "../python.ts";
@@ -111,6 +111,7 @@ interface Summary {
   metrics: { avg_result: number; num_tests: number } & Record<string, unknown>;
   categories: Record<string, Tally>;
   refused: { file: string; why: string }[];
+  verdicts: (Omit<Verdict, "why"> & { why: string | null })[];
 }
 
 export async function score(
@@ -120,7 +121,7 @@ export async function score(
   out: string,
   files: string[],
   set: string,
-): Promise<Score & { scorer: string }> {
+): Promise<Scored> {
   const scorer = scorerOf(b, PROJECT);
   const work = workDir(b, tool, set);
   await rm(work, { recursive: true, force: true });
@@ -134,7 +135,7 @@ export async function score(
     join(work, "scorer.txt"),
     python(PROJECT, [fileURLToPath(new URL("score.py", import.meta.url)), job]),
   );
-  const { metrics, categories, refused } = JSON.parse(
+  const { metrics, categories, refused, verdicts } = JSON.parse(
     await readFile(join(work, "summary.json"), "utf8"),
   ) as Summary;
 
@@ -164,5 +165,9 @@ export async function score(
     categories,
     ...(refused.length ? { refused: refused.length } : {}),
     scorer,
+    verdicts: verdicts.map(({ why, ...verdict }) => ({
+      ...verdict,
+      ...(why === null ? {} : { why }),
+    })),
   };
 }

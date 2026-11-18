@@ -58,6 +58,9 @@ export function pythonBeside(
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
+    // Read as text, so a character cut in two by a chunk's end is whole.
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
     let out = "";
     let err = "";
     child.stdout.on("data", (chunk) => (out += chunk));

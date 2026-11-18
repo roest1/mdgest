@@ -24,6 +24,12 @@ export const outDir = (b: Benchmark, tool: string) =>
 export const workDir = (b: Benchmark, tool: string, set: string) =>
   join(CACHE, "work", b.name, tool, set);
 
+/** What is kept of `tool`'s last run of every input: each test's verdict,
+ *  the verdicts of the run before, and what was run to get them. Apart
+ *  from `workDir`, which every scoring empties, a slice's too. */
+export const keptDir = (b: Benchmark, tool: string) =>
+  join(CACHE, "kept", b.name, tool);
+
 /** The uv environment of the Python project at `bench/accuracy/<project>`. */
 export const envDir = (project: string) =>
   join(CACHE, "envs", project.replaceAll("/", "-"));

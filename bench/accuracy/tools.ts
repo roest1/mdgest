@@ -5,16 +5,23 @@
  *  for all of them, so their scores are made the same way on the same
  *  pages. */
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { outDir } from "./cache.ts";
-import type { FileRun, Job, MdgestRun, PeerRun } from "./job.ts";
+import {
+  stem,
+  type FileRun,
+  type Job,
+  type MdgestRun,
+  type PeerRun,
+} from "./job.ts";
 import { revisionOf, type Benchmark } from "./manifest.ts";
-import { python } from "./python.ts";
+import { installed, python } from "./python.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -31,9 +38,19 @@ export interface Conversion {
   seconds: number;
   /** The inputs that could not be converted, and why. */
   errors: Record<string, string>;
+  /** Those of them given up on at the converter's limit on a document's
+   *  time, which is the clock's verdict and not the tool's. */
+  gaveUp: string[];
+  /** The inputs whose text layer could not be taken, and why: mdgest's
+   *  converter takes it, for the split. */
+  noLayer: Record<string, string>;
   /** A hash of every input's markdown, in the inputs' order: the same for
    *  two runs that wrote the same markdown. */
   markdown: string;
+  /** Each input's own. */
+  hashes: Record<string, string>;
+  /** How many browsers read side by side, for mdgest. */
+  browsers?: number;
 }
 
 export interface Tool {
@@ -41,8 +58,9 @@ export interface Tool {
   convert(b: Benchmark, pdfs: string, files: string[]): Promise<Conversion>;
 }
 
-/** `file` without its `.pdf`. */
-export const stem = (file: string) => file.replace(/\.pdf$/i, "");
+/** The hash of markdown as the scorers are given it (`written`). */
+export const hashOf = (markdown: string | Buffer) =>
+  createHash("sha256").update(markdown).digest("hex");
 
 async function conversion(
   out: string,
@@ -51,17 +69,24 @@ async function conversion(
   made: Conversion["made"],
 ): Promise<Conversion> {
   const hash = createHash("sha256");
+  const hashes: Record<string, string> = {};
   const errors: Record<string, string> = {};
+  const gaveUp: string[] = [];
+  const noLayer: Record<string, string> = {};
   let pages = 0;
   let ms = 0;
   for (const file of files) {
     const run = runs[file];
     if (!run) throw new Error(`${file} was not converted`);
     if (run.error) errors[file] = run.error;
+    if (run.gaveUp) gaveUp.push(file);
+    if (run.layer) noLayer[file] = run.layer;
     pages += run.pages;
     ms += run.ms;
+    const markdown = await written(join(out, `${stem(file)}.md`));
+    hashes[file] = hashOf(markdown);
     hash.update(`${file}\0`);
-    hash.update(await written(join(out, `${stem(file)}.md`)));
+    hash.update(markdown);
     hash.update("\0");
   }
   return {
@@ -70,7 +95,10 @@ async function conversion(
     pages,
     seconds: ms / 1000,
     errors,
+    gaveUp,
+    noLayer,
     markdown: hash.digest("hex"),
+    hashes,
   };
 }
 
@@ -96,8 +124,15 @@ async function writeJob(out: string, job: Job, name = "job.json") {
 
 /** How many converters read at once, each in a browser of its own: reading
  *  is one thread's work, and the long benchmarks are tens of thousands of
- *  pages. A small job is not split. */
-const BROWSERS = 6;
+ *  pages. A browser and the server it reads from keep two cores busy, so
+ *  there is one for every two the machine has, and never more than six:
+ *  more on fewer cores and a document's reading waits its turn, runs into
+ *  the converter's limit on its time and is scored as empty. A small job
+ *  is not split. */
+const BROWSERS = Math.max(
+  1,
+  Math.min(6, Math.floor(availableParallelism() / 2)),
+);
 const SPLIT_FROM = 60;
 
 /** One converter at work on the job in the file `job`. Each starts a
@@ -126,6 +161,44 @@ function browser(job: string, quiet: boolean): Promise<void> {
   });
 }
 
+/** mdgest over `files`, into `out`, in as many browsers as the job is
+ *  worth. With `draw`, each PDF's first page is left as a picture too,
+ *  with where the reader's blocks are on it. */
+async function read(
+  pdfs: string,
+  files: string[],
+  out: string,
+  draw = false,
+): Promise<MdgestRun[]> {
+  const n = files.length < SPLIT_FROM ? 1 : BROWSERS;
+  const hands = Array.from({ length: n }, (_, k) =>
+    files.filter((_, i) => i % n === k),
+  );
+  if (n > 1) {
+    // Once on nothing, alone: the first server to start settles Vite's
+    // cache of dependencies, which several starting together would race
+    // to write.
+    const idle = { pdfs, out, files: [], run: "run-idle.json" };
+    await browser(await writeJob(out, idle, "job-idle.json"), true);
+    console.log(`mdgest: ${files.length} PDFs, in ${n} browsers`);
+  }
+  await Promise.all(
+    hands.map(async (list, k) => {
+      const job = { pdfs, out, files: list, run: `run-${k}.json`, draw };
+      await browser(await writeJob(out, job, `job-${k}.json`), n > 1);
+      if (n > 1) console.log(`  browser ${k + 1} of ${n} is done`);
+    }),
+  );
+  return Promise.all(
+    hands.map(
+      async (_, k) =>
+        JSON.parse(
+          await readFile(join(out, `run-${k}.json`), "utf8"),
+        ) as MdgestRun,
+    ),
+  );
+}
+
 /** mdgest, as the working tree has it: `convert.run.ts` in headless
  *  Chromium, under Vitest. Converted afresh every run -- it is what is
  *  being measured. A long job is dealt out to several browsers, a
@@ -135,57 +208,60 @@ export const mdgest: Tool = {
   name: "mdgest",
   async convert(b, pdfs, files) {
     const out = outDir(b, "mdgest");
-    const n = files.length < SPLIT_FROM ? 1 : BROWSERS;
-    const hands = Array.from({ length: n }, (_, k) =>
-      files.filter((_, i) => i % n === k),
-    );
-    if (n > 1) {
-      // Once on nothing, alone: the first server to start settles Vite's
-      // cache of dependencies, which several starting together would race
-      // to write.
-      const idle = { pdfs, out, files: [], run: "run-idle.json" };
-      await browser(await writeJob(out, idle, "job-idle.json"), true);
-      console.log(`mdgest: ${files.length} PDFs, in ${n} browsers`);
-    }
-    await Promise.all(
-      hands.map(async (list, k) => {
-        const job = { pdfs, out, files: list, run: `run-${k}.json` };
-        await browser(await writeJob(out, job, `job-${k}.json`), n > 1);
-        if (n > 1) console.log(`  browser ${k + 1} of ${n} is done`);
-      }),
-    );
-    const runs = await Promise.all(
-      hands.map(
-        async (_, k) =>
-          JSON.parse(
-            await readFile(join(out, `run-${k}.json`), "utf8"),
-          ) as MdgestRun,
-      ),
-    );
-    return conversion(
-      out,
-      files,
-      Object.assign({}, ...runs.map((run) => run.files)),
-      { reader: runs[0].reader, pdfjs: runs[0].pdfjs },
-    );
+    const runs = await read(pdfs, files, out);
+    return {
+      ...(await conversion(
+        out,
+        files,
+        Object.assign({}, ...runs.map((run) => run.files)),
+        { reader: runs[0].reader, pdfjs: runs[0].pdfjs },
+      )),
+      browsers: runs.length,
+    };
   },
 };
 
+/** `files` read by mdgest for the review report: the folder each is left
+ *  in as `<input>.md`, `<input>.jpg` and `<input>.blocks.json`. */
+export async function drawn(
+  b: Benchmark,
+  pdfs: string,
+  files: string[],
+): Promise<string> {
+  const out = join(outDir(b, "mdgest"), "..", "mdgest-drawn");
+  await read(pdfs, files, out, true);
+  return out;
+}
+
 /** What is kept of a peer's conversions, beside its markdown. */
 interface Kept {
-  /** The dataset revision converted, the peer's version, and a hash of the
-   *  lock it was installed from: a change in any starts over. */
+  /** The dataset revision converted, the peer's version, and a hash of
+   *  what it was run by (`pins`): a change in any starts over. */
   revision: string;
   version: string;
-  lock: string;
+  pins: string;
   files: Record<string, FileRun>;
+}
+
+/** The version of the system's Poppler, as `pdftotext -v` gives it. */
+function poppler(): string {
+  const said = spawnSync("pdftotext", ["-v"], { encoding: "utf8" });
+  if (said.error) throw said.error;
+  return said.stderr.split("\n")[0].replace("pdftotext version ", "").trim();
 }
 
 /** A peer that is a pinned Python project at `tools/<name>`, with a
  *  `convert.py` that takes a job. What it made of a dataset revision is
- *  kept: neither it nor the inputs change until a pin does, so it runs
- *  again only for inputs it has not converted yet. */
-function peer(name: string): Tool {
+ *  kept, and it runs again only for inputs it has not converted yet --
+ *  until the revision changes, or what the peer is: its version, the lock
+ *  it is installed from, its `convert.py`, which holds its settings, or
+ *  the `peer.py` they all share.
+ *
+ *  `version` asks the peer what it is before anything kept is believed:
+ *  the package of its own name in its environment, unless it is not a
+ *  package at all, as the system's `pdftotext` is not, which no lock
+ *  pins. */
+function peer(name: string, version?: () => string): Tool {
   const project = `tools/${name}`;
   const file = (path: string) =>
     fileURLToPath(new URL(`${project}/${path}`, import.meta.url));
@@ -194,14 +270,25 @@ function peer(name: string): Tool {
     async convert(b, pdfs, files) {
       const out = outDir(b, name);
       const at = join(out, "kept.json");
-      const lock = createHash("sha256")
-        .update(await readFile(file("uv.lock")))
-        .digest("hex");
+      const hash = createHash("sha256");
+      for (const path of ["uv.lock", "convert.py", "../peer.py"])
+        hash.update(await readFile(file(path))).update("\0");
+      const pins = hash.digest("hex");
+      const now = version ? version() : installed(project, name);
       let kept: Kept | null = existsSync(at)
         ? (JSON.parse(await readFile(at, "utf8")) as Kept)
         : null;
-      if (kept && (kept.revision !== revisionOf(b) || kept.lock !== lock))
+      if (
+        kept &&
+        (kept.revision !== revisionOf(b) ||
+          kept.pins !== pins ||
+          kept.version !== now)
+      ) {
+        console.log(
+          `${name}: it or the data has changed; nothing kept is used`,
+        );
         kept = null;
+      }
       const todo = files.filter((f) => !kept?.files[f]);
       if (todo.length) {
         console.log(`${name}: converting ${todo.length} PDFs`);
@@ -215,15 +302,19 @@ function peer(name: string): Tool {
         const run = JSON.parse(
           await readFile(join(out, "run.json"), "utf8"),
         ) as PeerRun;
+        if (run.version !== now)
+          throw new Error(
+            `${name} says it is ${run.version}, and was asked as ${now}`,
+          );
         kept = {
           revision: revisionOf(b),
-          version: run.version,
-          lock,
+          version: now,
+          pins,
           files: { ...kept?.files, ...run.files },
         };
         await writeFile(at, JSON.stringify(kept));
       } else console.log(`${name}: kept from an earlier run`);
-      return conversion(out, files, kept!.files, { version: kept!.version });
+      return conversion(out, files, kept!.files, { version: now });
     },
   };
 }
@@ -233,7 +324,7 @@ export const TOOLS: Tool[] = [
   peer("pymupdf4llm"),
   peer("markitdown"),
   peer("docling"),
-  peer("pdftotext"),
+  peer("pdftotext", poppler),
 ];
 
 export function tool(name: string): Tool {
