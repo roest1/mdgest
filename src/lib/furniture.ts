@@ -111,12 +111,27 @@ export const MIN_PAGES = 2;
  *  it, the wording is mostly body text that sometimes lands in a margin. */
 export const MARGIN_SHARE = 0.5;
 
-/** The ids of every block that is a repeated header or footer: text in a
- *  margin band whose wording is printed in a margin on `MIN_PAGES` pages or
- *  more. A page number is not one -- it has its own setting -- and a block
- *  in the body never is. */
-export function headersFooters(analysis: Analysis): Set<string> {
-  const margin = new Map<string, { pages: Set<number>; ids: string[] }>();
+/** One running header or footer: a wording printed in a margin band on
+ *  `MIN_PAGES` pages or more, numbers wildcarded, so `Page 3 of 40` on
+ *  every page is one line. `key` is the wording, which is what a choice
+ *  for the line is kept under (`Edits.repeated_lines`); `text` is how the
+ *  first of them is printed; `where` is the band most of them are in. */
+export interface RepeatedLine {
+  key: string;
+  text: string;
+  where: "top" | "bottom";
+  pages: number[];
+  ids: string[];
+}
+
+/** Every repeated header and footer of `analysis`, in the order each is
+ *  first printed. A page number is not one -- it has its own setting --
+ *  and a block in the body never is. */
+export function repeatedLines(analysis: Analysis): RepeatedLine[] {
+  const margin = new Map<
+    string,
+    { text: string; pages: Set<number>; ids: string[]; top: number }
+  >();
   const anywhere = new Map<string, Set<number>>();
   for (const page of analysis.pages) {
     for (const block of page.blocks) {
@@ -127,19 +142,67 @@ export function headersFooters(analysis: Analysis): Set<string> {
       anywhere.get(key)!.add(page.n);
       if (!inMargin(block, page) || pageNumberOf(block, page) !== null)
         continue;
-      if (!margin.has(key)) margin.set(key, { pages: new Set(), ids: [] });
+      if (!margin.has(key))
+        margin.set(key, {
+          text: printed(block).trim(),
+          pages: new Set(),
+          ids: [],
+          top: 0,
+        });
       const seen = margin.get(key)!;
       seen.pages.add(page.n);
       seen.ids.push(block.id);
+      if (block.box.y < page.height / 2) seen.top++;
     }
   }
-  const out = new Set<string>();
-  for (const [key, { pages, ids }] of margin) {
+  const out: RepeatedLine[] = [];
+  for (const [key, { text, pages, ids, top }] of margin) {
     const all = anywhere.get(key)!.size;
     if (pages.size >= MIN_PAGES && pages.size / all >= MARGIN_SHARE)
-      for (const id of ids) out.add(id);
+      out.push({
+        key,
+        text,
+        where: top * 2 >= ids.length ? "top" : "bottom",
+        pages: [...pages],
+        ids,
+      });
   }
   return out;
+}
+
+/** The ids of every block that is a repeated header or footer. */
+export function headersFooters(analysis: Analysis): Set<string> {
+  return new Set(repeatedLines(analysis).flatMap((line) => line.ids));
+}
+
+/** The wording each repeated header or footer block is kept under. */
+export function repeatedKeys(analysis: Analysis): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const line of repeatedLines(analysis))
+    for (const id of line.ids) out.set(id, line.key);
+  return out;
+}
+
+/** The printed page numbers of `analysis`, in page order: what each says,
+ *  the page it is on, and the band most of them are in. */
+export function pageNumbers(analysis: Analysis): {
+  labels: string[];
+  pages: number[];
+  where: "top" | "bottom";
+} {
+  const labels: string[] = [];
+  const pages: number[] = [];
+  let top = 0;
+  for (const page of analysis.pages) {
+    for (const block of page.blocks) {
+      const n = pageNumberOf(block, page);
+      if (n === null) continue;
+      labels.push(n);
+      pages.push(page.n);
+      if (block.box.y < page.height / 2) top++;
+    }
+  }
+  return { labels, pages, where: top * 2 > labels.length ? "top" : "bottom" };
 }
 
 // ---- what is found --------------------------------------------------------

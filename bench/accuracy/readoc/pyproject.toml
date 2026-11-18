@@ -1,0 +1,28 @@
+# What READoc's evaluation suite runs on, pinned. The suite itself is a
+# repository of scripts with no package and no pins of its own: it is
+# checked out at the commit `manifest.ts` names, and this file and
+# `uv.lock` beside it pin everything its `requirements.txt` asks for.
+#
+# pandoc comes from this environment too, as pypandoc-binary: the suite
+# turns tables into HTML with it. 1.13 ships pandoc 2.19.2, the newest in
+# that package the suite's `pandoc` library says it supports; a newer one
+# runs with a warning that its behaviour is undefined.
+[project]
+name = "mdgest-bench-readoc"
+version = "0"
+requires-python = "==3.14.*"
+dependencies = [
+  "scipy",
+  "numpy",
+  "pandoc",
+  "nltk",
+  "apted",
+  "Levenshtein",
+  "lxml",
+  "beautifulsoup4",
+  "fire",
+  "pypandoc-binary==1.13",
+]
+
+[tool.uv]
+package = false

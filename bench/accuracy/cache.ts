@@ -5,15 +5,15 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Benchmark } from "./manifest.ts";
+import { revisionOf, type Benchmark } from "./manifest.ts";
 
 /** `~/.cache/mdgest-bench`, or wherever `MDGEST_BENCH_CACHE` says. */
 export const CACHE =
   process.env.MDGEST_BENCH_CACHE || join(homedir(), ".cache", "mdgest-bench");
 
-/** A benchmark's files, as its repo lays them out, at the pinned revision. */
+/** A benchmark's files, as its repo lays them out, at the pinned revisions. */
 export const dataDir = (b: Benchmark) =>
-  join(CACHE, "data", b.name, b.revision);
+  join(CACHE, "data", b.name, revisionOf(b));
 
 /** What `tool` made of a benchmark's inputs: `<input>.md` for each, and
  *  `run.json` on how the conversion went. */
@@ -24,6 +24,17 @@ export const outDir = (b: Benchmark, tool: string) =>
 export const workDir = (b: Benchmark, tool: string, set: string) =>
   join(CACHE, "work", b.name, tool, set);
 
+/** What is kept of `tool`'s last run of every input: each test's verdict,
+ *  the verdicts of the run before, and what was run to get them. Apart
+ *  from `workDir`, which every scoring empties, a slice's too. */
+export const keptDir = (b: Benchmark, tool: string) =>
+  join(CACHE, "kept", b.name, tool);
+
 /** The uv environment of the Python project at `bench/accuracy/<project>`. */
 export const envDir = (project: string) =>
   join(CACHE, "envs", project.replaceAll("/", "-"));
+
+/** A scorer that is a repository of scripts, checked out at its pinned
+ *  commit. */
+export const scorerDir = (b: Benchmark) =>
+  join(CACHE, "scorers", b.name, b.scorer.git?.commit ?? "");

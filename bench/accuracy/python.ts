@@ -4,7 +4,7 @@
  *  its own in the cache, since their pins disagree. uv makes the
  *  environment from the lock on first use and leaves it alone after. */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { envDir } from "./cache.ts";
 import type { Benchmark } from "./manifest.ts";
@@ -36,6 +36,46 @@ export function python(project: string, args: string[], show = false): string {
           : `:\n${ran.stdout.slice(-2000)}\n${ran.stderr.slice(-2000)}`),
     );
   return show ? "" : ran.stdout;
+}
+
+/** `python`, for a run that may go on beside others: what it prints is
+ *  the answer when it ends, and `env` is added to its environment. */
+export function pythonBeside(
+  project: string,
+  args: string[],
+  env: Record<string, string> = {},
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "uv",
+      ["run", "--project", `${BENCH}${project}`, "--frozen", "python", ...args],
+      {
+        env: {
+          ...process.env,
+          UV_PROJECT_ENVIRONMENT: envDir(project),
+          ...env,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    // Read as text, so a character cut in two by a chunk's end is whole.
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (chunk) => (out += chunk));
+    child.stderr.on("data", (chunk) => (err = (err + chunk).slice(-4000)));
+    child.on("error", reject);
+    child.on("exit", (status) =>
+      status === 0
+        ? resolve(out)
+        : reject(
+            new Error(
+              `python ${args.join(" ")} (bench/accuracy/${project}) ended with ${status}:\n${out.slice(-2000)}\n${err}`,
+            ),
+          ),
+    );
+  });
 }
 
 /** The version of `pkg` installed in the environment of
