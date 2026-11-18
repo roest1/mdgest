@@ -5,7 +5,7 @@
  *  for all of them, so their scores are made the same way on the same
  *  pages. */
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { outDir } from "./cache.ts";
 import type { FileRun, Job, MdgestRun, PeerRun } from "./job.ts";
 import { revisionOf, type Benchmark } from "./manifest.ts";
-import { python } from "./python.ts";
+import { installed, python } from "./python.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -197,19 +197,33 @@ export async function drawn(
 
 /** What is kept of a peer's conversions, beside its markdown. */
 interface Kept {
-  /** The dataset revision converted, the peer's version, and a hash of the
-   *  lock it was installed from: a change in any starts over. */
+  /** The dataset revision converted, the peer's version, and a hash of
+   *  what it was run by (`pins`): a change in any starts over. */
   revision: string;
   version: string;
-  lock: string;
+  pins: string;
   files: Record<string, FileRun>;
+}
+
+/** The version of the system's Poppler, as `pdftotext -v` gives it. */
+function poppler(): string {
+  const said = spawnSync("pdftotext", ["-v"], { encoding: "utf8" });
+  if (said.error) throw said.error;
+  return said.stderr.split("\n")[0].replace("pdftotext version ", "").trim();
 }
 
 /** A peer that is a pinned Python project at `tools/<name>`, with a
  *  `convert.py` that takes a job. What it made of a dataset revision is
- *  kept: neither it nor the inputs change until a pin does, so it runs
- *  again only for inputs it has not converted yet. */
-function peer(name: string): Tool {
+ *  kept, and it runs again only for inputs it has not converted yet --
+ *  until the revision changes, or what the peer is: its version, the lock
+ *  it is installed from, its `convert.py`, which holds its settings, or
+ *  the `peer.py` they all share.
+ *
+ *  `version` asks the peer what it is before anything kept is believed:
+ *  the package of its own name in its environment, unless it is not a
+ *  package at all, as the system's `pdftotext` is not, which no lock
+ *  pins. */
+function peer(name: string, version?: () => string): Tool {
   const project = `tools/${name}`;
   const file = (path: string) =>
     fileURLToPath(new URL(`${project}/${path}`, import.meta.url));
@@ -218,14 +232,25 @@ function peer(name: string): Tool {
     async convert(b, pdfs, files) {
       const out = outDir(b, name);
       const at = join(out, "kept.json");
-      const lock = createHash("sha256")
-        .update(await readFile(file("uv.lock")))
-        .digest("hex");
+      const hash = createHash("sha256");
+      for (const path of ["uv.lock", "convert.py", "../peer.py"])
+        hash.update(await readFile(file(path))).update("\0");
+      const pins = hash.digest("hex");
+      const now = version ? version() : installed(project, name);
       let kept: Kept | null = existsSync(at)
         ? (JSON.parse(await readFile(at, "utf8")) as Kept)
         : null;
-      if (kept && (kept.revision !== revisionOf(b) || kept.lock !== lock))
+      if (
+        kept &&
+        (kept.revision !== revisionOf(b) ||
+          kept.pins !== pins ||
+          kept.version !== now)
+      ) {
+        console.log(
+          `${name}: it or the data has changed; nothing kept is used`,
+        );
         kept = null;
+      }
       const todo = files.filter((f) => !kept?.files[f]);
       if (todo.length) {
         console.log(`${name}: converting ${todo.length} PDFs`);
@@ -239,15 +264,19 @@ function peer(name: string): Tool {
         const run = JSON.parse(
           await readFile(join(out, "run.json"), "utf8"),
         ) as PeerRun;
+        if (run.version !== now)
+          throw new Error(
+            `${name} says it is ${run.version}, and was asked as ${now}`,
+          );
         kept = {
           revision: revisionOf(b),
-          version: run.version,
-          lock,
+          version: now,
+          pins,
           files: { ...kept?.files, ...run.files },
         };
         await writeFile(at, JSON.stringify(kept));
       } else console.log(`${name}: kept from an earlier run`);
-      return conversion(out, files, kept!.files, { version: kept!.version });
+      return conversion(out, files, kept!.files, { version: now });
     },
   };
 }
@@ -257,7 +286,7 @@ export const TOOLS: Tool[] = [
   peer("pymupdf4llm"),
   peer("markitdown"),
   peer("docling"),
-  peer("pdftotext"),
+  peer("pdftotext", poppler),
 ];
 
 export function tool(name: string): Tool {

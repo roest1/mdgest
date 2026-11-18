@@ -168,7 +168,9 @@ A peer is another converter put through the same fetch, adapter, scorer
 and pages, so its line and mdgest's are made the same way. Each is a pinned
 uv project under `tools/<name>/` with a `convert.py` that takes the same
 job the mdgest converter does. What a peer made of a dataset revision is
-kept in the cache and reused until its lock or the revision changes.
+kept in the cache and reused until the revision changes or the peer does:
+its version, asked of it before each run, its lock, its `convert.py`,
+which holds its settings, or `tools/peer.py`.
 
 | Tool          | Version      | How it reads                                | How it is run                         |
 | ------------- | ------------ | ------------------------------------------- | ------------------------------------- |
