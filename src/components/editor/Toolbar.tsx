@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { useMenuDismiss } from "src/components/shared/useMenuDismiss";
+import { redoEdit, revertEdits, undoEdit } from "src/lib/editing";
+import { revertToOriginal } from "src/lib/edits";
 import { useEditor, type Boxes } from "src/lib/store";
 import { barButton, iconButton } from "./controls";
 
@@ -53,10 +55,12 @@ function HistoryButton({
   icon: Icon,
   title,
   disabled,
+  onClick,
 }: {
   icon: typeof Undo2;
   title: string;
   disabled?: boolean;
+  onClick: () => void;
 }) {
   return (
     <button
@@ -64,6 +68,7 @@ function HistoryButton({
       title={title}
       aria-label={title}
       disabled={disabled}
+      onClick={onClick}
       className={iconButton}
     >
       <Icon className="h-4 w-4" />
@@ -399,8 +404,16 @@ function BoxesButton({
 
 /** Toolbar spanning both (pdf + md) panes
  * sits under tab row and above each panes respective header **/
-export function Toolbar({ docId: _docId }: { docId: string }) {
+export function Toolbar({ docId }: { docId: string }) {
   const isDone = false; // todo
+  // The document's edits, once it is read: what the history buttons can do.
+  const edits = useEditor((s) => {
+    const r = s.readings[docId];
+    return r?.status === "ready" ? r.edits : null;
+  });
+  const canUndo = !isDone && !!edits?.undo.length;
+  const canRedo = !isDone && !!edits?.redo.length;
+  const canRevert = !isDone && !!edits && revertToOriginal(edits) !== edits;
   // TODO: the editor's store, once ported: the furniture choices are edits.
   const [pageNumbers, setPageNumbers] = useState<Choice>("keep");
   const [lines, setLines] = useState<Line[]>(FOUND.lines);
@@ -411,18 +424,26 @@ export function Toolbar({ docId: _docId }: { docId: string }) {
 
   return (
     <div className="flex h-10 shrink-0 items-center gap-3 border-t border-edge bg-chrome px-3 text-xs text-muted">
-      {/* history controls: undo, redo, restart */}
+      {/* history controls: undo, redo, and revert to original -- itself
+          one step, so undo takes it back and nothing need be asked first */}
       <div className="flex items-center gap-0.5 justify-self-start">
-        <HistoryButton icon={Undo2} title="Undo (Ctrl+Z)" disabled={isDone} />
+        <HistoryButton
+          icon={Undo2}
+          title="Undo (Ctrl+Z)"
+          disabled={!canUndo}
+          onClick={() => undoEdit(docId)}
+        />
         <HistoryButton
           icon={Redo2}
           title="Redo (Ctrl+Shift+Z)"
-          disabled={isDone}
+          disabled={!canRedo}
+          onClick={() => redoEdit(docId)}
         />
         <HistoryButton
           icon={RotateCcw}
-          title={"Revert to original"}
-          disabled={isDone}
+          title="Revert to original: every edit taken back, which undo brings back"
+          disabled={!canRevert}
+          onClick={() => revertEdits(docId)}
         />
       </div>
 

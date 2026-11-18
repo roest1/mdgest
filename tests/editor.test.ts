@@ -1605,3 +1605,76 @@ test("a deleted block is struck through on the page and restored from there, and
   expect(boxOf(picture).querySelector(".cross")).not.toBeNull();
   expect(placedOf(line)?.deleted).toBe(false);
 });
+
+// ---- undo, redo, revert ---------------------------------------------------
+
+const undoButton = () => page.getByRole("button", { name: "Undo (Ctrl+Z)" });
+const redoButton = () =>
+  page.getByRole("button", { name: "Redo (Ctrl+Shift+Z)" });
+const revertButton = () =>
+  page.getByRole("button", { name: /^Revert to original/ });
+
+test("undo, redo and revert to original, from the tool bar and the keys, kept with the document", async () => {
+  const { title, para } = await openedToEdit();
+  // Nothing done yet: nothing to take back.
+  await expect.element(undoButton()).toBeDisabled();
+  await expect.element(redoButton()).toBeDisabled();
+  await expect.element(revertButton()).toBeDisabled();
+
+  await userEvent.click(boxOf(para.id));
+  pointAt(boxOf(para.id));
+  await page.getByRole("button", { name: "Hide" }).click();
+  await expect.poll(() => placedOf(para.id)?.hidden).toBe(true);
+
+  // The buttons.
+  await undoButton().click();
+  await expect.poll(() => placedOf(para.id)?.hidden).toBe(false);
+  await expect.element(undoButton()).toBeDisabled();
+  await redoButton().click();
+  await expect.poll(() => placedOf(para.id)?.hidden).toBe(true);
+  await expect.element(redoButton()).toBeDisabled();
+
+  // The keys: Ctrl+Z, then Ctrl+Shift+Z or Ctrl+Y.
+  await userEvent.keyboard("{Control>}z{/Control}");
+  await expect.poll(() => placedOf(para.id)?.hidden).toBe(false);
+  await userEvent.keyboard("{Control>}{Shift>}z{/Shift}{/Control}");
+  await expect.poll(() => placedOf(para.id)?.hidden).toBe(true);
+  await userEvent.keyboard("{Control>}z{/Control}");
+  await expect.poll(() => placedOf(para.id)?.hidden).toBe(false);
+  await userEvent.keyboard("{Control>}y{/Control}");
+  await expect.poll(() => placedOf(para.id)?.hidden).toBe(true);
+  // Not in a field, which keeps its own undo.
+  await page.getByLabelText("Page").click();
+  await userEvent.keyboard("{Control>}z{/Control}");
+  expect(placedOf(para.id)?.hidden).toBe(true);
+
+  // Revert: the title deleted as well, then both taken back at once --
+  // the heading is in the rendered view again -- and undone in one.
+  await userEvent.click(boxOf(title));
+  pointAt(boxOf(title));
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect.poll(() => placedOf(title)?.deleted).toBe(true);
+  await revertButton().click();
+  await expect.poll(() => placedOf(title)?.deleted).toBe(false);
+  expect(placedOf(para.id)?.hidden).toBe(false);
+  await expect
+    .element(page.getByRole("heading", { name: "Pump Care" }))
+    .toBeVisible();
+  await expect.element(revertButton()).toBeDisabled();
+  await undoButton().click();
+  await expect.poll(() => placedOf(title)?.deleted).toBe(true);
+  expect(placedOf(para.id)?.hidden).toBe(true);
+
+  // Closed and opened again: the history is the document's, kept with it.
+  await saved("a");
+  await page.getByRole("button", { name: "Close a" }).click();
+  await expect.poll(() => readingOf()).toBeUndefined();
+  root!.unmount();
+  host!.remove();
+  mount("/edit/a");
+  await ready();
+  await expect.element(redoButton()).toBeEnabled();
+  await undoButton().click();
+  await expect.poll(() => placedOf(title)?.deleted).toBe(false);
+  expect(placedOf(para.id)?.hidden).toBe(true);
+});

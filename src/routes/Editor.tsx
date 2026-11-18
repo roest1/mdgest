@@ -27,6 +27,7 @@ import { TABS } from "src/components/editor/transitions";
 import { Slide } from "src/components/shared/Slide";
 import { releaseAllAssets, releaseAssets } from "src/lib/assets";
 import { forgetReading } from "src/lib/convert";
+import { redoEdit, undoEdit } from "src/lib/editing";
 import { releaseAllParsed, releaseParsed } from "src/lib/parse";
 import { engine } from "src/lib/engine";
 import { useEditor } from "src/lib/store";
@@ -155,6 +156,35 @@ function useEscapeDeselects() {
   }, []);
 }
 
+/** Ctrl+Z (Cmd+Z) undoes the open document's last edit, and Ctrl+Shift+Z or
+ *  Ctrl+Y does it again -- from anywhere but a field, which keeps its own
+ *  undo, and not over an open dialog. */
+function useUndoKeys(docId: string) {
+  useEffect(() => {
+    if (!docId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.defaultPrevented) return;
+      const key = e.key.toLowerCase();
+      const act =
+        key === "z" && !e.shiftKey
+          ? undoEdit
+          : (key === "z" && e.shiftKey) || key === "y"
+            ? redoEdit
+            : null;
+      if (!act) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable)
+        return;
+      if (document.querySelector("dialog[open]")) return;
+      e.preventDefault();
+      act(docId);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [docId]);
+}
+
 export default function Editor() {
   const asked = useParams()["*"] || "";
   useEscapeDeselects();
@@ -181,6 +211,7 @@ export default function Editor() {
   // not there -- or no longer is. Nothing opens for it until the listing
   // says it is, and one it does not hold is let go of below.
   const docId = docs?.includes(asked) ? asked : "";
+  useUndoKeys(docId);
   // Why the open document's last edit was not saved, if it was not.
   const unsaved = useEditor((s) => {
     const reading = s.readings[docId];

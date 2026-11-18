@@ -7,7 +7,13 @@ import { commands, page } from "vitest/browser";
 import { createRoot } from "react-dom/client";
 import { act, createElement } from "react";
 import { RouterProvider, createMemoryRouter } from "react-router";
-import { actOnSelection, saved } from "src/lib/editing";
+import {
+  actOnSelection,
+  redoEdit,
+  revertEdits,
+  saved,
+  undoEdit,
+} from "src/lib/editing";
 import { emit } from "src/lib/emit";
 import { engine } from "src/lib/engine";
 import { useEditor, type Reading } from "src/lib/store";
@@ -106,6 +112,29 @@ const button =
   (which: "hide" | "del"): Press =>
   () =>
     actOnSelection(which);
+/** `first`, then `then`, then `first` again: two that take each other
+ *  back, so a run of presses ends where it began. */
+function alternate(first: Press, then: Press): Press {
+  let n = 0;
+  return () => (n++ % 2 === 0 ? first : then)();
+}
+const undoRedo = alternate(
+  () => undoEdit(DOC),
+  () => redoEdit(DOC),
+);
+const revertUndo = alternate(
+  () => revertEdits(DOC),
+  () => undoEdit(DOC),
+);
+/** `ids` selected and hidden or deleted, as one step: what undo, redo and
+ *  revert are then timed taking back. Not timed itself. */
+async function made(ids: string[], which: "hide" | "del") {
+  useEditor.setState({
+    selection: { docId: DOC, ids, focus: ids[0], anchor: ids[0], from: "page" },
+  });
+  actOnSelection(which);
+  await saved(DOC);
+}
 
 test("edits on a long book", async () => {
   // The build asked for is the build running: production React has no act.
@@ -172,6 +201,20 @@ test("edits on a long book", async () => {
   await scenario("rendered: hide early", [early], button("hide"));
   await scenario("rendered: hide mid", [mid], button("hide"));
   await scenario("rendered: delete early", [early], button("del"));
+  if (!only || only.test("rendered: undo")) {
+    await made([early], "del");
+    await scenario("rendered: undo/redo delete", [early], undoRedo);
+    await made([early], "del"); // restored
+  }
+  // A hundred blocks across the book hidden, as one step, then reverted.
+  const spread = written.filter(
+    (_, i) => i % Math.floor(written.length / 100) === 0,
+  );
+  if (!only || only.test("rendered: revert")) {
+    await made(spread, "hide");
+    await scenario("rendered: revert 100 hidden", spread, revertUndo);
+    await made(spread, "hide"); // shown
+  }
 
   await page.getByRole("radio", { name: "raw" }).click();
   await filled("div[aria-busy]:has(> ol.source)");
@@ -179,5 +222,15 @@ test("edits on a long book", async () => {
   await scenario("raw: hide early", [early], button("hide"));
   await scenario("raw: delete early", [early], button("del"));
   await scenario("raw: delete mid", [mid], button("del"));
+  if (!only || only.test("raw: undo")) {
+    await made([early], "del");
+    await scenario("raw: undo/redo delete", [early], undoRedo);
+    await made([early], "del");
+  }
+  if (!only || only.test("raw: revert")) {
+    await made(spread, "hide");
+    await scenario("raw: revert 100 hidden", spread, revertUndo);
+    await made(spread, "hide");
+  }
   await say("");
 }, 1_800_000);
