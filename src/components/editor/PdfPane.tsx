@@ -16,7 +16,7 @@ import type { Placed } from "src/lib/emit";
 import { engine } from "src/lib/engine";
 import { modifiers, offBlocks } from "src/lib/selection";
 import { useEditor, type Boxes } from "src/lib/store";
-import { attachSync, invalidateSync } from "src/lib/scrollsync";
+import { attachSync, invalidateSync, scrollFor } from "src/lib/scrollsync";
 import {
   openPdf,
   readOutline,
@@ -548,6 +548,34 @@ export function PdfPane({ docId }: { docId: string }) {
   });
   const goToPage = useCallback((page: number) => goToRef.current(page), []);
 
+  /** The pages scrolled to follow the thumbnail strip: `fraction` of the
+   *  way through `page`'s row and its share of the gaps, on the same
+   *  sliding line the strip looked from (`probe`), so the strip's ends are
+   *  the column's. */
+  const stripTo = useCallback(
+    (page: number, fraction: number) => {
+      const el = scroller.current;
+      const i = rowOf(page);
+      const row = rows[i];
+      if (!el || !row) return;
+      // From half the gap above it to half the gap below; the first row
+      // from the column's top, the last to its foot.
+      const from = i === 0 ? 0 : row.top - GAP / 2;
+      const to =
+        i === rows.length - 1 ? column.height : rows[i + 1].top - GAP / 2;
+      el.scrollTop = scrollFor(el, from + fraction * (to - from));
+    },
+    [rows, rowOf, column],
+  );
+  const stripToRef = useRef(stripTo);
+  useLayoutEffect(() => {
+    stripToRef.current = stripTo;
+  });
+  const followStrip = useCallback(
+    (page: number, fraction: number) => stripToRef.current(page, fraction),
+    [],
+  );
+
   const followOutline = useCallback(
     (node: OutlineNode) => {
       if (!loaded) return;
@@ -747,6 +775,7 @@ export function PdfPane({ docId }: { docId: string }) {
                 current={range.current}
                 outline={loaded.outline}
                 onPage={goToPage}
+                onStrip={followStrip}
                 onOutline={followOutline}
               />
             )

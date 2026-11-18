@@ -1890,3 +1890,114 @@ test("the Headers & footers panel stays inside the window, and its rows scroll",
     await page.viewport(1280, 800);
   }
 });
+
+test("scrolling the pages keeps the current page's thumbnail lit and in sight", async () => {
+  await workspace(pdf(40));
+  mount("/edit/a");
+  await pagesDrawn();
+  await page.getByTitle("Show sidebar").click();
+  const strip = () => document.querySelector<HTMLElement>('[role="tabpanel"]')!;
+  const lit = () => strip().querySelector<HTMLElement>('[aria-current="page"]');
+  await expect.poll(() => lit()?.dataset.page ?? lit()?.title).toBeTruthy();
+  /** Whether the lit thumbnail is wholly inside what the strip shows. */
+  const inSight = () => {
+    const thumb = lit()?.getBoundingClientRect();
+    const view = strip().getBoundingClientRect();
+    return (
+      !!thumb && thumb.top >= view.top - 1 && thumb.bottom <= view.bottom + 1
+    );
+  };
+  // Three quarters down the book, then back to the start.
+  for (const at of [0.75, 0.4, 0]) {
+    const scroller = pdfScroller();
+    await scrollTo(scroller, room(scroller) * at);
+    const want = at === 0 ? "Page 1" : null;
+    await expect
+      .poll(() => lit()?.title, settle)
+      .toSatisfy((t: string | undefined) =>
+        want ? t === want : !!t && t !== "Page 1",
+      );
+    await expect.poll(inSight, settle).toBe(true);
+  }
+});
+
+test("scrolling the thumbnails scrolls the pages with them, end to end, and the strip stays where it was put", async () => {
+  await workspace(pdf(40));
+  mount("/edit/a");
+  await pagesDrawn();
+  await page.getByTitle("Show sidebar").click();
+  const strip = () =>
+    document.querySelector<HTMLElement>('[role="tabpanel"] .overflow-y-auto')!;
+  const lit = () =>
+    document.querySelector<HTMLElement>(
+      '[role="tabpanel"] [aria-current="page"]',
+    )?.title;
+  await expect.poll(lit).toBe("Page 1");
+  // Slid in, and the pane done resizing under it: its thumbnails drawn.
+  await expect
+    .poll(() => document.querySelectorAll('[role="tabpanel"] canvas').length)
+    .toBeGreaterThan(0);
+  await new Promise((r) => setTimeout(r, 300));
+  const pages = pdfScroller();
+  const through = () => pages.scrollTop / room(pages);
+
+  // Half way down the strip: half way down the pages, and the page lit is
+  // one in the middle of the book.
+  await scrollTo(strip(), room(strip()) * 0.5);
+  await expect.poll(through, settle).toBeCloseTo(0.5, 1);
+  await expect
+    .poll(() => Number(lit()?.replace("Page ", "")), settle)
+    .toSatisfy((n: number) => n >= 15 && n <= 26);
+  // Led by the strip, the pages do not pull it back.
+  const left = strip().scrollTop;
+  await new Promise((r) => setTimeout(r, 500));
+  expect(strip().scrollTop).toBeCloseTo(left, 0);
+
+  // Its ends are the book's.
+  await scrollTo(strip(), room(strip()));
+  await expect
+    .poll(() => room(pages) - pages.scrollTop, settle)
+    .toBeLessThan(2);
+  await expect.poll(lit, settle).toBe("Page 40");
+  await scrollTo(strip(), 0);
+  await expect.poll(() => pages.scrollTop, settle).toBeLessThan(2);
+  await expect.poll(lit, settle).toBe("Page 1");
+
+  // And the pages, scrolled, lead the strip again.
+  await new Promise((r) => setTimeout(r, 400));
+  await scrollTo(pages, room(pages) * 0.75);
+  const put = pages.scrollTop;
+  await expect
+    .poll(() => Number(lit()?.replace("Page ", "")), settle)
+    .toBeGreaterThan(25);
+  await expect.poll(() => strip().scrollTop, settle).toBeGreaterThan(left);
+  // The strip following is not a person scrolling it: the pages stay put.
+  await new Promise((r) => setTimeout(r, 300));
+  expect(pages.scrollTop).toBeCloseTo(put, 0);
+});
+
+test("in a window short enough to show one thumbnail, the strip still leads without being pulled back", async () => {
+  await workspace(pdf(40));
+  mount("/edit/a");
+  await pagesDrawn();
+  await page.viewport(1280, 330);
+  try {
+    await page.getByTitle("Show sidebar").click();
+    await expect
+      .poll(() => document.querySelectorAll('[role="tabpanel"] canvas').length)
+      .toBeGreaterThan(0);
+    await new Promise((r) => setTimeout(r, 300));
+    const strip = document.querySelector<HTMLElement>(
+      '[role="tabpanel"] .overflow-y-auto',
+    )!;
+    // A person's scroll comes as many small ones, each a frame apart.
+    for (let i = 1; i <= 20; i++) {
+      strip.scrollTop = i * 37;
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    await new Promise((r) => setTimeout(r, 500));
+    expect(strip.scrollTop).toBeCloseTo(20 * 37, 0);
+  } finally {
+    await page.viewport(1280, 800);
+  }
+});
