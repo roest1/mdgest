@@ -268,10 +268,16 @@ export async function score(
       why: failed.get(id),
     });
   }
-  return {
-    ...parse(printed, tool),
-    inputs: files.length,
-    scorer: version,
-    verdicts,
-  };
+  const parsed = parse(printed, tool);
+  // The verdicts are read off the lines the scorer prints for a failure;
+  // its own count of each file's tests says whether every one was read.
+  for (const [name, tally] of Object.entries(parsed.categories ?? {})) {
+    const mine = verdicts.filter((verdict) => verdict.category === name);
+    const passed = mine.filter((verdict) => verdict.passed).length;
+    if (passed !== tally.passed || mine.length !== tally.total)
+      throw new Error(
+        `the scorer has ${tally.passed} of ${tally.total} tests passed in ${name}; the failures it printed come to ${passed} of ${mine.length}`,
+      );
+  }
+  return { ...parsed, inputs: files.length, scorer: version, verdicts };
 }
