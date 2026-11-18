@@ -9,8 +9,10 @@
  *  What a page should say comes from its benchmark (the adapter's
  *  `quoted`): the text its tests or its ground truth quote from the page.
  *  What the PDF carries is the text pdf.js finds in it, as the converter
- *  writes it beside the markdown -- before the reader has touched it, so a
- *  change to the reader never moves a page across the line.
+ *  writes it beside the markdown -- before the reader has touched it, and
+ *  whether or not the reader could read the document, so a change to the
+ *  reader never moves a page across the line. A split is not made from a
+ *  conversion that could not take some input's text layer (`run.ts`).
  *
  *  The split is made once for a pinned revision and committed with the
  *  results (`results/<benchmark>.text-layer.json`), so every run and every
@@ -20,8 +22,8 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { TEXT_LAYER_CUTOFF, type Benchmark } from "./manifest.ts";
-import { stem } from "./tools.ts";
+import { revisionOf, TEXT_LAYER_CUTOFF, type Benchmark } from "./manifest.ts";
+import { stem } from "./job.ts";
 
 /** A stretch of text a page should hold. */
 export interface Quote {
@@ -61,6 +63,27 @@ export function plain(text: string): string {
     .replace(/\p{M}/gu, "")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+/** `text` as quotes of `length` letters and digits each, cut wherever
+ *  that many have gone by: for ground truth that is running text and not
+ *  a test's chosen phrase. By letters, not words, since Chinese sets no
+ *  spaces between them. A tail too short to tell anything is left off. */
+export function stretches(text: string, length = 30): Quote[] {
+  const quotes: Quote[] = [];
+  let quote = "";
+  let letters = 0;
+  for (const char of text) {
+    quote += char;
+    if (/[\p{L}\p{N}]/u.test(char) && ++letters === length) {
+      quotes.push({ text: quote });
+      quote = "";
+      letters = 0;
+    }
+  }
+  if (letters >= length / 2 || (letters && !quotes.length))
+    quotes.push({ text: quote });
+  return quotes;
 }
 
 /** The fewest edits that turn `needle` into some stretch of `hay`, or
@@ -121,7 +144,7 @@ export async function storedSplit(b: Benchmark): Promise<Split | null> {
   const at = splitPath(b);
   if (!existsSync(at)) return null;
   const split = JSON.parse(await readFile(at, "utf8")) as Split;
-  return split.revision === b.revision && split.cutoff === TEXT_LAYER_CUTOFF
+  return split.revision === revisionOf(b) && split.cutoff === TEXT_LAYER_CUTOFF
     ? split
     : null;
 }
@@ -138,13 +161,15 @@ export async function makeSplit(
   const pages: string[] = [];
   for (const [file, quotes] of quoted) {
     const at = join(layers, `${stem(file)}.txt`);
-    // No text layer written: the document could not be opened at all.
-    const layer = existsSync(at) ? await readFile(at, "utf8") : "";
-    if (hasTextLayer(layer, quotes)) pages.push(file);
+    // The converter writes one for every input, empty for a PDF pdf.js
+    // cannot open; an input with none was not converted.
+    if (!existsSync(at))
+      throw new Error(`${file} has no text layer in ${layers}: no split made`);
+    if (hasTextLayer(await readFile(at, "utf8"), quotes)) pages.push(file);
   }
   const split: Split = {
     benchmark: b.name,
-    revision: b.revision,
+    revision: revisionOf(b),
     pdfjs,
     cutoff: TEXT_LAYER_CUTOFF,
     inputs: quoted.size,

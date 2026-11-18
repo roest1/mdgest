@@ -9,14 +9,17 @@ import { execSync } from "node:child_process";
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Benchmark } from "./manifest.ts";
-import type { Score } from "./olmocr/adapter.ts";
+import { revisionOf, type Benchmark } from "./manifest.ts";
+import type { Score } from "./adapter.ts";
 import type { Conversion } from "./tools.ts";
 
 export interface Line {
   date: string;
   benchmark: string;
   revision: string;
+  /** What the numbers are to be read with, for a benchmark not run as
+   *  published. */
+  label?: string;
   scorer: string;
   tool: string;
   /** What the tool was: mdgest's `READER` and pdf.js, a peer's version. */
@@ -24,7 +27,15 @@ export interface Line {
   /** The commit of this repo the run was made from. */
   commit: string;
   pages: number;
+  /** Pages over the time spent reading them, each document's own: with
+   *  several browsers it is not their speed together. They slow one
+   *  another all the same, so it compares between lines of one
+   *  `browsers`. */
   pages_per_second: number;
+  /** How many browsers read side by side, for mdgest since it was
+   *  recorded: one for a small job, and for a long one a number set by
+   *  the machine's cores. */
+  browsers?: number;
   /** Inputs the tool could not convert, scored as empty. */
   unread: number;
   /** A hash of all the markdown: equal on two lines whose tools wrote the
@@ -36,13 +47,35 @@ export interface Line {
   text_layer: Score | null;
 }
 
+/** What is kept of a tool's last run of every input, beside its verdicts
+ *  (`keptDir`), in the history or not: what was run, for the review
+ *  report to say whose failures it shows, and each input's markdown hash,
+ *  for it to tell whether the reader still writes what was scored. */
+export interface KeptRun {
+  date: string;
+  /** The commit the run began at, and why no commit could give its score
+   *  again, when none could: it is then not in the history. */
+  commit: string;
+  unrepeatable: string | null;
+  scorer: string;
+  made: Conversion["made"];
+  hashes: Record<string, string>;
+}
+
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const git = (args: string) =>
   execSync(`git ${args}`, { cwd: ROOT, encoding: "utf8" }).trim();
 
-/** The commit checked out, and whether the tree is as that commit has it.
- *  The history itself is left out of the question: a run changes it. */
-export function tree(): { commit: string; dirty: boolean } {
+/** The commit checked out, and whether the tree is as that commit has it. */
+export interface Tree {
+  commit: string;
+  dirty: boolean;
+}
+
+/** The tree now. The history itself is left out of the question: a run
+ *  changes it. A run asks before it converts and again once it has
+ *  scored, since mdgest is read from the working tree all the while. */
+export function tree(): Tree {
   return {
     commit: git("rev-parse --short HEAD"),
     dirty:
@@ -57,17 +90,23 @@ export function line(
   made: Conversion,
   all: Score,
   textLayer: Score | null,
+  commit: string,
 ): Line {
   return {
     date: new Date().toISOString(),
     benchmark: b.name,
-    revision: b.revision,
+    revision: revisionOf(b),
+    ...(b.label ? { label: b.label } : {}),
     scorer,
     tool,
     made: made.made,
-    commit: tree().commit,
+    commit,
     pages: made.pages,
-    pages_per_second: Number((made.pages / made.seconds).toFixed(1)),
+    // No time at all when nothing could be read.
+    pages_per_second: made.seconds
+      ? Number((made.pages / made.seconds).toFixed(1))
+      : 0,
+    ...(made.browsers ? { browsers: made.browsers } : {}),
     unread: Object.keys(made.errors).length,
     markdown: made.markdown,
     all,
@@ -82,41 +121,61 @@ export async function append(b: Benchmark, entry: Line): Promise<string> {
   return at;
 }
 
-const percent = (score: Score | null, of?: string) => {
-  if (!score) return "";
-  const tally = of ? score.categories[of] : null;
-  if (of && !tally) return "";
-  const value = tally ? tally.passed / tally.total : score.score;
-  const count = tally
-    ? `${tally.passed}/${tally.total}`
-    : `${score.inputs} pages`;
-  return `${(value * 100).toFixed(1).padStart(5)}%  ${count}`;
-};
+const percent = (value: number) => `${(value * 100).toFixed(1).padStart(5)}%`;
 
-/** The run, as a table: both scores, and each category under them. */
+/** One cell of the table: the score, a category's tests, or a measure. */
+function cell(score: Score | null, of?: string): string {
+  if (!score) return "";
+  if (!of)
+    return score.score === undefined
+      ? `        ${score.inputs} inputs`
+      : `${percent(score.score)}  ${score.inputs} inputs`;
+  const tally = score.categories?.[of];
+  if (tally)
+    return `${percent(tally.passed / tally.total)}  ${tally.passed}/${tally.total}`;
+  const measure = score.measures?.[of];
+  return measure === undefined ? "" : percent(measure);
+}
+
+/** The run, as a table: both sets of inputs, and each category or measure
+ *  under them. */
 export function show(entry: Line): string {
   const made = Object.entries(entry.made)
     .map(([key, value]) => `${key} ${value}`)
     .join(", ");
+  const names = [
+    ...Object.keys(entry.all.categories ?? {}),
+    ...Object.keys(entry.all.measures ?? {}),
+  ].sort();
   const rows = [
-    ["", "all pages", "text-layer pages"],
-    ["score", percent(entry.all), percent(entry.text_layer)],
-    ...Object.keys(entry.all.categories)
-      .sort()
-      .map((name) => [
-        `  ${name}`,
-        percent(entry.all, name),
-        percent(entry.text_layer, name),
-      ]),
+    ["", "all", "with a text layer"],
+    ["score", cell(entry.all), cell(entry.text_layer)],
+    ...names.map((name) => [
+      `  ${name}`,
+      cell(entry.all, name),
+      cell(entry.text_layer, name),
+    ]),
   ];
+  const wide = Math.max(...rows.map(([name]) => name.length)) + 2;
   return [
-    `${entry.benchmark} at ${entry.revision.slice(0, 8)}, ${entry.scorer}`,
+    `${entry.benchmark}${entry.label ? ` (${entry.label})` : ""} at ${entry.revision
+      .split("+")
+      .map((revision) => revision.slice(0, 8))
+      .join("+")}, ${entry.scorer}`,
     `${entry.tool} (${made}) at ${entry.commit}`,
     "",
-    ...rows.map(([a, b, c]) => `${a.padEnd(20)}${b.padEnd(24)}${c}`.trimEnd()),
+    ...rows.map(([a, b, c]) =>
+      `${a.padEnd(wide)}${b.padEnd(24)}${c}`.trimEnd(),
+    ),
     "",
     `${entry.pages} pages at ${entry.pages_per_second} a second` +
-      (entry.unread ? `; ${entry.unread} could not be read` : ""),
+      (entry.browsers && entry.browsers > 1
+        ? ` each, in ${entry.browsers} browsers`
+        : "") +
+      (entry.unread ? `; ${entry.unread} could not be read` : "") +
+      (entry.all.refused
+        ? `; the scorer refused ${entry.all.refused}, scored as empty`
+        : ""),
     `markdown ${entry.markdown.slice(0, 16)}`,
   ].join("\n");
 }

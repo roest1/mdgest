@@ -1,0 +1,78 @@
+name: bench
+
+# The accuracy benchmarks (bench/accuracy/README.md), run by hand from the
+# Actions tab and by nothing else: a run takes minutes to hours, and a score
+# is a finding, not a gate. Not part of `ci ok`, and no push or pull request
+# starts it.
+on:
+  workflow_dispatch:
+    inputs:
+      benchmark:
+        description: The benchmark to run
+        type: choice
+        options: [olmocr, fr-bench, readoc, omnidocbench]
+        default: olmocr
+      tool:
+        description: The converter to score
+        type: choice
+        options: [mdgest, pymupdf4llm, markitdown, docling, pdftotext]
+        default: mdgest
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      BENCHMARK: ${{ inputs.benchmark }}
+      TOOL: ${{ inputs.tool }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      # uv makes each scorer's and peer's environment from its lock, and
+      # fetches the Python each is pinned to.
+      - uses: astral-sh/setup-uv@v10
+
+      - run: bun install --frozen-lockfile
+
+      # The converter reads in Chromium, the one the tests use.
+      - run: bunx playwright install --with-deps chromium
+
+      - name: pdftotext
+        if: inputs.tool == 'pdftotext'
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+
+      # The data is pinned by the manifest, so it is the same until that
+      # changes.
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/mdgest-bench/data
+          key: bench-data-${{ inputs.benchmark }}-${{ hashFiles('bench/accuracy/manifest.ts') }}
+
+      - name: run
+        run: bun run bench:accuracy "$BENCHMARK" --tool "$TOOL"
+
+      # The review report is of mdgest's failed tests, so there is one only
+      # for mdgest on a benchmark made of tests.
+      - name: report
+        if: inputs.tool == 'mdgest' && (inputs.benchmark == 'olmocr' || inputs.benchmark == 'fr-bench')
+        run: bun run bench:report "$BENCHMARK"
+
+      # The line the run added to the history, uncommitted: for whoever
+      # started the run to read, or to commit.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: results-${{ inputs.benchmark }}-${{ inputs.tool }}
+          path: bench/accuracy/results/
+
+      - uses: actions/upload-artifact@v7
+        if: inputs.tool == 'mdgest' && (inputs.benchmark == 'olmocr' || inputs.benchmark == 'fr-bench')
+        with:
+          name: report-${{ inputs.benchmark }}
+          path: bench/accuracy/out/

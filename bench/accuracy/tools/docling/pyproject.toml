@@ -1,0 +1,27 @@
+# Docling, a peer baseline, pinned: this file names its version and
+# `uv.lock` beside it every package under it. Run by
+# `bun run bench:accuracy <name> --tool docling`, on the CPU: torch comes
+# from PyTorch's CPU builds, so no machine's GPU changes what it does.
+[project]
+name = "mdgest-bench-docling"
+version = "0"
+requires-python = "==3.14.*"
+dependencies = [
+  "docling",
+  # Named here, though Docling asks for them itself, so that the CPU builds
+  # below are the ones taken.
+  "torch",
+  "torchvision",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

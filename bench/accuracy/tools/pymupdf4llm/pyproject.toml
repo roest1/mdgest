@@ -4,7 +4,7 @@
 [project]
 name = "mdgest-bench-pymupdf4llm"
 version = "0"
-requires-python = "==3.12.*"
+requires-python = "==3.14.*"
 dependencies = ["pymupdf4llm==2.1"]
 
 [tool.uv]

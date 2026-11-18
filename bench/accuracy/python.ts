@@ -4,9 +4,10 @@
  *  its own in the cache, since their pins disagree. uv makes the
  *  environment from the lock on first use and leaves it alone after. */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { envDir } from "./cache.ts";
+import type { Benchmark } from "./manifest.ts";
 
 const BENCH = fileURLToPath(new URL(".", import.meta.url));
 
@@ -37,11 +38,76 @@ export function python(project: string, args: string[], show = false): string {
   return show ? "" : ran.stdout;
 }
 
+/** `python`, for a run that may go on beside others: what it prints is
+ *  the answer when it ends, and `env` is added to its environment. */
+export function pythonBeside(
+  project: string,
+  args: string[],
+  env: Record<string, string> = {},
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "uv",
+      ["run", "--project", `${BENCH}${project}`, "--frozen", "python", ...args],
+      {
+        env: {
+          ...process.env,
+          UV_PROJECT_ENVIRONMENT: envDir(project),
+          ...env,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    // Read as text, so a character cut in two by a chunk's end is whole.
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (chunk) => (out += chunk));
+    child.stderr.on("data", (chunk) => (err = (err + chunk).slice(-4000)));
+    child.on("error", reject);
+    child.on("exit", (status) =>
+      status === 0
+        ? resolve(out)
+        : reject(
+            new Error(
+              `python ${args.join(" ")} (bench/accuracy/${project}) ended with ${status}:\n${out.slice(-2000)}\n${err}`,
+            ),
+          ),
+    );
+  });
+}
+
 /** The version of `pkg` installed in the environment of
- *  `bench/accuracy/<project>`. */
+ *  `bench/accuracy/<project>`, with the commit it was installed from when
+ *  it came from a repository: "0.1.0 @ceab1548". */
 export function installed(project: string, pkg: string): string {
   return python(project, [
     "-c",
-    `import importlib.metadata as m; print(m.version(${JSON.stringify(pkg)}))`,
+    [
+      "import importlib.metadata as m, json",
+      `d = m.distribution(${JSON.stringify(pkg)})`,
+      "url = json.loads(d.read_text('direct_url.json') or '{}')",
+      "commit = url.get('vcs_info', {}).get('commit_id')",
+      "print(d.version + (' @' + commit[:8] if commit else ''))",
+    ].join("\n"),
   ]).trim();
+}
+
+const checked = new Map<string, string>();
+
+/** The scorer of `b`, as the history names it, once its environment at
+ *  `bench/accuracy/<project>` is seen to hold the version the manifest
+ *  pins. Checked once a process. */
+export function scorerOf(b: Benchmark, project: string): string {
+  let name = checked.get(project);
+  if (!name) {
+    const version = installed(project, b.scorer.package);
+    if (version !== b.scorer.version)
+      throw new Error(
+        `the scorer is ${b.scorer.package} ${version}, the manifest says ${b.scorer.version}: bring ${project}/pyproject.toml and manifest.ts together`,
+      );
+    checked.set(project, (name = `${b.scorer.package} ${version}`));
+  }
+  return name;
 }

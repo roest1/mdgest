@@ -264,6 +264,10 @@
   .markdown li > p {
     @apply my-1;
   }
+  /* A block a person quoted (`>`, from the format bar). */
+  .markdown blockquote {
+    @apply my-4 border-l-2 border-edge-strong pl-4 text-muted;
+  }
   /* A rule is the converter's page break, and reads as one. */
   .markdown hr {
     @apply my-8 border-0 border-t border-dashed border-edge-strong;
