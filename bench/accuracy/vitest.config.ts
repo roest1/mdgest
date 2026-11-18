@@ -41,10 +41,22 @@ function benchFiles(): Plugin {
           } else if (url.pathname === "/out" && req.method === "PUT") {
             const chunks: Buffer[] = [];
             req.on("data", (chunk: Buffer) => chunks.push(chunk));
+            // The body arrives after this handler has returned, so what
+            // goes wrong with it is answered here, not by the catch below.
+            const refuse = (cause: unknown) => {
+              res.statusCode = 500;
+              res.end(String(cause));
+            };
+            req.on("error", refuse);
             req.on("end", () => {
-              const to = under(job.out, path);
-              mkdirSync(dirname(to), { recursive: true });
-              writeFileSync(to, Buffer.concat(chunks));
+              try {
+                const to = under(job.out, path);
+                mkdirSync(dirname(to), { recursive: true });
+                writeFileSync(to, Buffer.concat(chunks));
+              } catch (cause) {
+                refuse(cause);
+                return;
+              }
               if (
                 path.endsWith(".md") &&
                 ++written % 100 === 0 &&

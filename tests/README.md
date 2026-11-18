@@ -17,7 +17,7 @@ the blocks, `emit` writes the markdown -- and asserts that the installed
 pdf.js is the version `READER` was made with (`src/lib/analysis.ts`). The reader is almost all decisions:
 every threshold in `read.ts` and `structure.ts` is a guess about how a page
 is read, so most cases sit a known distance either side of one. The cases
-live in `cases/`, one file per area its name says: headings, lists, blocks,
+live in `cases/`, one file per area its name says: headings, lists, blocks, words,
 style, links, pictures, pages. `analysis.test.ts` covers the gate on a
 stored read: what `parseAnalysis` refuses, and that it refuses under the one
 name that tells the page to read the document again. `read.test.ts` drives `readPage` over a stand-in page, for the timing a real

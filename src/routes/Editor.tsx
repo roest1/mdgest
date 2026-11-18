@@ -11,7 +11,6 @@ import { Link, useNavigate, useParams } from "react-router";
 import {
   CircleAlert,
   CircleCheck,
-  CircleHelp,
   Download,
   PanelLeftClose,
   PanelLeftOpen,
@@ -21,6 +20,7 @@ import { FileTree } from "src/components/shared/FileTree";
 import { WorkspaceName } from "src/components/shared/WorkspaceName";
 import { barButton } from "src/components/editor/controls";
 import { TabBar } from "src/components/editor/TabBar";
+import { FormatBar } from "src/components/editor/FormatBar";
 import { Toolbar } from "src/components/editor/Toolbar";
 import { Split } from "src/components/editor/Split";
 import { TABS } from "src/components/editor/transitions";
@@ -399,7 +399,9 @@ export default function Editor() {
             <Download className="h-4 w-4" />
             export
           </button>
-          {/* (TODO): Tutorial */}
+          {/* (TODO): Tutorial. Hidden until the walkthrough is built, so
+              nothing offers what is not there; export takes its corner.
+              Put back with `CircleHelp` from lucide-react:
           <button
             type="button"
             title="Show me around"
@@ -407,7 +409,7 @@ export default function Editor() {
             className="cursor-pointer rounded p-1 text-muted transition-colors hover:text-ink"
           >
             <CircleHelp className="h-5 w-5" />
-          </button>
+          </button> */}
         </div>
       </header>
       <div className="flex min-h-0 flex-1">
@@ -480,8 +482,7 @@ export default function Editor() {
                         </section>
                       }
                     />
-                    {/* TODO: FloatingToolbar:
-                     <FloatingToolbar docId={docId} /> */}
+                    <FormatBar key={docId} docId={docId} />
                   </ViewTransition>
                 ) : (
                   <ViewTransition key="empty" {...PANES}>

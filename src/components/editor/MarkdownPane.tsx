@@ -450,7 +450,9 @@ function Rendered({
  *  the source view is for checking the markdown, not highlighting it. */
 type Kind = "heading" | "rule" | "image" | "comment" | "text";
 
-function kindOf(line: string): Kind {
+function kindOf(quoted: string): Kind {
+  // A quoted line is what follows its `>`.
+  const line = quoted.replace(/^>\s?/, "");
   // A hidden block: the line it would be, commented out -- indented into
   // the item before it when it is inside a list.
   if (line.trimStart().startsWith("<!--")) return "comment";

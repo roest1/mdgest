@@ -38,6 +38,27 @@ export interface Score {
   refused?: number;
 }
 
+/** One test's verdict, as the scorer gave it: what the review report is
+ *  made from. */
+export interface Verdict {
+  /** The input it is a test of. */
+  file: string;
+  id: string;
+  /** The test's kind and the scorer's category for it. */
+  type: string;
+  category: string;
+  /** What it looks for, in a line. */
+  wants: string;
+  passed: boolean;
+  /** The scorer's reason, for one that failed. */
+  why?: string;
+}
+
+/** What `score` gives back: the verdict on the set, the scorer's name
+ *  for the history, and each test's own verdict when the benchmark is
+ *  made of tests. */
+export type Scored = Score & { scorer: string; verdicts?: Verdict[] };
+
 export interface Adapter {
   /** The folder the PDFs are in, given the folder the data was fetched to. */
   pdfs(data: string): string;
@@ -57,5 +78,5 @@ export interface Adapter {
     out: string,
     files: string[],
     set: string,
-  ): Promise<Score & { scorer: string }>;
+  ): Promise<Scored>;
 }

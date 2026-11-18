@@ -40,12 +40,13 @@ export const ANALYSIS_FORMAT = 1;
 export const UNUSABLE_ANALYSIS = "UnusableAnalysis";
 
 /** Which reader made an analysis. Bumped by hand whenever a change to
- *  `read.ts` or `structure.ts` could move, merge or split a block, and on
- *  every pdf.js version change (`READ_WITH`): edits are
- *  keyed to block positions, so edits made on one reader's blocks mean
- *  nothing on another's. An export carries each document's, and an import
- *  from another reader starts that document over. */
-export const READER = 2;
+ *  `read.ts` or `structure.ts` could move, merge or split a block, or
+ *  change how many words one has, and on every pdf.js version change
+ *  (`READ_WITH`): edits are keyed to block positions, and a cut to a count
+ *  of a block's words, so edits made on one reader's blocks mean nothing
+ *  on another's. An export carries each document's, and an import from
+ *  another reader starts that document over. */
+export const READER = 4;
 
 /** The pdf.js `READER` was made with. pdf.js is part of the reader: an
  *  upgrade can change the text runs `read.ts` is given. A test fails when

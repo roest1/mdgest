@@ -1,0 +1,11 @@
+# MarkItDown, a peer baseline, pinned: this file names its version and
+# `uv.lock` beside it every package under it. Run by
+# `bun run bench:accuracy <name> --tool markitdown`.
+[project]
+name = "mdgest-bench-markitdown"
+version = "0"
+requires-python = "==3.14.*"
+dependencies = ["markitdown[pdf]"]
+
+[tool.uv]
+package = false

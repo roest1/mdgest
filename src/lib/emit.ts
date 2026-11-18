@@ -9,7 +9,12 @@
 
 import { LIST_ROLES, type Analysis, type Block, type Page } from "./analysis";
 import { shape, type Edits } from "./edits";
-import { headersFooters, pageNumberOf, type Furniture } from "./furniture";
+import {
+  pageNumberOf,
+  repeatedKeys,
+  type Choice,
+  type Furniture,
+} from "./furniture";
 
 /** A block as it was written: which page, its number on that page (the
  *  note on its box), and the source line it became, 1-based. `from` and
@@ -30,6 +35,12 @@ export interface Placed {
   deleted: boolean;
   /** Hidden or deleted by the document's furniture setting, not by hand. */
   furniture?: Furniture;
+  /** A list item as written: how deep it is nested, which may be less
+   *  than its block asks -- an item nests at most one level under the one
+   *  before it, and the first of a list not at all -- and that item before
+   *  it in its list, null for the first. What indent and outdent can do
+   *  with it follows. */
+  item?: { depth: number; after: string | null };
 }
 
 /** One line of the markdown source, and the block it came from -- null for
@@ -70,7 +81,9 @@ class Counters {
 
   /** How `block` is written -- its marker and the indent before it -- or
    *  null for a block that is not a list item, which also ends the list. */
-  itemFor(block: Block): { marker: string; indent: string } | null {
+  itemFor(
+    block: Block,
+  ): { marker: string; indent: string; depth: number } | null {
     if (!LIST_ROLES.includes(block.role)) {
       this.counts.clear();
       this.cols = [0];
@@ -89,7 +102,7 @@ class Counters {
     }
     const col = this.cols[depth];
     this.cols = [...this.cols.slice(0, depth + 1), col + marker.length + 1];
-    return { marker, indent: " ".repeat(col) };
+    return { marker, indent: " ".repeat(col), depth };
   }
 }
 
@@ -157,6 +170,9 @@ export function emit(
   const lines: SourceLine[] = [];
   const blocks: Record<string, Placed> = {};
   const order: string[] = [];
+  /** The lines a quoted block wrote, 1-based: where `> ` opens them, and
+   *  what decides which blank lines between them carry a `>` too. */
+  const quoted = new Set<number>();
 
   const last = () => lines[lines.length - 1];
   /** Returns the 1-based line the text landed on. */
@@ -180,15 +196,28 @@ export function emit(
 
   const pageNumbers = edits?.page_numbers ?? "keep";
   const headers = edits?.headers_footers ?? "keep";
+  const perLine = edits?.repeated_lines ?? {};
   // Found once per document, and only when it is asked for: it looks at
   // every page to know what repeats.
   const repeated =
-    headers === "keep" ? new Set<string>() : headersFooters(analysis);
+    headers === "keep" && Object.keys(perLine).length === 0
+      ? new Map<string, string>()
+      : repeatedKeys(analysis);
+  /** What is done with repeated header or footer block `id`: its line's
+   *  own choice, else the setting for them all. Null for any other. */
+  const lineChoice = (id: string): Choice | null => {
+    const key = repeated.get(id);
+    return key === undefined ? null : (perLine[key] ?? headers);
+  };
 
   const emitPage = (page: Page) => {
-    const counters = new Counters();
+    let counters = new Counters();
     let n = 0;
     let inList = false;
+    /** Whether the last block written was quoted. */
+    let inQuote = false;
+    /** The last item written of the list now open, if one is. */
+    let lastItem: string | null = null;
     /** How far the last list item's text is indented: where a comment
      *  inside the list starts. */
     let listIndent = "";
@@ -214,14 +243,15 @@ export function emit(
       const byHand = block.hidden || block.deleted;
       const printed =
         !byHand && pageNumbers !== "keep" ? pageNumberOf(raw, page) : null;
+      const line = byHand ? null : lineChoice(raw.id);
       const setting: Furniture | undefined =
         printed !== null
           ? "page_numbers"
-          : !byHand && repeated.has(raw.id)
+          : line !== null && line !== "keep"
             ? "headers_footers"
             : undefined;
       if (setting !== undefined) {
-        const choice = setting === "page_numbers" ? pageNumbers : headers;
+        const choice = setting === "page_numbers" ? pageNumbers : line;
         if (choice === "delete") block.deleted = true;
         else block.hidden = true;
       }
@@ -257,16 +287,19 @@ export function emit(
                   : LIST_ROLES.includes(block.role)
                     ? `1. ${words}`
                     : words;
+        const q = block.quote ? "> " : "";
         // Inside a list the comment is indented into the item before it,
         // so the list goes on past it rather than ending there.
         let at: number;
         if (inList) {
-          at = put(`${listIndent}${comment(said)}`, block.id, page.n);
+          at = put(`${q}${listIndent}${comment(said)}`, block.id, page.n);
         } else {
           blank(page.n);
-          at = put(comment(said), block.id, page.n);
+          at = put(`${q}${comment(said)}`, block.id, page.n);
           put("", null, page.n);
         }
+        if (block.quote) quoted.add(at);
+        inQuote = block.quote;
         n += 1;
         blocks[block.id] = {
           id: block.id,
@@ -281,30 +314,46 @@ export function emit(
         order.push(block.id);
         continue;
       }
+      // A list that goes into a quote or comes out of one is two lists:
+      // the `>` cannot open or close partway through one.
+      if (
+        inList &&
+        LIST_ROLES.includes(block.role) &&
+        block.quote !== inQuote
+      ) {
+        counters = new Counters();
+        inList = false;
+        lastItem = null;
+      }
       const item = counters.itemFor(block);
+      const after = lastItem;
+      lastItem = item ? block.id : null;
+      const q = block.quote ? "> " : "";
       // Each block is one line of the source; `at` is that line.
       let at: number;
       if (block.kind === "image") {
         blank(page.n);
-        at = put(words, block.id, page.n);
+        at = put(`${q}${words}`, block.id, page.n);
         put("", null, page.n);
         inList = false;
       } else if (block.role === "heading") {
         blank(page.n);
-        at = put(heading(block, words), block.id, page.n);
+        at = put(`${q}${heading(block, words)}`, block.id, page.n);
         put("", null, page.n);
         inList = false;
       } else if (item) {
         if (!inList) blank(page.n);
-        at = put(`${item.indent}${item.marker} ${words}`, block.id, page.n);
+        at = put(`${q}${item.indent}${item.marker} ${words}`, block.id, page.n);
         listIndent = " ".repeat(item.indent.length + item.marker.length + 1);
         inList = true;
       } else {
         blank(page.n);
-        at = put(words, block.id, page.n);
+        at = put(`${q}${words}`, block.id, page.n);
         put("", null, page.n);
         inList = false;
       }
+      if (block.quote) quoted.add(at);
+      inQuote = block.quote;
       n += 1;
       blocks[block.id] = {
         id: block.id,
@@ -314,6 +363,7 @@ export function emit(
         to: at,
         hidden: false,
         deleted: false,
+        ...(item ? { item: { depth: item.depth, after } } : {}),
       };
       order.push(block.id);
     }
@@ -323,6 +373,19 @@ export function emit(
     if (i > 0) rule(page.n);
     emitPage(page);
   });
+
+  // Quoted blocks next to each other are one quote: the blank lines
+  // between them are written `>`, since a blank line would end it. A rule
+  // or an unquoted block between them ends it all the same. `quoted`
+  // holds 1-based lines, so `quoted.has(i)` asks of the line before
+  // `lines[i]`.
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].text !== "" || !quoted.has(i)) continue;
+    let j = i;
+    while (j < lines.length && lines[j].text === "") j++;
+    if (quoted.has(j + 1)) for (let k = i; k < j; k++) lines[k].text = ">";
+    i = j - 1;
+  }
 
   while (lines.length && last().text === "") lines.pop();
   return {
