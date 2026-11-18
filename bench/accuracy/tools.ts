@@ -215,7 +215,13 @@ function peer(name: string): Tool {
   };
 }
 
-export const TOOLS: Tool[] = [mdgest, peer("pymupdf4llm")];
+export const TOOLS: Tool[] = [
+  mdgest,
+  peer("pymupdf4llm"),
+  peer("markitdown"),
+  peer("docling"),
+  peer("pdftotext"),
+];
 
 export function tool(name: string): Tool {
   const found = TOOLS.find((t) => t.name === name);

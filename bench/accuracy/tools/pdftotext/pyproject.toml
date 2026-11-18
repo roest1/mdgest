@@ -1,0 +1,11 @@
+# pdftotext, the floor: Poppler's plain text, with no markdown in it. It is
+# the system's own binary, so there is nothing to pin here; the version it
+# says it is goes on every results line.
+[project]
+name = "mdgest-bench-pdftotext"
+version = "0"
+requires-python = "==3.14.*"
+dependencies = []
+
+[tool.uv]
+package = false

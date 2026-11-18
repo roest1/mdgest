@@ -141,9 +141,16 @@ uv project under `tools/<name>/` with a `convert.py` that takes the same
 job the mdgest converter does. What a peer made of a dataset revision is
 kept in the cache and reused until its lock or the revision changes.
 
-| Tool          | Version | How it is run                                  |
-| ------------- | ------- | ---------------------------------------------- |
-| `pymupdf4llm` | 2.1     | its defaults, layout analysis on, with OCR off |
+| Tool          | Version      | How it reads                                | How it is run                         |
+| ------------- | ------------ | ------------------------------------------- | ------------------------------------- |
+| `pymupdf4llm` | 2.1          | the text layer, with a layout model over it | its defaults, with OCR off            |
+| `markitdown`  | 0.1.9        | the text layer                              | as it comes; it has no OCR of its own |
+| `docling`     | 2.150.1      | layout and table models over the text layer | OCR off, on the CPU                   |
+| `pdftotext`   | the system's | the text layer, as plain text: the floor    | Poppler's, in reading order           |
+
+OCR is off wherever a tool has it: mdgest has none, so the comparison is
+between readers of the text layer, on the same pages. What every peer's
+`convert.py` shares, the job read and answered, is `tools/peer.py`.
 
 ## Layout
 
