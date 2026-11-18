@@ -20,6 +20,7 @@ import { FileTree } from "src/components/shared/FileTree";
 import { WorkspaceName } from "src/components/shared/WorkspaceName";
 import { barButton } from "src/components/editor/controls";
 import { TabBar } from "src/components/editor/TabBar";
+import { FormatBar } from "src/components/editor/FormatBar";
 import { Toolbar } from "src/components/editor/Toolbar";
 import { Split } from "src/components/editor/Split";
 import { TABS } from "src/components/editor/transitions";
@@ -481,8 +482,7 @@ export default function Editor() {
                         </section>
                       }
                     />
-                    {/* TODO: FloatingToolbar:
-                     <FloatingToolbar docId={docId} /> */}
+                    <FormatBar key={docId} docId={docId} />
                   </ViewTransition>
                 ) : (
                   <ViewTransition key="empty" {...PANES}>
