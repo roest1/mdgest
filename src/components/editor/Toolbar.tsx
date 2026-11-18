@@ -15,7 +15,13 @@ import {
   Undo2,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useMenuDismiss } from "src/components/shared/useMenuDismiss";
 import {
   redoEdit,
@@ -263,6 +269,32 @@ function Row({
   );
 }
 
+/** How far `panel` may reach while `open`: to the window's bottom and
+ *  right edge, `EDGE` px short of each, measured from where it opens and
+ *  again when the window is resized. A book can repeat dozens of lines. */
+function useRoom(
+  open: boolean,
+  panel: React.RefObject<HTMLElement | null>,
+): React.CSSProperties | undefined {
+  const EDGE = 16;
+  const [room, setRoom] = useState<React.CSSProperties>();
+  useLayoutEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      const at = panel.current?.getBoundingClientRect();
+      if (!at) return;
+      setRoom({
+        maxHeight: Math.max(96, window.innerHeight - at.top - EDGE),
+        maxWidth: Math.max(240, window.innerWidth - at.left - EDGE),
+      });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [open, panel]);
+  return open ? room : undefined;
+}
+
 /** A group of the panel's rows, under its name. */
 function Group({ name, children }: { name: string; children: ReactNode }) {
   return (
@@ -296,7 +328,9 @@ function HeadersFooters({
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   useMenuDismiss(open, root, setOpen);
+  const room = useRoom(open, panel);
   const places = lines.reduce((n, line) => n + line.pages.length, 0);
   const count = lines.length + (numbers ? 1 : 0);
   const struck = (choice: Choice) =>
@@ -323,9 +357,11 @@ function HeadersFooters({
       </button>
       {open && (
         <div
+          ref={panel}
           role="dialog"
           aria-label="Headers and footers"
-          className="absolute top-full left-0 z-30 mt-1 w-[40rem] max-w-[80vw] overflow-hidden rounded-lg border border-edge bg-raised text-sm shadow-xl shadow-black/40"
+          className="absolute top-full left-0 z-30 mt-1 flex w-[40rem] flex-col overflow-hidden rounded-lg border border-edge bg-raised text-sm shadow-xl shadow-black/40"
+          style={room}
         >
           <div className="flex items-baseline justify-between px-3 pt-2.5 pb-1.5">
             <span className="text-ink">Headers &amp; footers</span>
@@ -341,47 +377,51 @@ function HeadersFooters({
                 .join(" · ")}
             </span>
           </div>
-          {numbers && (
-            <Group name="Page numbers">
-              <Row
-                where={numbers.where}
-                choice={numbers.choice}
-                pages={`${numbers.pages.length} ${numbers.pages.length === 1 ? "page" : "pages"}`}
-                onPick={onPickNumbers}
-              >
-                <span
-                  className={`flex min-w-0 gap-1 truncate ${struck(numbers.choice)}`}
-                  title={numbers.labels.join(" ")}
-                >
-                  {sample(numbers.labels).map((label, i) => (
-                    <span key={i} className="rounded bg-ground px-1">
-                      {label}
-                    </span>
-                  ))}
-                </span>
-              </Row>
-            </Group>
-          )}
-          {lines.length > 0 && (
-            <Group name="Repeated lines">
-              {lines.map((line) => (
+          {/* The rows scroll under the panel's name; the panel itself
+              stays inside the window. */}
+          <div className="min-h-0 overflow-y-auto overscroll-contain">
+            {numbers && (
+              <Group name="Page numbers">
                 <Row
-                  key={line.key}
-                  where={line.where}
-                  choice={line.choice}
-                  pages={`${line.pages.length === 1 ? "page" : "pages"} ${runs(line.pages)}`}
-                  onPick={(choice) => onPickLine(line.key, choice)}
+                  where={numbers.where}
+                  choice={numbers.choice}
+                  pages={`${numbers.pages.length} ${numbers.pages.length === 1 ? "page" : "pages"}`}
+                  onPick={onPickNumbers}
                 >
                   <span
-                    className={`truncate ${struck(line.choice)}`}
-                    title={line.text}
+                    className={`flex min-w-0 gap-1 truncate ${struck(numbers.choice)}`}
+                    title={numbers.labels.join(" ")}
                   >
-                    {line.text}
+                    {sample(numbers.labels).map((label, i) => (
+                      <span key={i} className="rounded bg-ground px-1">
+                        {label}
+                      </span>
+                    ))}
                   </span>
                 </Row>
-              ))}
-            </Group>
-          )}
+              </Group>
+            )}
+            {lines.length > 0 && (
+              <Group name="Repeated lines">
+                {lines.map((line) => (
+                  <Row
+                    key={line.key}
+                    where={line.where}
+                    choice={line.choice}
+                    pages={`${line.pages.length === 1 ? "page" : "pages"} ${runs(line.pages)}`}
+                    onPick={(choice) => onPickLine(line.key, choice)}
+                  >
+                    <span
+                      className={`truncate ${struck(line.choice)}`}
+                      title={line.text}
+                    >
+                      {line.text}
+                    </span>
+                  </Row>
+                ))}
+              </Group>
+            )}
+          </div>
         </div>
       )}
     </div>

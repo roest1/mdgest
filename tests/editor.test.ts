@@ -1844,3 +1844,34 @@ test("page numbers are decided in the Headers & footers panel, beside each repea
   expect(again.edits.page_numbers).toBe("hide");
   expect(again.markdown.text).toContain("<!-- page 1 -->");
 });
+
+test("the Headers & footers panel stays inside the window, and its rows scroll", async () => {
+  await workspace(await withFurniture());
+  mount("/edit/a");
+  await ready();
+  await page.viewport(1280, 250);
+  try {
+    const button = () =>
+      Array.from(document.querySelectorAll("button")).find((b) =>
+        b.textContent?.startsWith("Headers & footers"),
+      );
+    await expect.poll(() => button()?.disabled).toBe(false);
+    await userEvent.click(button()!);
+    const panel = () =>
+      document.querySelector<HTMLElement>(
+        '[role="dialog"][aria-label="Headers and footers"]',
+      );
+    await expect.poll(panel).not.toBeNull();
+    const at = panel()!.getBoundingClientRect();
+    expect(at.bottom).toBeLessThanOrEqual(window.innerHeight);
+    expect(at.right).toBeLessThanOrEqual(window.innerWidth);
+    // What does not fit scrolls, under the panel's name.
+    const rows = panel()!.querySelector<HTMLElement>(".overflow-y-auto")!;
+    expect(rows.scrollHeight).toBeGreaterThan(rows.clientHeight);
+    rows.scrollTop = rows.scrollHeight;
+    expect(rows.scrollTop).toBeGreaterThan(0);
+    expect(panel()!.textContent).toContain("Headers & footers");
+  } finally {
+    await page.viewport(1280, 800);
+  }
+});
