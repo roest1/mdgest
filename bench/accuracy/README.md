@@ -49,6 +49,15 @@ not of the six together.
 Only the converter is mdgest. Scorers are never rewritten here: one that is
 drifts from the numbers its benchmark publishes for other tools.
 
+One thing is done to every tool's markdown before a scorer sees it: a file
+that is nothing but white space is left empty. olmOCR-bench's scorer looks
+for a test's text with a fuzzy match (rapidfuzz's `partial_ratio`) that a
+single space satisfies, so a page a tool wrote only a line break for passes
+its "present" tests, and an empty one fails them. pdftotext writes that
+line break for every page it finds no text on, which was worth 456 tests to
+it. The same match also passes a page whose whole output is a few
+characters found in the test's text; that is the scorer's, and is left.
+
 ## The two numbers
 
 Every run scores twice.

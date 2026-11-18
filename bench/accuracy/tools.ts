@@ -61,7 +61,7 @@ async function conversion(
     pages += run.pages;
     ms += run.ms;
     hash.update(`${file}\0`);
-    hash.update(await readFile(join(out, `${stem(file)}.md`)));
+    hash.update(await written(join(out, `${stem(file)}.md`)));
     hash.update("\0");
   }
   return {
@@ -72,6 +72,19 @@ async function conversion(
     errors,
     markdown: hash.digest("hex"),
   };
+}
+
+/** The markdown at `at`, as the scorers are given it. Markdown that is
+ *  nothing but white space is left as an empty file: a tool that wrote a
+ *  line break for a page it found no text on converted nothing, and at
+ *  least one scorer tells the two apart -- olmOCR-bench's looks for a
+ *  test's text with a fuzzy match that a single space satisfies, so a
+ *  blank page passes its "present" tests where an empty one fails them. */
+async function written(at: string): Promise<Buffer> {
+  const markdown = await readFile(at);
+  if (!markdown.length || markdown.toString("utf8").trim()) return markdown;
+  await writeFile(at, "");
+  return Buffer.alloc(0);
 }
 
 async function writeJob(out: string, job: Job, name = "job.json") {
