@@ -1703,8 +1703,9 @@ test("the format bar is there while the selection is text, and sets how it is wr
   await userEvent.click(boxOf(para.id));
   await expect.poll(() => pressed("para")).toBe("true");
   expect(pressed("h2")).toBe("false");
-  // Indent is a list's, and this is a paragraph.
-  expect(formatBar()!.querySelector('[data-action="indent"]')).toBeNull();
+  // Indent is a list's, and this is a paragraph: there, but not pressable.
+  expect(formatButton("indent").disabled).toBe(true);
+  expect(formatButton("outdent").disabled).toBe(true);
 
   // A heading, in the source and the rendered view, and the selection kept.
   await userEvent.click(formatButton("h2"));
@@ -1718,6 +1719,16 @@ test("the format bar is there while the selection is text, and sets how it is wr
   // One step, which undo takes back.
   await page.getByRole("button", { name: "Undo (Ctrl+Z)" }).click();
   await expect.poll(() => writtenBy(para.id).tagName).toBe("P");
+
+  // Bulleted, then bulleted again: a paragraph once more. Alone in its
+  // list it is the first item, which has nothing to nest under.
+  await userEvent.click(formatButton("bullet"));
+  await expect.poll(() => sourceOf(para.id)?.startsWith("- ")).toBe(true);
+  await expect.poll(() => pressed("bullet")).toBe("true");
+  expect(formatButton("indent").disabled).toBe(true);
+  await userEvent.click(formatButton("bullet"));
+  await expect.poll(() => writtenBy(para.id).tagName).toBe("P");
+  await expect.poll(() => pressed("para")).toBe("true");
 
   // Two quoted: one quote in the rendered view, each block lit in it, the
   // quote itself no block of its own.

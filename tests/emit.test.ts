@@ -90,8 +90,25 @@ test("each block is numbered on its page and placed on its line", () => {
   const shown = { hidden: false, deleted: false };
   expect(md.blocks).toEqual({
     p1b0: { id: "p1b0", page: 1, n: 1, from: 1, to: 1, ...shown },
-    p1b1: { id: "p1b1", page: 1, n: 2, from: 3, to: 3, ...shown },
-    p1b2: { id: "p1b2", page: 1, n: 3, from: 4, to: 4, ...shown },
+    // A list item says how deep it was written, and the item before it.
+    p1b1: {
+      id: "p1b1",
+      page: 1,
+      n: 2,
+      from: 3,
+      to: 3,
+      ...shown,
+      item: { depth: 0, after: null },
+    },
+    p1b2: {
+      id: "p1b2",
+      page: 1,
+      n: 3,
+      from: 4,
+      to: 4,
+      ...shown,
+      item: { depth: 0, after: "p1b1" },
+    },
     p2i0: { id: "p2i0", page: 2, n: 1, from: 8, to: 8, ...shown },
     p2b0: { id: "p2b0", page: 2, n: 2, from: 10, to: 10, ...shown },
   });
@@ -368,4 +385,19 @@ test("a hidden quoted block is its comment, quoted, and counted as one", () => {
   });
   expect(text).toContain("> <!-- 1. Grease them. -->\n>\n> 1. Log it.\n");
   expect(measure(text).commentLines).toBe(1);
+});
+
+test("a list item is written no deeper than one under the item before it", () => {
+  // Asked deeper than markdown can nest: the first item at 2, the second
+  // at 3. Written at 0 and 1, and said so, so indent goes by what shows.
+  const md = emit(
+    doc,
+    "doc.assets/",
+    withEdits({ p1b1: { depth: 2 }, p1b2: { depth: 3 } }),
+  );
+  expect(md.text).toContain("1. Grease them.\n   1. Log it.\n");
+  expect(md.blocks.p1b1.item).toEqual({ depth: 0, after: null });
+  expect(md.blocks.p1b2.item).toEqual({ depth: 1, after: "p1b1" });
+  // A heading, picture or paragraph is no list item.
+  expect(md.blocks.p1b0.item).toBeUndefined();
 });

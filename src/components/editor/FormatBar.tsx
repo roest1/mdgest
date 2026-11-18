@@ -36,12 +36,13 @@ export function FormatBar({ docId }: { docId: string }) {
   const lit = (look: Look | "quote" | "bold" | "italic") =>
     format.lit.has(look);
   const press = (p: Press) => () => formatSelection(p);
-  const role = (look: Look, title: string, glyph: string) => (
+  const role = (look: Look, title: string, glyph: string, list = false) => (
     <Glyph
       key={look}
       action={look}
       on={lit(look)}
-      title={title}
+      // A list style already on takes it off again.
+      title={list && lit(look) ? "Not a list: paragraphs again" : title}
       onClick={press(look)}
     >
       {glyph}
@@ -76,27 +77,30 @@ export function FormatBar({ docId }: { docId: string }) {
           &gt;
         </Glyph>
         <Rule />
-        {role("bullet", "Bulleted list (-)", "•")}
-        {role("numbered", "Numbered list (1.)", "1.")}
-        {role("alpha", "Lettered list (a.)", "a.")}
-        {role("roman", "Roman list (i.)", "i.")}
-        {/* Indentation is a list's depth and nothing else's: offered only
-            while every block is an item of a list. */}
-        {format.list && (
-          <>
-            <Tool
-              action="outdent"
-              title="Outdent"
-              disabled={!format.outdent}
-              onClick={press("outdent")}
-            >
-              <IndentDecrease className="h-3.5 w-3.5" aria-hidden />
-            </Tool>
-            <Tool action="indent" title="Indent" onClick={press("indent")}>
-              <IndentIncrease className="h-3.5 w-3.5" aria-hidden />
-            </Tool>
-          </>
-        )}
+        {role("bullet", "Bulleted list (-)", "•", true)}
+        {role("numbered", "Numbered list (1.)", "1.", true)}
+        {role("alpha", "Lettered list (a.)", "a.", true)}
+        {role("roman", "Roman list (i.)", "i.", true)}
+        {/* Indentation is a list's depth and nothing else's, and only as
+            deep as the markdown can nest it: always there, so the bar
+            keeps its width, and pressable only when it would move an
+            item (`formatting.ts`). */}
+        <Tool
+          action="outdent"
+          title="Outdent"
+          disabled={!format.outdent}
+          onClick={press("outdent")}
+        >
+          <IndentDecrease className="h-3.5 w-3.5" aria-hidden />
+        </Tool>
+        <Tool
+          action="indent"
+          title="Indent"
+          disabled={!format.indent}
+          onClick={press("indent")}
+        >
+          <IndentIncrease className="h-3.5 w-3.5" aria-hidden />
+        </Tool>
         <Rule />
         <Tool
           action="bold"
@@ -129,8 +133,10 @@ export function FormatBar({ docId }: { docId: string }) {
   );
 }
 
+/** Lit: what every selected block already is, on a ground of its own.
+ *  Pointed at, only the mark brightens -- the ground is for "on". */
 const LIT = "bg-raised text-ink";
-const UNLIT = "text-muted enabled:hover:bg-raised/60 enabled:hover:text-ink";
+const UNLIT = "text-muted enabled:hover:text-ink";
 
 /** A button carrying an icon. Lit when what it sets is already so. */
 function Tool({

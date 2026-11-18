@@ -30,6 +30,12 @@ export interface Placed {
   deleted: boolean;
   /** Hidden or deleted by the document's furniture setting, not by hand. */
   furniture?: Furniture;
+  /** A list item as written: how deep it is nested, which may be less
+   *  than its block asks -- an item nests at most one level under the one
+   *  before it, and the first of a list not at all -- and that item before
+   *  it in its list, null for the first. What indent and outdent can do
+   *  with it follows. */
+  item?: { depth: number; after: string | null };
 }
 
 /** One line of the markdown source, and the block it came from -- null for
@@ -70,7 +76,9 @@ class Counters {
 
   /** How `block` is written -- its marker and the indent before it -- or
    *  null for a block that is not a list item, which also ends the list. */
-  itemFor(block: Block): { marker: string; indent: string } | null {
+  itemFor(
+    block: Block,
+  ): { marker: string; indent: string; depth: number } | null {
     if (!LIST_ROLES.includes(block.role)) {
       this.counts.clear();
       this.cols = [0];
@@ -89,7 +97,7 @@ class Counters {
     }
     const col = this.cols[depth];
     this.cols = [...this.cols.slice(0, depth + 1), col + marker.length + 1];
-    return { marker, indent: " ".repeat(col) };
+    return { marker, indent: " ".repeat(col), depth };
   }
 }
 
@@ -194,6 +202,8 @@ export function emit(
     let inList = false;
     /** Whether the last block written was quoted. */
     let inQuote = false;
+    /** The last item written of the list now open, if one is. */
+    let lastItem: string | null = null;
     /** How far the last list item's text is indented: where a comment
      *  inside the list starts. */
     let listIndent = "";
@@ -298,8 +308,11 @@ export function emit(
       ) {
         counters = new Counters();
         inList = false;
+        lastItem = null;
       }
       const item = counters.itemFor(block);
+      const after = lastItem;
+      lastItem = item ? block.id : null;
       const q = block.quote ? "> " : "";
       // Each block is one line of the source; `at` is that line.
       let at: number;
@@ -335,6 +348,7 @@ export function emit(
         to: at,
         hidden: false,
         deleted: false,
+        ...(item ? { item: { depth: item.depth, after } } : {}),
       };
       order.push(block.id);
     }

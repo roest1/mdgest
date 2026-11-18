@@ -9,7 +9,13 @@
  * Each button acts on all of them at once, as one undo step, and is lit
  * when what it sets is already so of every one -- the reader's call with
  * a person's edits laid over it (`shape`). A toggle -- quote, bold,
- * italic -- turns off when every block has it, and on otherwise.
+ * italic -- turns off when every block has it, and on otherwise. A list
+ * style is one too: lit, it makes its items paragraphs again.
+ *
+ * Indent and outdent are offered only when the markdown can show them:
+ * an item nests at most one level under the item before it, and the first
+ * of a list not at all, so they go by the depth each item was written at
+ * (`Placed.item`), not the depth its edit asks for.
  *
  * Pure: the bar reads `formatFor`, and hands `restyle` to `commitEdits`. */
 
@@ -41,13 +47,37 @@ export type Press = Look | Toggle | "indent" | "outdent";
 export interface Format {
   /** The buttons lit: what every block is already. */
   lit: ReadonlySet<Look | Toggle>;
-  /** Every block is a list item: the bar offers indent and outdent. */
-  list: boolean;
   /** Any block is a heading, which is set in its own weight: bold and
    *  italic are not offered. */
   heading: boolean;
-  /** Some block is indented, so outdent has something to do. */
+  /** Some selected list item can nest a level deeper. */
+  indent: boolean;
+  /** Some selected list item is nested. */
   outdent: boolean;
+}
+
+/** The depth each selected list item would be written at after one
+ *  indent or outdent, for those it moves. In document order, so an item
+ *  under one also indented may follow it down. */
+function nesting(
+  ids: readonly string[],
+  placed: Record<string, Placed>,
+  by: 1 | -1,
+): Map<string, number> {
+  const items = ids
+    .filter((id) => placed[id]?.item && !placed[id].deleted)
+    .sort((a, b) => placed[a].from - placed[b].from);
+  const moved = new Map<string, number>();
+  for (const id of items) {
+    const { depth, after } = placed[id].item!;
+    // As deep as the item before it, as it will be, and one more.
+    const before =
+      after === null ? -1 : (moved.get(after) ?? placed[after].item!.depth);
+    const next =
+      by > 0 ? Math.min(depth + 1, before + 1) : Math.max(0, depth - 1);
+    if (next !== depth) moved.set(id, next);
+  }
+  return moved;
 }
 
 /** The blocks of `ids` the bar acts on, as `edits` shape them: the ones
@@ -91,9 +121,9 @@ export function formatFor(
   if (!heading && all((b) => b.italic)) lit.add("italic");
   return {
     lit,
-    list: all((b) => LIST_ROLES.includes(b.role)),
     heading,
-    outdent: blocks.some((b) => b.depth > 0),
+    indent: nesting(ids, placed, 1).size > 0,
+    outdent: nesting(ids, placed, -1).size > 0,
   };
 }
 
@@ -111,12 +141,25 @@ export function restyle(
     if (!format || !blocks) return edits;
     let change: (b: Shaped) => Change;
     if (press === "indent" || press === "outdent") {
-      if (!format.list) return edits;
-      const by = press === "indent" ? 1 : -1;
-      change = (b) => ({ depth: Math.max(0, b.depth + by) });
+      const moved = nesting(ids, placed, press === "indent" ? 1 : -1);
+      return moved.size === 0
+        ? edits
+        : apply(
+            edits,
+            blocks.filter((b) => moved.has(b.id)),
+            (b) => ({ depth: moved.get(b.id) }),
+          );
     } else if (press in LOOKS) {
-      const { role, level } = LOOKS[press as Look];
-      change = () => ({ role, level });
+      const look = press as Look;
+      const { role, level } = LOOKS[look];
+      const reader = new Map(blocks.map((b) => [b.id, b]));
+      // A list style already on every item takes them out of the list: a
+      // paragraph, at the depth the reader gave it, so listed again it
+      // comes back where it was printed.
+      change =
+        LIST_ROLES.includes(role) && format.lit.has(look)
+          ? (b) => ({ role: "para", level: 0, depth: reader.get(b.id)!.depth })
+          : () => ({ role, level });
     } else {
       const toggle = press as Toggle;
       if (toggle !== "quote" && format.heading) return edits;
