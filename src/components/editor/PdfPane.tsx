@@ -33,7 +33,7 @@ import { human, messageOf } from "src/lib/words";
 import { sourcePath } from "src/lib/workspace";
 import { iconButton } from "./controls";
 import { ACTIONS_OUT, pageTops, swept } from "./blocks";
-import { GAP, inView, layout, PAD, rowLeft, type Row } from "./column";
+import { FOOT, GAP, inView, layout, PAD, rowLeft, type Row } from "./column";
 import { MoreMenu } from "./MoreMenu";
 import { BlockActions } from "./BlockActions";
 import { PageBlocks } from "./PageBlocks";
@@ -366,14 +366,15 @@ export function PdfPane({ docId }: { docId: string }) {
     () => layout(sizes, scale, twoPage),
     [sizes, scale, twoPage],
   );
-  // The column's extent: as tall as every row, and as wide as the pane or
-  // the widest row, whichever is wider.
+  // The column's extent: as tall as every row, with room under the last to
+  // scroll it clear of the format bar, and as wide as the pane or the
+  // widest row, whichever is wider.
   const column = useMemo(() => {
     const last = rows.at(-1);
     const widest = rows.reduce((w, row) => Math.max(w, row.width), 0);
     return {
       width: Math.max(paneWidth, widest + 2 * PAD),
-      height: last ? last.top + last.height + PAD : 0,
+      height: last ? last.top + last.height + PAD + FOOT : 0,
     };
   }, [rows, paneWidth]);
   // The row a page sits in follows from the pairing alone: `layout` takes

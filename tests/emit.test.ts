@@ -294,3 +294,78 @@ test("a hidden figure whose picture was not kept is written nowhere, like a show
   expect(md.text).toBe("\n");
   expect(md.blocks).toEqual({});
 });
+
+/** A page of a heading, a two-item list and a paragraph, and a page after. */
+const quotable: Analysis = {
+  format: ANALYSIS_FORMAT,
+  reader: READER,
+  bodySize: 10,
+  pages: [
+    page(1, [
+      block("p1b0", "Pumps", "heading"),
+      block("p1b1", "Grease them.", "numbered"),
+      block("p1b2", "Log it.", "numbered"),
+      block("p1b3", "Then rest."),
+    ]),
+    page(2, [block("p2b0", "Done.")]),
+  ],
+};
+const quoting = (blocks: Record<string, BlockEdit>) =>
+  emit(quotable, "doc.assets/", withEdits(blocks)).text;
+
+test("quoted blocks next to each other are one quote, a list in it whole", () => {
+  expect(
+    quoting({
+      p1b1: { quote: true },
+      p1b2: { quote: true },
+      p1b3: { quote: true },
+    }),
+  ).toBe(
+    [
+      "# Pumps",
+      "",
+      "> 1. Grease them.",
+      "> 2. Log it.",
+      ">",
+      "> Then rest.",
+      "",
+      "---",
+      "",
+      "Done.",
+      "",
+    ].join("\n"),
+  );
+});
+
+test("a list going out of a quote is a new list, counted from 1", () => {
+  expect(quoting({ p1b0: { quote: true }, p1b1: { quote: true } })).toBe(
+    [
+      "> # Pumps",
+      ">",
+      "> 1. Grease them.",
+      "",
+      "1. Log it.",
+      "",
+      "Then rest.",
+      "",
+      "---",
+      "",
+      "Done.",
+      "",
+    ].join("\n"),
+  );
+});
+
+test("a page's rule ends a quote: quoted blocks either side are two", () => {
+  const text = quoting({ p1b3: { quote: true }, p2b0: { quote: true } });
+  expect(text).toContain("> Then rest.\n\n---\n\n> Done.\n");
+});
+
+test("a hidden quoted block is its comment, quoted, and counted as one", () => {
+  const text = quoting({
+    p1b1: { quote: true, hidden: true },
+    p1b2: { quote: true },
+  });
+  expect(text).toContain("> <!-- 1. Grease them. -->\n>\n> 1. Log it.\n");
+  expect(measure(text).commentLines).toBe(1);
+});

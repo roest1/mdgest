@@ -157,6 +157,9 @@ export function emit(
   const lines: SourceLine[] = [];
   const blocks: Record<string, Placed> = {};
   const order: string[] = [];
+  /** The lines a quoted block wrote, 1-based: where `> ` opens them, and
+   *  what decides which blank lines between them carry a `>` too. */
+  const quoted = new Set<number>();
 
   const last = () => lines[lines.length - 1];
   /** Returns the 1-based line the text landed on. */
@@ -186,9 +189,11 @@ export function emit(
     headers === "keep" ? new Set<string>() : headersFooters(analysis);
 
   const emitPage = (page: Page) => {
-    const counters = new Counters();
+    let counters = new Counters();
     let n = 0;
     let inList = false;
+    /** Whether the last block written was quoted. */
+    let inQuote = false;
     /** How far the last list item's text is indented: where a comment
      *  inside the list starts. */
     let listIndent = "";
@@ -257,16 +262,19 @@ export function emit(
                   : LIST_ROLES.includes(block.role)
                     ? `1. ${words}`
                     : words;
+        const q = block.quote ? "> " : "";
         // Inside a list the comment is indented into the item before it,
         // so the list goes on past it rather than ending there.
         let at: number;
         if (inList) {
-          at = put(`${listIndent}${comment(said)}`, block.id, page.n);
+          at = put(`${q}${listIndent}${comment(said)}`, block.id, page.n);
         } else {
           blank(page.n);
-          at = put(comment(said), block.id, page.n);
+          at = put(`${q}${comment(said)}`, block.id, page.n);
           put("", null, page.n);
         }
+        if (block.quote) quoted.add(at);
+        inQuote = block.quote;
         n += 1;
         blocks[block.id] = {
           id: block.id,
@@ -281,30 +289,43 @@ export function emit(
         order.push(block.id);
         continue;
       }
+      // A list that goes into a quote or comes out of one is two lists:
+      // the `>` cannot open or close partway through one.
+      if (
+        inList &&
+        LIST_ROLES.includes(block.role) &&
+        block.quote !== inQuote
+      ) {
+        counters = new Counters();
+        inList = false;
+      }
       const item = counters.itemFor(block);
+      const q = block.quote ? "> " : "";
       // Each block is one line of the source; `at` is that line.
       let at: number;
       if (block.kind === "image") {
         blank(page.n);
-        at = put(words, block.id, page.n);
+        at = put(`${q}${words}`, block.id, page.n);
         put("", null, page.n);
         inList = false;
       } else if (block.role === "heading") {
         blank(page.n);
-        at = put(heading(block, words), block.id, page.n);
+        at = put(`${q}${heading(block, words)}`, block.id, page.n);
         put("", null, page.n);
         inList = false;
       } else if (item) {
         if (!inList) blank(page.n);
-        at = put(`${item.indent}${item.marker} ${words}`, block.id, page.n);
+        at = put(`${q}${item.indent}${item.marker} ${words}`, block.id, page.n);
         listIndent = " ".repeat(item.indent.length + item.marker.length + 1);
         inList = true;
       } else {
         blank(page.n);
-        at = put(words, block.id, page.n);
+        at = put(`${q}${words}`, block.id, page.n);
         put("", null, page.n);
         inList = false;
       }
+      if (block.quote) quoted.add(at);
+      inQuote = block.quote;
       n += 1;
       blocks[block.id] = {
         id: block.id,
@@ -323,6 +344,19 @@ export function emit(
     if (i > 0) rule(page.n);
     emitPage(page);
   });
+
+  // Quoted blocks next to each other are one quote: the blank lines
+  // between them are written `>`, since a blank line would end it. A rule
+  // or an unquoted block between them ends it all the same. `quoted`
+  // holds 1-based lines, so `quoted.has(i)` asks of the line before
+  // `lines[i]`.
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].text !== "" || !quoted.has(i)) continue;
+    let j = i;
+    while (j < lines.length && lines[j].text === "") j++;
+    if (quoted.has(j + 1)) for (let k = i; k < j; k++) lines[k].text = ">";
+    i = j - 1;
+  }
 
   while (lines.length && last().text === "") lines.pop();
   return {
