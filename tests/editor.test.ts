@@ -1678,3 +1678,95 @@ test("undo, redo and revert to original, from the tool bar and the keys, kept wi
   await expect.poll(() => placedOf(title)?.deleted).toBe(false);
   expect(placedOf(para.id)?.hidden).toBe(true);
 });
+
+// ---- formatting -------------------------------------------------------------
+
+/** The format bar, where it is shown, or null. */
+const formatBar = () =>
+  document.querySelector<HTMLElement>("[data-format-bar]");
+/** The bar's button for `action`: `h2`, `para`, `quote`, `bold`... */
+const formatButton = (action: string) =>
+  formatBar()!.querySelector<HTMLButtonElement>(`[data-action="${action}"]`)!;
+const pressed = (action: string) =>
+  formatBar()?.querySelector(`[data-action="${action}"]`)?.ariaPressed;
+/** The source line block `id` wrote, as it stands. */
+const sourceOf = (id: string) =>
+  readingOf()?.status === "ready"
+    ? (
+        readingOf() as Extract<Reading, { status: "ready" }>
+      ).markdown.lines.find((l) => l.block === id)?.text
+    : undefined;
+
+test("the format bar is there while the selection is text, and sets how it is written, lit for what it is", async () => {
+  const { title, para, picture } = await openedToEdit();
+  expect(formatBar()).toBeNull();
+  await userEvent.click(boxOf(para.id));
+  await expect.poll(() => pressed("para")).toBe("true");
+  expect(pressed("h2")).toBe("false");
+  // Indent is a list's, and this is a paragraph: there, but not pressable.
+  expect(formatButton("indent").disabled).toBe(true);
+  expect(formatButton("outdent").disabled).toBe(true);
+
+  // A heading, in the source and the rendered view, and the selection kept.
+  await userEvent.click(formatButton("h2"));
+  await expect.poll(() => sourceOf(para.id)?.startsWith("## ")).toBe(true);
+  await expect.poll(() => writtenBy(para.id).tagName).toBe("H2");
+  expect(selectedIds()).toEqual([para.id]);
+  await expect.poll(() => pressed("h2")).toBe("true");
+  expect(pressed("para")).toBe("false");
+  // A heading is set in its own weight.
+  expect(formatButton("bold").disabled).toBe(true);
+  // One step, which undo takes back.
+  await page.getByRole("button", { name: "Undo (Ctrl+Z)" }).click();
+  await expect.poll(() => writtenBy(para.id).tagName).toBe("P");
+
+  // Bulleted, then bulleted again: a paragraph once more. Alone in its
+  // list it is the first item, which has nothing to nest under.
+  await userEvent.click(formatButton("bullet"));
+  await expect.poll(() => sourceOf(para.id)?.startsWith("- ")).toBe(true);
+  await expect.poll(() => pressed("bullet")).toBe("true");
+  expect(formatButton("indent").disabled).toBe(true);
+  await userEvent.click(formatButton("bullet"));
+  await expect.poll(() => writtenBy(para.id).tagName).toBe("P");
+  await expect.poll(() => pressed("para")).toBe("true");
+
+  // Two quoted: one quote in the rendered view, each block lit in it, the
+  // quote itself no block of its own.
+  await userEvent.click(writtenBy(title), { modifiers: ["Shift"] });
+  expect(selectedIds()).toEqual([title, para.id]);
+  await userEvent.click(formatButton("quote"));
+  await expect
+    .poll(() => document.querySelectorAll(".markdown blockquote").length)
+    .toBe(1);
+  const quote = document.querySelector(".markdown blockquote")!;
+  expect(quote.hasAttribute("data-block")).toBe(false);
+  expect(quote.contains(writtenBy(title))).toBe(true);
+  expect(quote.contains(writtenBy(para.id))).toBe(true);
+  expect(writtenBy(title).matches(".selection")).toBe(true);
+  expect(writtenBy(para.id).matches(".selection")).toBe(true);
+  expect(pressed("quote")).toBe("true");
+  // In the source, each line tinted for what follows its `>`.
+  await page.getByRole("radio", { name: "raw" }).click();
+  const rawLine = (id: string) =>
+    document.querySelector<HTMLElement>(`.source > li[data-block="${id}"]`);
+  await expect.poll(() => rawLine(title)?.dataset.kind).toBe("heading");
+  expect(rawLine(title)!.textContent).toMatch(/^> # /);
+
+  // A picture is not formatted: alone, the bar goes.
+  await userEvent.click(boxOf(picture));
+  expect(selectedIds()).toEqual([picture]);
+  await expect.poll(formatBar).toBeNull();
+});
+
+test("the page column ends far enough below the last page to scroll it clear of the format bar", async () => {
+  const { line } = await openedToEdit();
+  await userEvent.click(boxOf(line));
+  await expect.poll(formatBar).not.toBeNull();
+  const scroller = pdfScroller();
+  await scrollTo(scroller, room(scroller));
+  const bar = formatBar()!.getBoundingClientRect();
+  const view = scroller.getBoundingClientRect();
+  // Over the pane: it is the page it would cover.
+  expect(bar.top).toBeLessThan(view.bottom);
+  expect(paper().getBoundingClientRect().bottom).toBeLessThanOrEqual(bar.top);
+});
