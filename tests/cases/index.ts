@@ -9,11 +9,13 @@ import { lists } from "./lists";
 import { pages } from "./pages";
 import { pictures } from "./pictures";
 import { style } from "./style";
+import { words } from "./words";
 
 export const cases: Record<string, Case[]> = {
   headings,
   lists,
   blocks,
+  words,
   style,
   links,
   pictures,

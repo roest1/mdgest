@@ -112,6 +112,68 @@ export function markerOf(text: string): Marker {
   return { role: "", marker: "", rest: text };
 }
 
+// ---- words broken across lines ----------------------------------------------
+
+/** A line that ends in a hyphen set against a word: the word, with any
+ *  hyphens inside it. U+2010 is the hyphen some fonts name; a soft hyphen
+ *  (U+00AD) pdf.js has already made a plain one. */
+const BROKEN = /([\p{L}\p{N}]+(?:[-\u2010][\p{L}\p{N}]+)*)[-\u2010]$/u;
+/** The letters or digits a line starts with: the rest of that word. */
+const REST = /^[\p{L}\p{N}]+/u;
+/** A hyphenated word within a line, which no line break made. */
+const COMPOUND = /\p{L}+(?:[-\u2010]\p{L}+)+/gu;
+/** Words a hyphen can be left hanging before: "pre- and post-war", "Vor-
+ *  und Nachteile", "avant- et après-guerre". */
+const HANGING = new Set(["and", "or", "und", "oder", "et", "ou"]);
+
+const lower = (word: string) => word.toLowerCase().replaceAll("\u2010", "-");
+
+/** Every hyphenated word the document sets within a line, in lower case:
+ *  the words whose hyphen is spelling, not typesetting. */
+function compounds(pages: ReadPage[]): Set<string> {
+  const found = new Set<string>();
+  for (const page of pages)
+    for (const line of page.lines)
+      for (const [word] of line.text.matchAll(COMPOUND)) found.add(lower(word));
+  return found;
+}
+
+/** A block's lines as one text. Lines are joined by a space, but a word
+ *  the line break divided is put back together: a hyphen set against a
+ *  word at a line's end has no space after it in what the writer wrote.
+ *
+ *  Whether the hyphen itself was the writer's cannot be read off the
+ *  line, so it is guessed. It goes when both sides of it are lower case
+ *  -- "nega-" and "tive" -- which is how a typesetter divides a word. It
+ *  stays when the word had a hyphen already ("state-of-the-" and "art"),
+ *  when either side is a capital or a digit ("TGF-" and "beta", "1990-"
+ *  and "1995"), and when the document sets the same word with its hyphen
+ *  within a line somewhere (`compound`). A compound seen nowhere else
+ *  and divided at its hyphen loses it; that is the price of the guess. */
+function joinLines(lines: string[], compound: Set<string>): string {
+  let text = "";
+  for (const line of lines) {
+    if (!line) continue;
+    if (!text) {
+      text = line;
+      continue;
+    }
+    const broken = BROKEN.exec(text);
+    const rest = REST.exec(line)?.[0];
+    if (!broken || !rest || HANGING.has(rest.toLowerCase())) {
+      text += ` ${line}`;
+      continue;
+    }
+    const word = broken[1];
+    const typeset =
+      /^\p{L}*\p{Ll}$/u.test(word) &&
+      /^\p{Ll}/u.test(rest) &&
+      !compound.has(lower(`${word}-${rest}`));
+    text = (typeset ? text.slice(0, -1) : text) + line;
+  }
+  return text.trim();
+}
+
 // ---- typography -------------------------------------------------------------
 
 /** The size most characters are set in, to a tenth of a point. */
@@ -380,6 +442,7 @@ function placePicture(ordered: Block[], img: Block): number {
 export function structure(pages: ReadPage[]): Analysis {
   const body = bodySize(pages);
   const boldMatters = boldFraction(pages) < BOLD_SATURATION;
+  const compound = compounds(pages);
   const headingSizes = new Map<number, number>();
   const perPage: Block[][] = [];
 
@@ -399,10 +462,10 @@ export function structure(pages: ReadPage[]): Analysis {
       const first = lines[0];
       const box = lines.slice(1).reduce((b, l) => union(b, l.box), first.box);
       const { role, marker, rest } = markerOf(first.text);
-      const text = [rest, ...lines.slice(1).map((l) => l.text)]
-        .filter(Boolean)
-        .join(" ")
-        .trim();
+      const text = joinLines(
+        [rest, ...lines.slice(1).map((l) => l.text)],
+        compound,
+      );
       const block: Block = {
         id: `p${page.n}b${gi}`,
         kind: "text",
