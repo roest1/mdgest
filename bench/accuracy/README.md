@@ -28,7 +28,8 @@ are pinned to (3.13 for olmOCR-bench's scorer, which does not start on 3.14;
 fetches its data (about 350 MB each, and 1.8 GB for READoc, which unpacks
 to as much again) and builds its scorer's environment;
 both are kept in `~/.cache/mdgest-bench/`, or wherever `MDGEST_BENCH_CACHE`
-says.
+says. When the manifest comes to ask for other files of the same
+revision, the ones not yet there are fetched and the rest left.
 
 ## What a run does
 
