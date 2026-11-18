@@ -9,6 +9,9 @@
  *  what the page should say, to tell a page that needs OCR from one that
  *  does not.
  *
+ *  For the review report (`report.ts`) a job can also ask for each PDF's
+ *  first page as a picture, with where the reader's blocks are on it.
+ *
  *  A test only in that Vitest is what runs it in a browser; it asserts
  *  nothing about the reader. A document that cannot be read is written as
  *  empty markdown and named in the job's run file, and the scorer fails
@@ -22,14 +25,14 @@ import { openPdf } from "src/lib/pdf";
 import { readPage } from "src/lib/read";
 import { structure, type ReadPage } from "src/lib/structure";
 import { messageOf } from "src/lib/words";
-import type { Job, MdgestRun } from "./job.ts";
+import type { Drawn, Job, MdgestRun } from "./job.ts";
 
 /** What one document may take before it is given up on. */
 const LIMIT = 120_000;
 
 const get = (what: string, path = "") =>
   fetch(`/__bench/${what}?path=${encodeURIComponent(path)}`);
-async function put(path: string, body: string) {
+async function put(path: string, body: string | Blob) {
   const res = await fetch(`/__bench/out?path=${encodeURIComponent(path)}`, {
     method: "PUT",
     body,
@@ -46,11 +49,17 @@ interface Converted {
   layer: string;
   pages: number;
   ms: number;
+  /** The first page, drawn, and the blocks on it, when asked for. */
+  drawn?: { picture: Blob; blocks: Drawn };
 }
+
+/** How many pixels a point of the page is drawn at for the report. */
+const DRAW_SCALE = 1.25;
 
 async function convert(
   file: string,
   bytes: Uint8Array<ArrayBuffer>,
+  draw: boolean,
 ): Promise<Converted> {
   const task = openPdf(bytes);
   let timer = 0;
@@ -69,7 +78,9 @@ async function convert(
     // Figures are named as the app names them, under the document's own
     // assets folder; the pictures themselves are not kept.
     const name = stem(file).split("/").at(-1);
-    const markdown = emit(structure(pages), `${name}.assets/`).text;
+    const analysis = structure(pages);
+    const written = emit(analysis, `${name}.assets/`);
+    const markdown = written.text;
     const ms = performance.now() - t0;
 
     // After the reading and outside its time: asked for first, it would
@@ -85,7 +96,42 @@ async function convert(
           .join(""),
       );
     }
-    return { markdown, layer: layer.join("\f"), pages: pdf.numPages, ms };
+    let drawn: Converted["drawn"];
+    if (draw) {
+      const page = await pdf.getPage(1);
+      const viewport = page.getViewport({ scale: DRAW_SCALE });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      await page.render({ canvas, viewport }).promise;
+      const picture = await new Promise<Blob>((resolve, reject) =>
+        canvas.toBlob(
+          (blob) => (blob ? resolve(blob) : reject(new Error("no picture"))),
+          "image/jpeg",
+          0.7,
+        ),
+      );
+      const first = analysis.pages[0];
+      drawn = {
+        picture,
+        blocks: {
+          width: first.width,
+          height: first.height,
+          blocks: first.blocks.map((block) => ({
+            n: written.blocks[block.id]?.n ?? 0,
+            role: block.role,
+            box: block.box,
+          })),
+        },
+      };
+    }
+    return {
+      markdown,
+      layer: layer.join("\f"),
+      pages: pdf.numPages,
+      ms,
+      drawn,
+    };
   })();
   try {
     return await Promise.race([work, limit]);
@@ -105,10 +151,17 @@ test("convert", async () => {
     const bytes = new Uint8Array(await (await get("pdf", file)).arrayBuffer());
     let markdown = "";
     try {
-      const done = await convert(file, bytes);
+      const done = await convert(file, bytes, !!job.draw);
       markdown = done.markdown;
       run.files[file] = { pages: done.pages, ms: done.ms };
       await put(`${stem(file)}.txt`, done.layer);
+      if (done.drawn) {
+        await put(`${stem(file)}.jpg`, done.drawn.picture);
+        await put(
+          `${stem(file)}.blocks.json`,
+          JSON.stringify(done.drawn.blocks),
+        );
+      }
     } catch (cause) {
       run.files[file] = { pages: 0, ms: 0, error: messageOf(cause) };
     }

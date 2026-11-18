@@ -9,6 +9,10 @@ export interface Job {
   out: string;
   /** The PDFs to convert, as paths under `pdfs`. */
   files: string[];
+  /** Also leave, for each PDF, its first page as a picture
+   *  (`<input>.jpg`) and where the reader's blocks are on it
+   *  (`<input>.blocks.json`, a `Drawn`): what the review report shows. */
+  draw?: boolean;
   /** The file, under `out`, to say how it went in: `run.json`, or one of
    *  its own for each of several converters at work on one folder. */
   run: string;
@@ -34,4 +38,17 @@ export interface MdgestRun {
 export interface PeerRun {
   version: string;
   files: Record<string, FileRun>;
+}
+
+/** A page as the reader saw it, for the review report: its size, in
+ *  points, and each block's box on it, with the number the markdown
+ *  counts it by -- 0 for one that is written nowhere. */
+export interface Drawn {
+  width: number;
+  height: number;
+  blocks: {
+    n: number;
+    role: string;
+    box: { x: number; y: number; w: number; h: number };
+  }[];
 }

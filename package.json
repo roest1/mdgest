@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "bench:accuracy": "bun bench/accuracy/run.ts",
+    "bench:report": "bun bench/accuracy/report.ts",
     "bench:speed": "vitest run --config bench/speed/vitest.config.ts",
     "fixtures": "bun tests/fixtures/write.ts"
   },

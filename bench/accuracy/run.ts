@@ -13,7 +13,11 @@
  *  added to the history; neither is a run from a tree with changes in it,
  *  whose score no commit could give again. */
 
+import { existsSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type { Adapter } from "./adapter.ts";
+import { workDir } from "./cache.ts";
 import { fetchData } from "./fetch.ts";
 import * as frBench from "./fr-bench/adapter.ts";
 import { BENCHMARKS, benchmark, type Benchmark } from "./manifest.ts";
@@ -85,7 +89,12 @@ async function run(b: Benchmark, { tool: t, only, limit }: Options) {
 
   const made =
     whole && t === mdgest && !slice ? whole : await t.convert(b, pdfs, files);
-  const everything = await adapter.score(
+  // A full run's verdicts are kept beside the scorer's own output, with
+  // the ones the run before left: what the review report compares.
+  const kept = join(workDir(b, t.name, "all"), "verdicts.json");
+  const before =
+    !slice && existsSync(kept) ? await readFile(kept, "utf8") : null;
+  const { verdicts, ...everything } = await adapter.score(
     b,
     data,
     t.name,
@@ -93,10 +102,17 @@ async function run(b: Benchmark, { tool: t, only, limit }: Options) {
     files,
     "all",
   );
+  if (verdicts && !slice) {
+    await writeFile(kept, JSON.stringify(verdicts));
+    if (before)
+      await writeFile(join(dirname(kept), "verdicts.before.json"), before);
+  }
   const layered = new Set(split.pages);
   const withLayer = files.filter((file) => layered.has(file));
   const textLayer = withLayer.length
-    ? await adapter.score(b, data, t.name, made.out, withLayer, "text-layer")
+    ? await adapter
+        .score(b, data, t.name, made.out, withLayer, "text-layer")
+        .then((scored) => ({ ...scored, verdicts: undefined }))
     : null;
 
   const entry = line(b, everything.scorer, t.name, made, everything, textLayer);

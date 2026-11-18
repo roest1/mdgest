@@ -142,6 +142,25 @@ one fr-bench's scorer will not take: its text normaliser raises on a NUL
 character, which would end the run with no score. Both are counted on the
 line (`unread`, `refused`) and named when the run prints.
 
+## The review report
+
+```sh
+bun run bench:report olmocr    # after a full run of mdgest on it
+```
+
+For the benchmarks made of tests, a page of HTML in `out/<benchmark>/`,
+not committed: every page with a failed test, drawn, with the reader's
+blocks boxed on it and numbered as the markdown counts them, the markdown
+beside it, and the tests that failed with the scorer's reason. At its top
+are the tests whose verdict is not the one the run before gave. It is for
+looking, and decides nothing: the verdicts are the scorer's.
+
+## From the Actions tab
+
+`.github/workflows/bench.yml` runs one benchmark with one tool when
+started by hand, and uploads the history line it wrote and, for mdgest,
+the review report. Nothing else starts it, and it is no part of `ci ok`.
+
 ## Peers
 
 A peer is another converter put through the same fetch, adapter, scorer
@@ -163,18 +182,19 @@ between readers of the text layer, on the same pages. What every peer's
 
 ## Layout
 
-| Path                         | Holds                                                                   | Committed |
-| ---------------------------- | ----------------------------------------------------------------------- | --------- |
-| `run.ts`                     | `bun run bench:accuracy`: the steps above, in order                     | yes       |
-| `manifest.ts`                | the pins                                                                | yes       |
-| `fetch.ts`, `cache.ts`       | the data, and where everything uncommitted is kept                      | yes       |
-| `vitest.config.ts`           | the converter's own config: Chromium, nothing from tests                | yes       |
-| `convert.run.ts`, `job.ts`   | the converter, in the browser, and what it is asked for                 | yes       |
-| `tools.ts`, `tools/<name>/`  | mdgest and the peers as converters                                      | yes       |
-| `split.ts`                   | the text-layer split                                                    | yes       |
-| `adapter.ts`, `<benchmark>/` | what a benchmark must say for itself; its adapter and its scorer's pins | yes       |
-| `results/`                   | the history, and each benchmark's split                                 | yes       |
-| `~/.cache/mdgest-bench/`     | datasets, converted markdown, scorer environments                       | no        |
+| Path                         | Holds                                                                   | Committed  |
+| ---------------------------- | ----------------------------------------------------------------------- | ---------- |
+| `run.ts`                     | `bun run bench:accuracy`: the steps above, in order                     | yes        |
+| `manifest.ts`                | the pins                                                                | yes        |
+| `fetch.ts`, `cache.ts`       | the data, and where everything uncommitted is kept                      | yes        |
+| `vitest.config.ts`           | the converter's own config: Chromium, nothing from tests                | yes        |
+| `convert.run.ts`, `job.ts`   | the converter, in the browser, and what it is asked for                 | yes        |
+| `tools.ts`, `tools/<name>/`  | mdgest and the peers as converters                                      | yes        |
+| `split.ts`                   | the text-layer split                                                    | yes        |
+| `adapter.ts`, `<benchmark>/` | what a benchmark must say for itself; its adapter and its scorer's pins | yes        |
+| `results/`                   | the history, and each benchmark's split                                 | yes        |
+| `report.ts`, `out/`          | the review report, and where it is written                              | no, `out/` |
+| `~/.cache/mdgest-bench/`     | datasets, converted markdown, scorer environments                       | no         |
 
 In the cache, `work/<benchmark>/<tool>/<set>/` is the folder the scorer was
 last given, with `scorer.txt`, everything it printed: each failed test and

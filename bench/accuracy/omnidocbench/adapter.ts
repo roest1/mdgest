@@ -22,7 +22,7 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import type { Input, Score } from "../adapter.ts";
+import type { Input, Scored } from "../adapter.ts";
 import { workDir } from "../cache.ts";
 import type { Benchmark } from "../manifest.ts";
 import { pythonBeside, scorerOf } from "../python.ts";
@@ -116,7 +116,7 @@ export async function score(
   out: string,
   files: string[],
   set: string,
-): Promise<Score & { scorer: string }> {
+): Promise<Scored> {
   const scorer = scorerOf(b, PROJECT);
   const work = workDir(b, tool, set);
   await rm(work, { recursive: true, force: true });

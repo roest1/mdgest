@@ -126,6 +126,44 @@ function browser(job: string, quiet: boolean): Promise<void> {
   });
 }
 
+/** mdgest over `files`, into `out`, in as many browsers as the job is
+ *  worth. With `draw`, each PDF's first page is left as a picture too,
+ *  with where the reader's blocks are on it. */
+async function read(
+  pdfs: string,
+  files: string[],
+  out: string,
+  draw = false,
+): Promise<MdgestRun[]> {
+  const n = files.length < SPLIT_FROM ? 1 : BROWSERS;
+  const hands = Array.from({ length: n }, (_, k) =>
+    files.filter((_, i) => i % n === k),
+  );
+  if (n > 1) {
+    // Once on nothing, alone: the first server to start settles Vite's
+    // cache of dependencies, which several starting together would race
+    // to write.
+    const idle = { pdfs, out, files: [], run: "run-idle.json" };
+    await browser(await writeJob(out, idle, "job-idle.json"), true);
+    console.log(`mdgest: ${files.length} PDFs, in ${n} browsers`);
+  }
+  await Promise.all(
+    hands.map(async (list, k) => {
+      const job = { pdfs, out, files: list, run: `run-${k}.json`, draw };
+      await browser(await writeJob(out, job, `job-${k}.json`), n > 1);
+      if (n > 1) console.log(`  browser ${k + 1} of ${n} is done`);
+    }),
+  );
+  return Promise.all(
+    hands.map(
+      async (_, k) =>
+        JSON.parse(
+          await readFile(join(out, `run-${k}.json`), "utf8"),
+        ) as MdgestRun,
+    ),
+  );
+}
+
 /** mdgest, as the working tree has it: `convert.run.ts` in headless
  *  Chromium, under Vitest. Converted afresh every run -- it is what is
  *  being measured. A long job is dealt out to several browsers, a
@@ -135,33 +173,7 @@ export const mdgest: Tool = {
   name: "mdgest",
   async convert(b, pdfs, files) {
     const out = outDir(b, "mdgest");
-    const n = files.length < SPLIT_FROM ? 1 : BROWSERS;
-    const hands = Array.from({ length: n }, (_, k) =>
-      files.filter((_, i) => i % n === k),
-    );
-    if (n > 1) {
-      // Once on nothing, alone: the first server to start settles Vite's
-      // cache of dependencies, which several starting together would race
-      // to write.
-      const idle = { pdfs, out, files: [], run: "run-idle.json" };
-      await browser(await writeJob(out, idle, "job-idle.json"), true);
-      console.log(`mdgest: ${files.length} PDFs, in ${n} browsers`);
-    }
-    await Promise.all(
-      hands.map(async (list, k) => {
-        const job = { pdfs, out, files: list, run: `run-${k}.json` };
-        await browser(await writeJob(out, job, `job-${k}.json`), n > 1);
-        if (n > 1) console.log(`  browser ${k + 1} of ${n} is done`);
-      }),
-    );
-    const runs = await Promise.all(
-      hands.map(
-        async (_, k) =>
-          JSON.parse(
-            await readFile(join(out, `run-${k}.json`), "utf8"),
-          ) as MdgestRun,
-      ),
-    );
+    const runs = await read(pdfs, files, out);
     return conversion(
       out,
       files,
@@ -170,6 +182,18 @@ export const mdgest: Tool = {
     );
   },
 };
+
+/** `files` read by mdgest for the review report: the folder each is left
+ *  in as `<input>.md`, `<input>.jpg` and `<input>.blocks.json`. */
+export async function drawn(
+  b: Benchmark,
+  pdfs: string,
+  files: string[],
+): Promise<string> {
+  const out = join(outDir(b, "mdgest"), "..", "mdgest-drawn");
+  await read(pdfs, files, out, true);
+  return out;
+}
 
 /** What is kept of a peer's conversions, beside its markdown. */
 interface Kept {

@@ -28,7 +28,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { Input, Score } from "../adapter.ts";
+import type { Input, Scored } from "../adapter.ts";
 import { envDir, scorerDir, workDir } from "../cache.ts";
 import type { Benchmark } from "../manifest.ts";
 import { python, pythonBeside } from "../python.ts";
@@ -189,7 +189,7 @@ export async function score(
   out: string,
   files: string[],
   set: string,
-): Promise<Score & { scorer: string }> {
+): Promise<Scored> {
   const { scripts, env, name } = suite(b);
   const work = workDir(b, tool, set);
   await rm(work, { recursive: true, force: true });
