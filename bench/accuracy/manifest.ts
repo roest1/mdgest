@@ -18,7 +18,13 @@ export interface Benchmark {
    *  `<name>/pyproject.toml` installs, checked before each scoring. One
    *  installed from a repository is pinned by its commit, written after
    *  the version: "0.1.0 @ceab1548". */
-  scorer: { package: string; version: string };
+  scorer: {
+    package: string;
+    version: string;
+    /** For a scorer that is a repository of scripts and not a package:
+     *  where it is, and the commit of it that is run. */
+    git?: { url: string; commit: string };
+  };
 }
 
 export const BENCHMARKS: Benchmark[] = [
@@ -35,6 +41,22 @@ export const BENCHMARKS: Benchmark[] = [
     revision: "7f1f8e7896474cea34a46c15a72a7be3c01e8c4b",
     files: /^pdfs\/.+\.(?:pdf|json|jsonl)$/,
     scorer: { package: "benchpdf2md", version: "0.1.0 @ceab1548" },
+  },
+  {
+    name: "readoc",
+    repo: "lazyc/READoc",
+    revision: "782bf954e4d9a31ae2bcfe14ff59f1f4b2467592",
+    // The arXiv and GitHub subsets; the Zenodo one has no ground truth.
+    files:
+      /^(?:(?:arxiv|github)\.zip|(?:arxiv|github)_ground_truth\/[^/]+\.md)$/,
+    scorer: {
+      package: "READoc",
+      version: "@afa04771",
+      git: {
+        url: "https://github.com/icip-cas/READoc",
+        commit: "afa047715184ac319046ce0230a6109cd270e6fc",
+      },
+    },
   },
 ];
 

@@ -18,11 +18,16 @@ import { fetchData } from "./fetch.ts";
 import * as frBench from "./fr-bench/adapter.ts";
 import { BENCHMARKS, benchmark, type Benchmark } from "./manifest.ts";
 import * as olmocr from "./olmocr/adapter.ts";
+import * as readoc from "./readoc/adapter.ts";
 import { append, line, show, tree } from "./results.ts";
 import { makeSplit, storedSplit } from "./split.ts";
 import { mdgest, tool, type Conversion, type Tool } from "./tools.ts";
 
-const ADAPTERS: Record<string, Adapter> = { olmocr, "fr-bench": frBench };
+const ADAPTERS: Record<string, Adapter> = {
+  olmocr,
+  "fr-bench": frBench,
+  readoc,
+};
 
 interface Options {
   tool: Tool;
@@ -33,6 +38,7 @@ interface Options {
 async function run(b: Benchmark, { tool: t, only, limit }: Options) {
   const adapter = ADAPTERS[b.name];
   const data = await fetchData(b);
+  await adapter.prepare?.(b, data);
   const pdfs = adapter.pdfs(data);
   const all = await adapter.inputs(data);
 

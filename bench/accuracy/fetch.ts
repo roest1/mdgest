@@ -11,7 +11,7 @@
 
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { dataDir } from "./cache.ts";
 import type { Benchmark } from "./manifest.ts";
@@ -76,32 +76,50 @@ async function listing(b: Benchmark): Promise<Entry[]> {
   return entries.filter((e) => e.type === "file" && b.files.test(e.path));
 }
 
-/** The hash `entry` says its bytes have, and that hash of `bytes`. */
-function hashes(entry: Entry, bytes: Uint8Array): [want: string, got: string] {
-  if (entry.lfs)
-    return [entry.lfs.oid, createHash("sha256").update(bytes).digest("hex")];
-  const blob = createHash("sha1")
-    .update(`blob ${bytes.length}\0`)
-    .update(bytes);
-  return [entry.oid, blob.digest("hex")];
-}
-
+/** `entry` downloaded to its place under `dir`, checked against the hash
+ *  the revision gives it. Written as it arrives, since a file can be over
+ *  a gigabyte, to a name beside its own, and moved into place only once
+ *  the hash agrees. A download cut short is begun again. */
 async function download(b: Benchmark, entry: Entry, dir: string) {
   const url = `${HUB}/datasets/${b.repo}/resolve/${b.revision}/${entry.path
     .split("/")
     .map(encodeURIComponent)
     .join("/")}`;
-  const bytes = new Uint8Array(await (await get(url)).arrayBuffer());
-  const [want, got] = hashes(entry, bytes);
-  if (want !== got)
-    throw new Error(
-      `${entry.path} is not the file at ${b.revision.slice(0, 8)}: its hash is ${got}, the revision's is ${want}`,
-    );
   const to = join(dir, entry.path);
   await mkdir(dirname(to), { recursive: true });
-  await writeFile(`${to}.part`, bytes);
-  await rename(`${to}.part`, to);
-  return want;
+  // A file kept in LFS is named by the SHA-256 of its bytes; one kept in
+  // git, by git's hash of them: SHA-1 over a short header and the bytes.
+  const want = entry.lfs?.oid ?? entry.oid;
+  let got = "";
+  for (let attempt = 0; attempt < TRIES; attempt++) {
+    const hash = entry.lfs
+      ? createHash("sha256")
+      : createHash("sha1").update(`blob ${entry.size}\0`);
+    try {
+      const res = await get(url);
+      const part = await open(`${to}.part`, "w");
+      try {
+        for await (const chunk of res.body!) {
+          hash.update(chunk);
+          await part.write(chunk);
+        }
+      } finally {
+        await part.close();
+      }
+    } catch {
+      continue;
+    }
+    got = hash.digest("hex");
+    if (got === want) {
+      await rename(`${to}.part`, to);
+      return want;
+    }
+  }
+  throw new Error(
+    got
+      ? `${entry.path} is not the file at ${b.revision.slice(0, 8)}: its hash is ${got}, the revision's is ${want}`
+      : `${entry.path} could not be downloaded`,
+  );
 }
 
 /** The folder `b`'s files are in, fetched first if they have not been. */

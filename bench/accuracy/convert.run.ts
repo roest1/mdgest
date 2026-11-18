@@ -11,7 +11,8 @@
  *
  *  A test only in that Vitest is what runs it in a browser; it asserts
  *  nothing about the reader. A document that cannot be read is written as
- *  empty markdown and named in `run.json`, and the scorer fails its tests. */
+ *  empty markdown and named in the job's run file, and the scorer fails
+ *  its tests. */
 
 import { version } from "pdfjs-dist";
 import { test } from "vitest";
@@ -113,5 +114,5 @@ test("convert", async () => {
     }
     await put(`${stem(file)}.md`, markdown);
   }
-  await put("run.json", JSON.stringify(run));
+  await put(job.run, JSON.stringify(run));
 });

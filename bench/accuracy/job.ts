@@ -9,6 +9,9 @@ export interface Job {
   out: string;
   /** The PDFs to convert, as paths under `pdfs`. */
   files: string[];
+  /** The file, under `out`, to say how it went in: `run.json`, or one of
+   *  its own for each of several converters at work on one folder. */
+  run: string;
 }
 
 /** One PDF of a job: its pages, the time its reading took, in ms, and why

@@ -45,7 +45,11 @@ function benchFiles(): Plugin {
               const to = under(job.out, path);
               mkdirSync(dirname(to), { recursive: true });
               writeFileSync(to, Buffer.concat(chunks));
-              if (path.endsWith(".md") && ++written % 100 === 0)
+              if (
+                path.endsWith(".md") &&
+                ++written % 100 === 0 &&
+                !process.env.BENCH_QUIET
+              )
                 console.log(`  ${written}/${job.files.length}`);
               res.end();
             });

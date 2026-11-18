@@ -5,7 +5,7 @@
  *  for all of them, so their scores are made the same way on the same
  *  pages. */
 
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -74,35 +74,87 @@ async function conversion(
   };
 }
 
-async function writeJob(out: string, job: Job): Promise<string> {
+async function writeJob(out: string, job: Job, name = "job.json") {
   await mkdir(out, { recursive: true });
-  const at = join(out, "job.json");
+  const at = join(out, name);
   await writeFile(at, JSON.stringify(job));
   return at;
 }
 
+/** How many converters read at once, each in a browser of its own: reading
+ *  is one thread's work, and the long benchmarks are tens of thousands of
+ *  pages. A small job is not split. */
+const BROWSERS = 6;
+const SPLIT_FROM = 60;
+
+/** One converter at work on the job in the file `job`. Each starts a
+ *  server of its own, on the next port free. */
+function browser(job: string, quiet: boolean): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      join(ROOT, "node_modules/.bin/vitest"),
+      ["run", "--config", "bench/accuracy/vitest.config.ts"],
+      {
+        cwd: ROOT,
+        env: {
+          ...process.env,
+          BENCH_JOB: job,
+          ...(quiet ? { BENCH_QUIET: "1" } : {}),
+        },
+        stdio: quiet ? ["ignore", "ignore", "inherit"] : "inherit",
+      },
+    );
+    child.on("error", reject);
+    child.on("exit", (status) =>
+      status === 0
+        ? resolve()
+        : reject(new Error("the converter did not finish")),
+    );
+  });
+}
+
 /** mdgest, as the working tree has it: `convert.run.ts` in headless
  *  Chromium, under Vitest. Converted afresh every run -- it is what is
- *  being measured. */
+ *  being measured. A long job is dealt out to several browsers, a
+ *  document each in turn; a document is read the same whichever reads it,
+ *  and its time is its own reading's. */
 export const mdgest: Tool = {
   name: "mdgest",
   async convert(b, pdfs, files) {
     const out = outDir(b, "mdgest");
-    const job = await writeJob(out, { pdfs, out, files });
-    const ran = spawnSync(
-      join(ROOT, "node_modules/.bin/vitest"),
-      ["run", "--config", "bench/accuracy/vitest.config.ts"],
-      { cwd: ROOT, env: { ...process.env, BENCH_JOB: job }, stdio: "inherit" },
+    const n = files.length < SPLIT_FROM ? 1 : BROWSERS;
+    const hands = Array.from({ length: n }, (_, k) =>
+      files.filter((_, i) => i % n === k),
     );
-    if (ran.error) throw ran.error;
-    if (ran.status !== 0) throw new Error("the converter did not finish");
-    const run = JSON.parse(
-      await readFile(join(out, "run.json"), "utf8"),
-    ) as MdgestRun;
-    return conversion(out, files, run.files, {
-      reader: run.reader,
-      pdfjs: run.pdfjs,
-    });
+    if (n > 1) {
+      // Once on nothing, alone: the first server to start settles Vite's
+      // cache of dependencies, which several starting together would race
+      // to write.
+      const idle = { pdfs, out, files: [], run: "run-idle.json" };
+      await browser(await writeJob(out, idle, "job-idle.json"), true);
+      console.log(`mdgest: ${files.length} PDFs, in ${n} browsers`);
+    }
+    await Promise.all(
+      hands.map(async (list, k) => {
+        const job = { pdfs, out, files: list, run: `run-${k}.json` };
+        await browser(await writeJob(out, job, `job-${k}.json`), n > 1);
+        if (n > 1) console.log(`  browser ${k + 1} of ${n} is done`);
+      }),
+    );
+    const runs = await Promise.all(
+      hands.map(
+        async (_, k) =>
+          JSON.parse(
+            await readFile(join(out, `run-${k}.json`), "utf8"),
+          ) as MdgestRun,
+      ),
+    );
+    return conversion(
+      out,
+      files,
+      Object.assign({}, ...runs.map((run) => run.files)),
+      { reader: runs[0].reader, pdfjs: runs[0].pdfjs },
+    );
   },
 };
 
@@ -140,7 +192,12 @@ function peer(name: string): Tool {
       const todo = files.filter((f) => !kept?.files[f]);
       if (todo.length) {
         console.log(`${name}: converting ${todo.length} PDFs`);
-        const job = await writeJob(out, { pdfs, out, files: todo });
+        const job = await writeJob(out, {
+          pdfs,
+          out,
+          files: todo,
+          run: "run.json",
+        });
         python(project, [file("convert.py"), job], true);
         const run = JSON.parse(
           await readFile(join(out, "run.json"), "utf8"),

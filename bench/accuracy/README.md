@@ -15,15 +15,17 @@ bun run bench:accuracy olmocr --only arxiv_math --limit 50   # a slice, while wo
 bun run bench:accuracy all                                   # every benchmark in turn
 ```
 
-| Benchmark  | Inputs                      | Scored by                                        |
-| ---------- | --------------------------- | ------------------------------------------------ |
-| `olmocr`   | 1,403 single-page PDFs      | `olmocr.bench`, 8,413 unit tests                 |
-| `fr-bench` | 721 single-page French PDFs | `benchpdf2md`, 2,318 unit tests of the same kind |
+| Benchmark  | Inputs                                    | Scored by                                                          |
+| ---------- | ----------------------------------------- | ------------------------------------------------------------------ |
+| `olmocr`   | 1,403 single-page PDFs                    | `olmocr.bench`, 8,413 unit tests                                   |
+| `fr-bench` | 721 single-page French PDFs               | `benchpdf2md`, 2,318 unit tests of that kind                       |
+| `readoc`   | 2,233 whole documents, about 20,000 pages | READoc's evaluation suite, against the markdown each was made from |
 
 It needs [uv](https://docs.astral.sh/uv/), the Pythons the scorers and peers
 are pinned to (3.13 for olmOCR-bench's scorer, which does not start on 3.14;
 3.14 for the rest), and the Chromium `bun run test` already uses. The first run of a benchmark
-fetches its data (about 350 MB each) and builds its scorer's environment;
+fetches its data (about 350 MB each, and 1.8 GB for READoc, which unpacks
+to as much again) and builds its scorer's environment;
 both are kept in `~/.cache/mdgest-bench/`, or wherever `MDGEST_BENCH_CACHE`
 says.
 
@@ -37,6 +39,11 @@ says.
 | adapt    | `<benchmark>/adapter.ts`                   | lays the markdown out under the names the scorer expects                                        |
 | score    | `<benchmark>/pyproject.toml`, a uv project | the benchmark's own code at a pinned version, every package under it pinned by `uv.lock`        |
 | record   | `results.ts`                               | one line added to `results/<benchmark>.jsonl`                                                   |
+
+A long job is read in six browsers at once, a document each in turn. What
+a document reads as does not depend on which reads it, and pages a second
+counts each document's own reading time, so it is the speed of one reader,
+not of the six together.
 
 Only the converter is mdgest. Scorers are never rewritten here: one that is
 drifts from the numbers its benchmark publishes for other tools.
@@ -68,6 +75,9 @@ of what the page should say (`split.ts`):
 - **A quote is there** when it is found with spaces, punctuation, case and
   accents set aside, allowing one differing character in ten, or as many as
   its test allows if that is more.
+- **A document with ground truth**, in READoc, is held against stretches
+  of its ground truth's prose, eight words at a time and up to 200 of
+  them, with everything written in LaTeX left out.
 - **A page tested only on formulas** quotes nothing to hold its text layer
   against. It is a text-layer page when the layer has at least 200 letters
   and digits: a scan has none, a printed page thousands.
@@ -96,6 +106,12 @@ and the score is the one number each scorer gives:
   of the `baseline` test the scorer adds for every page.
 - **fr-bench**: the share of all tests passed. Its `baseline` checks, one
   beside every test, are listed but not in the score.
+
+- **READoc**: no one number. Its suite measures each document against its
+  ground truth -- text, headings, formulas, tables, reading order -- and
+  gives the mean of each measure over the documents, for the arXiv papers
+  and the GitHub READMEs apart. `average` is the mean of the measures the
+  paper's tables list, which is what the paper calls a system's score.
 
 A document the tool could not read is scored as empty markdown, and so is
 one fr-bench's scorer will not take: its text normaliser raises on a NUL

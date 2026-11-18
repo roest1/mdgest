@@ -82,38 +82,46 @@ export async function append(b: Benchmark, entry: Line): Promise<string> {
   return at;
 }
 
-const percent = (score: Score | null, of?: string) => {
-  if (!score) return "";
-  const tally = of ? score.categories[of] : null;
-  if (of && !tally) return "";
-  const value = tally ? tally.passed / tally.total : score.score;
-  const count = tally
-    ? `${tally.passed}/${tally.total}`
-    : `${score.inputs} pages`;
-  return `${(value * 100).toFixed(1).padStart(5)}%  ${count}`;
-};
+const percent = (value: number) => `${(value * 100).toFixed(1).padStart(5)}%`;
 
-/** The run, as a table: both scores, and each category under them. */
+/** One cell of the table: the score, a category's tests, or a measure. */
+function cell(score: Score | null, of?: string): string {
+  if (!score) return "";
+  if (!of)
+    return score.score === undefined
+      ? `        ${score.inputs} inputs`
+      : `${percent(score.score)}  ${score.inputs} inputs`;
+  const tally = score.categories?.[of];
+  if (tally)
+    return `${percent(tally.passed / tally.total)}  ${tally.passed}/${tally.total}`;
+  const measure = score.measures?.[of];
+  return measure === undefined ? "" : percent(measure);
+}
+
+/** The run, as a table: both sets of inputs, and each category or measure
+ *  under them. */
 export function show(entry: Line): string {
   const made = Object.entries(entry.made)
     .map(([key, value]) => `${key} ${value}`)
     .join(", ");
+  const names = [
+    ...Object.keys(entry.all.categories ?? {}),
+    ...Object.keys(entry.all.measures ?? {}),
+  ].sort();
   const rows = [
-    ["", "all pages", "text-layer pages"],
-    ["score", percent(entry.all), percent(entry.text_layer)],
-    ...Object.keys(entry.all.categories)
-      .sort()
-      .map((name) => [
-        `  ${name}`,
-        percent(entry.all, name),
-        percent(entry.text_layer, name),
-      ]),
+    ["", "all", "with a text layer"],
+    ["score", cell(entry.all), cell(entry.text_layer)],
+    ...names.map((name) => [
+      `  ${name}`,
+      cell(entry.all, name),
+      cell(entry.text_layer, name),
+    ]),
   ];
   return [
     `${entry.benchmark} at ${entry.revision.slice(0, 8)}, ${entry.scorer}`,
     `${entry.tool} (${made}) at ${entry.commit}`,
     "",
-    ...rows.map(([a, b, c]) => `${a.padEnd(20)}${b.padEnd(24)}${c}`.trimEnd()),
+    ...rows.map(([a, b, c]) => `${a.padEnd(22)}${b.padEnd(24)}${c}`.trimEnd()),
     "",
     `${entry.pages} pages at ${entry.pages_per_second} a second` +
       (entry.unread ? `; ${entry.unread} could not be read` : "") +

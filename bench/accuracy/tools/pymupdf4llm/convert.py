@@ -38,7 +38,7 @@ def main() -> None:
         if done % 100 == 0:
             print(f"  {done}/{len(job['files'])}", flush=True)
     run = {"version": importlib.metadata.version("pymupdf4llm"), "files": files}
-    (out / "run.json").write_text(json.dumps(run))
+    (out / job["run"]).write_text(json.dumps(run))
 
 
 if __name__ == "__main__":

@@ -27,3 +27,8 @@ export const workDir = (b: Benchmark, tool: string, set: string) =>
 /** The uv environment of the Python project at `bench/accuracy/<project>`. */
 export const envDir = (project: string) =>
   join(CACHE, "envs", project.replaceAll("/", "-"));
+
+/** A scorer that is a repository of scripts, checked out at its pinned
+ *  commit. */
+export const scorerDir = (b: Benchmark) =>
+  join(CACHE, "scorers", b.name, b.scorer.git?.commit ?? "");
