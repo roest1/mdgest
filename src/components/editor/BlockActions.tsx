@@ -17,6 +17,9 @@ import { useEditor } from "src/lib/store";
  *  and on the page, lit as a row in the source. */
 const SELECTED = ".selection[data-block], [data-block][data-selected]";
 
+/** How near the buttons come to an edge of the pane's view, in px. */
+const EDGE = 4;
+
 /** The hide and delete buttons of the selection, on the selected block
  *  under the pointer, in one pane's scroller: the page's, or the
  *  markdown's in either view. They act on the whole selection, whichever
@@ -107,9 +110,26 @@ export function BlockActions({
         placement === "corner"
           ? [x + reach + out.x, y - reach - out.y]
           : [x - 8, y + at.height / 2];
-      me.style.left = `${left}px`;
-      me.style.top = `${top}px`;
+      // Shown to be measured: until it is drawn, it has no size.
       me.hidden = false;
+      // And kept in the pane's view, as a block's note is kept on its
+      // paper: past an edge, the scroller would cut it off -- a block at
+      // the top of the view, or one as wide as its page. `left` is its
+      // right edge and `top` its middle (the translate in its class).
+      const w = me.offsetWidth;
+      const h = me.offsetHeight;
+      const clamp = (v: number, lo: number, hi: number) =>
+        Math.min(Math.max(v, lo), Math.max(lo, hi));
+      me.style.left = `${clamp(
+        left,
+        el.scrollLeft + w + EDGE,
+        el.scrollLeft + el.clientWidth - EDGE,
+      )}px`;
+      me.style.top = `${clamp(
+        top,
+        el.scrollTop + h / 2 + EDGE,
+        el.scrollTop + el.clientHeight - h / 2 - EDGE,
+      )}px`;
     };
     place();
     let frame = 0;
