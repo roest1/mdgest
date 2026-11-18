@@ -27,7 +27,15 @@ export interface Line {
   /** The commit of this repo the run was made from. */
   commit: string;
   pages: number;
+  /** Pages over the time spent reading them, each document's own: with
+   *  several browsers it is not their speed together. They slow one
+   *  another all the same, so it compares between lines of one
+   *  `browsers`. */
   pages_per_second: number;
+  /** How many browsers read side by side, for mdgest since it was
+   *  recorded: one for a small job, and for a long one a number set by
+   *  the machine's cores. */
+  browsers?: number;
   /** Inputs the tool could not convert, scored as empty. */
   unread: number;
   /** A hash of all the markdown: equal on two lines whose tools wrote the
@@ -39,13 +47,35 @@ export interface Line {
   text_layer: Score | null;
 }
 
+/** What is kept of a tool's last run of every input, beside its verdicts
+ *  (`keptDir`), in the history or not: what was run, for the review
+ *  report to say whose failures it shows, and each input's markdown hash,
+ *  for it to tell whether the reader still writes what was scored. */
+export interface KeptRun {
+  date: string;
+  /** The commit the run began at, and why no commit could give its score
+   *  again, when none could: it is then not in the history. */
+  commit: string;
+  unrepeatable: string | null;
+  scorer: string;
+  made: Conversion["made"];
+  hashes: Record<string, string>;
+}
+
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const git = (args: string) =>
   execSync(`git ${args}`, { cwd: ROOT, encoding: "utf8" }).trim();
 
-/** The commit checked out, and whether the tree is as that commit has it.
- *  The history itself is left out of the question: a run changes it. */
-export function tree(): { commit: string; dirty: boolean } {
+/** The commit checked out, and whether the tree is as that commit has it. */
+export interface Tree {
+  commit: string;
+  dirty: boolean;
+}
+
+/** The tree now. The history itself is left out of the question: a run
+ *  changes it. A run asks before it converts and again once it has
+ *  scored, since mdgest is read from the working tree all the while. */
+export function tree(): Tree {
   return {
     commit: git("rev-parse --short HEAD"),
     dirty:
@@ -60,6 +90,7 @@ export function line(
   made: Conversion,
   all: Score,
   textLayer: Score | null,
+  commit: string,
 ): Line {
   return {
     date: new Date().toISOString(),
@@ -69,9 +100,13 @@ export function line(
     scorer,
     tool,
     made: made.made,
-    commit: tree().commit,
+    commit,
     pages: made.pages,
-    pages_per_second: Number((made.pages / made.seconds).toFixed(1)),
+    // No time at all when nothing could be read.
+    pages_per_second: made.seconds
+      ? Number((made.pages / made.seconds).toFixed(1))
+      : 0,
+    ...(made.browsers ? { browsers: made.browsers } : {}),
     unread: Object.keys(made.errors).length,
     markdown: made.markdown,
     all,
@@ -134,6 +169,9 @@ export function show(entry: Line): string {
     ),
     "",
     `${entry.pages} pages at ${entry.pages_per_second} a second` +
+      (entry.browsers && entry.browsers > 1
+        ? ` each, in ${entry.browsers} browsers`
+        : "") +
       (entry.unread ? `; ${entry.unread} could not be read` : "") +
       (entry.all.refused
         ? `; the scorer refused ${entry.all.refused}, scored as empty`

@@ -31,7 +31,7 @@ import { envDir, workDir } from "../cache.ts";
 import type { Benchmark } from "../manifest.ts";
 import { python, scorerOf } from "../python.ts";
 import type { Quote } from "../split.ts";
-import { stem } from "../tools.ts";
+import { stem } from "../job.ts";
 
 const PROJECT = "olmocr";
 

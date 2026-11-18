@@ -9,10 +9,17 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { outDir } from "./cache.ts";
-import type { FileRun, Job, MdgestRun, PeerRun } from "./job.ts";
+import {
+  stem,
+  type FileRun,
+  type Job,
+  type MdgestRun,
+  type PeerRun,
+} from "./job.ts";
 import { revisionOf, type Benchmark } from "./manifest.ts";
 import { installed, python } from "./python.ts";
 
@@ -31,9 +38,19 @@ export interface Conversion {
   seconds: number;
   /** The inputs that could not be converted, and why. */
   errors: Record<string, string>;
+  /** Those of them given up on at the converter's limit on a document's
+   *  time, which is the clock's verdict and not the tool's. */
+  gaveUp: string[];
+  /** The inputs whose text layer could not be taken, and why: mdgest's
+   *  converter takes it, for the split. */
+  noLayer: Record<string, string>;
   /** A hash of every input's markdown, in the inputs' order: the same for
    *  two runs that wrote the same markdown. */
   markdown: string;
+  /** Each input's own. */
+  hashes: Record<string, string>;
+  /** How many browsers read side by side, for mdgest. */
+  browsers?: number;
 }
 
 export interface Tool {
@@ -41,8 +58,9 @@ export interface Tool {
   convert(b: Benchmark, pdfs: string, files: string[]): Promise<Conversion>;
 }
 
-/** `file` without its `.pdf`. */
-export const stem = (file: string) => file.replace(/\.pdf$/i, "");
+/** The hash of markdown as the scorers are given it (`written`). */
+export const hashOf = (markdown: string | Buffer) =>
+  createHash("sha256").update(markdown).digest("hex");
 
 async function conversion(
   out: string,
@@ -51,17 +69,24 @@ async function conversion(
   made: Conversion["made"],
 ): Promise<Conversion> {
   const hash = createHash("sha256");
+  const hashes: Record<string, string> = {};
   const errors: Record<string, string> = {};
+  const gaveUp: string[] = [];
+  const noLayer: Record<string, string> = {};
   let pages = 0;
   let ms = 0;
   for (const file of files) {
     const run = runs[file];
     if (!run) throw new Error(`${file} was not converted`);
     if (run.error) errors[file] = run.error;
+    if (run.gaveUp) gaveUp.push(file);
+    if (run.layer) noLayer[file] = run.layer;
     pages += run.pages;
     ms += run.ms;
+    const markdown = await written(join(out, `${stem(file)}.md`));
+    hashes[file] = hashOf(markdown);
     hash.update(`${file}\0`);
-    hash.update(await written(join(out, `${stem(file)}.md`)));
+    hash.update(markdown);
     hash.update("\0");
   }
   return {
@@ -70,7 +95,10 @@ async function conversion(
     pages,
     seconds: ms / 1000,
     errors,
+    gaveUp,
+    noLayer,
     markdown: hash.digest("hex"),
+    hashes,
   };
 }
 
@@ -96,8 +124,15 @@ async function writeJob(out: string, job: Job, name = "job.json") {
 
 /** How many converters read at once, each in a browser of its own: reading
  *  is one thread's work, and the long benchmarks are tens of thousands of
- *  pages. A small job is not split. */
-const BROWSERS = 6;
+ *  pages. A browser and the server it reads from keep two cores busy, so
+ *  there is one for every two the machine has, and never more than six:
+ *  more on fewer cores and a document's reading waits its turn, runs into
+ *  the converter's limit on its time and is scored as empty. A small job
+ *  is not split. */
+const BROWSERS = Math.max(
+  1,
+  Math.min(6, Math.floor(availableParallelism() / 2)),
+);
 const SPLIT_FROM = 60;
 
 /** One converter at work on the job in the file `job`. Each starts a
@@ -174,12 +209,15 @@ export const mdgest: Tool = {
   async convert(b, pdfs, files) {
     const out = outDir(b, "mdgest");
     const runs = await read(pdfs, files, out);
-    return conversion(
-      out,
-      files,
-      Object.assign({}, ...runs.map((run) => run.files)),
-      { reader: runs[0].reader, pdfjs: runs[0].pdfjs },
-    );
+    return {
+      ...(await conversion(
+        out,
+        files,
+        Object.assign({}, ...runs.map((run) => run.files)),
+        { reader: runs[0].reader, pdfjs: runs[0].pdfjs },
+      )),
+      browsers: runs.length,
+    };
   },
 };
 

@@ -33,7 +33,7 @@ import { envDir, scorerDir, workDir } from "../cache.ts";
 import type { Benchmark } from "../manifest.ts";
 import { python, pythonBeside } from "../python.ts";
 import type { Quote } from "../split.ts";
-import { stem } from "../tools.ts";
+import { stem } from "../job.ts";
 
 const PROJECT = "readoc";
 const SUBSETS = ["arxiv", "github"];

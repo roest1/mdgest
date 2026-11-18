@@ -11,20 +11,29 @@
  *
  *  A slice (`--only`, `--limit`) is for working on one thing and is never
  *  added to the history; neither is a run from a tree with changes in it,
- *  whose score no commit could give again. */
+ *  whose score no commit could give again, nor one the tree changed
+ *  under, nor one that gave up on a document at the converter's limit on
+ *  its time, which is the machine's doing. */
 
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Adapter } from "./adapter.ts";
-import { workDir } from "./cache.ts";
+import { keptDir } from "./cache.ts";
 import { fetchData } from "./fetch.ts";
 import * as frBench from "./fr-bench/adapter.ts";
 import { BENCHMARKS, benchmark, type Benchmark } from "./manifest.ts";
 import * as olmocr from "./olmocr/adapter.ts";
 import * as omnidocbench from "./omnidocbench/adapter.ts";
 import * as readoc from "./readoc/adapter.ts";
-import { append, line, show, tree } from "./results.ts";
+import {
+  append,
+  line,
+  show,
+  tree,
+  type KeptRun,
+  type Tree,
+} from "./results.ts";
 import { makeSplit, storedSplit } from "./split.ts";
 import { mdgest, tool, type Conversion, type Tool } from "./tools.ts";
 
@@ -41,7 +50,25 @@ interface Options {
   limit: number | null;
 }
 
+/** Why a run of every input is not one for the history, or null. */
+function unrepeatable(began: Tree, made: Conversion): string | null {
+  const now = tree();
+  if (began.dirty) return "the tree has changes";
+  if (now.commit !== began.commit || now.dirty)
+    return `the tree changed during the run, which began at ${began.commit}`;
+  if (made.gaveUp.length)
+    return `${made.gaveUp.length} given up on at the limit on a document's time, which a slower machine does to more`;
+  return null;
+}
+
 async function run(b: Benchmark, { tool: t, only, limit }: Options) {
+  // Before anything is converted: the working tree is what is run, for as
+  // long as the run takes.
+  const began = tree();
+  if (began.dirty && !only && !limit)
+    console.log(
+      `${b.name}: the tree has changes, so this run will not be added to the history`,
+    );
   const adapter = ADAPTERS[b.name];
   const data = await fetchData(b);
   await adapter.prepare?.(b, data);
@@ -59,6 +86,15 @@ async function run(b: Benchmark, { tool: t, only, limit }: Options) {
       pdfs,
       all.map((input) => input.file),
     );
+    // A page is in or out by what its PDF carries. One whose text layer
+    // was not taken would be out for every tool, for good, by an accident
+    // of this run.
+    const lost = Object.entries(whole.noLayer);
+    if (lost.length)
+      throw new Error(
+        `no split made: the text layer of ${lost.length} of ${all.length} inputs could not be taken\n` +
+          lost.map(([file, why]) => `  ${file}: ${why}`).join("\n"),
+      );
     split = await makeSplit(
       b,
       await adapter.quoted(data),
@@ -89,11 +125,6 @@ async function run(b: Benchmark, { tool: t, only, limit }: Options) {
 
   const made =
     whole && t === mdgest && !slice ? whole : await t.convert(b, pdfs, files);
-  // A full run's verdicts are kept beside the scorer's own output, with
-  // the ones the run before left: what the review report compares.
-  const kept = join(workDir(b, t.name, "all"), "verdicts.json");
-  const before =
-    !slice && existsSync(kept) ? await readFile(kept, "utf8") : null;
   const { verdicts, ...everything } = await adapter.score(
     b,
     data,
@@ -102,11 +133,6 @@ async function run(b: Benchmark, { tool: t, only, limit }: Options) {
     files,
     "all",
   );
-  if (verdicts && !slice) {
-    await writeFile(kept, JSON.stringify(verdicts));
-    if (before)
-      await writeFile(join(dirname(kept), "verdicts.before.json"), before);
-  }
   const layered = new Set(split.pages);
   const withLayer = files.filter((file) => layered.has(file));
   const textLayer = withLayer.length
@@ -115,13 +141,50 @@ async function run(b: Benchmark, { tool: t, only, limit }: Options) {
         .then((scored) => ({ ...scored, verdicts: undefined }))
     : null;
 
-  const entry = line(b, everything.scorer, t.name, made, everything, textLayer);
+  const entry = line(
+    b,
+    everything.scorer,
+    t.name,
+    made,
+    everything,
+    textLayer,
+    began.commit,
+  );
   console.log(`\n${show(entry)}`);
   for (const [file, why] of Object.entries(made.errors))
     console.log(`  unread: ${file}: ${why}`);
-  if (slice) console.log("\na slice: not added to the history");
-  else if (tree().dirty)
-    console.log("\nthe tree has changes: not added to the history");
+  if (slice) {
+    console.log("\na slice: not added to the history");
+    return;
+  }
+  const why = unrepeatable(began, made);
+
+  // A run of every input leaves its verdicts, with the ones the run
+  // before left and what each was a run of: what the review report shows
+  // and compares. Kept out of the scorer's folder, which the next scoring
+  // empties, a slice's too.
+  if (verdicts) {
+    const kept = keptDir(b, t.name);
+    await mkdir(kept, { recursive: true });
+    for (const name of ["verdicts", "run"])
+      if (existsSync(join(kept, `${name}.json`)))
+        await copyFile(
+          join(kept, `${name}.json`),
+          join(kept, `${name}.before.json`),
+        );
+    const run: KeptRun = {
+      date: entry.date,
+      commit: began.commit,
+      unrepeatable: why,
+      scorer: everything.scorer,
+      made: made.made,
+      hashes: made.hashes,
+    };
+    await writeFile(join(kept, "verdicts.json"), JSON.stringify(verdicts));
+    await writeFile(join(kept, "run.json"), JSON.stringify(run));
+  }
+
+  if (why) console.log(`\n${why}: not added to the history`);
   else console.log(`\nadded to ${await append(b, entry)}`);
 }
 

@@ -27,7 +27,7 @@ import { workDir } from "../cache.ts";
 import type { Benchmark } from "../manifest.ts";
 import { pythonBeside, scorerOf } from "../python.ts";
 import { stretches, type Quote } from "../split.ts";
-import { stem } from "../tools.ts";
+import { stem } from "../job.ts";
 
 const PROJECT = "omnidocbench";
 

@@ -18,12 +18,21 @@ export interface Job {
   run: string;
 }
 
+/** `file` without its `.pdf`: what its outputs are named after. */
+export const stem = (file: string) => file.replace(/\.pdf$/i, "");
+
 /** One PDF of a job: its pages, the time its reading took, in ms, and why
  *  it could not be read, when it could not. */
 export interface FileRun {
   pages: number;
   ms: number;
   error?: string;
+  /** Set when the error is the converter's own limit on a document's
+   *  time: a slower machine, or a busier one, gives up on more. */
+  gaveUp?: boolean;
+  /** Why the PDF's text layer could not be taken, when it could not: it
+   *  is taken apart from the reading, and a failed reading leaves it. */
+  layer?: string;
 }
 
 /** How mdgest's conversion went. */
