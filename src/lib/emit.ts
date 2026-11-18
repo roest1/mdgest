@@ -9,7 +9,12 @@
 
 import { LIST_ROLES, type Analysis, type Block, type Page } from "./analysis";
 import { shape, type Edits } from "./edits";
-import { headersFooters, pageNumberOf, type Furniture } from "./furniture";
+import {
+  pageNumberOf,
+  repeatedKeys,
+  type Choice,
+  type Furniture,
+} from "./furniture";
 
 /** A block as it was written: which page, its number on that page (the
  *  note on its box), and the source line it became, 1-based. `from` and
@@ -191,10 +196,19 @@ export function emit(
 
   const pageNumbers = edits?.page_numbers ?? "keep";
   const headers = edits?.headers_footers ?? "keep";
+  const perLine = edits?.repeated_lines ?? {};
   // Found once per document, and only when it is asked for: it looks at
   // every page to know what repeats.
   const repeated =
-    headers === "keep" ? new Set<string>() : headersFooters(analysis);
+    headers === "keep" && Object.keys(perLine).length === 0
+      ? new Map<string, string>()
+      : repeatedKeys(analysis);
+  /** What is done with repeated header or footer block `id`: its line's
+   *  own choice, else the setting for them all. Null for any other. */
+  const lineChoice = (id: string): Choice | null => {
+    const key = repeated.get(id);
+    return key === undefined ? null : (perLine[key] ?? headers);
+  };
 
   const emitPage = (page: Page) => {
     let counters = new Counters();
@@ -229,14 +243,15 @@ export function emit(
       const byHand = block.hidden || block.deleted;
       const printed =
         !byHand && pageNumbers !== "keep" ? pageNumberOf(raw, page) : null;
+      const line = byHand ? null : lineChoice(raw.id);
       const setting: Furniture | undefined =
         printed !== null
           ? "page_numbers"
-          : !byHand && repeated.has(raw.id)
+          : line !== null && line !== "keep"
             ? "headers_footers"
             : undefined;
       if (setting !== undefined) {
-        const choice = setting === "page_numbers" ? pageNumbers : headers;
+        const choice = setting === "page_numbers" ? pageNumbers : line;
         if (choice === "delete") block.deleted = true;
         else block.hidden = true;
       }

@@ -1770,3 +1770,77 @@ test("the page column ends far enough below the last page to scroll it clear of 
   expect(bar.top).toBeLessThan(view.bottom);
   expect(paper().getBoundingClientRect().bottom).toBeLessThanOrEqual(bar.top);
 });
+
+// ---- headers, footers and page numbers --------------------------------------
+
+/** `a.pdf` of three pages, each with a running head in the top band, two
+ *  lines of body, and its page number in the bottom band. */
+const withFurniture = async () =>
+  new File(
+    [
+      await buildPdf(
+        [1, 2, 3].map((n) => (pen: Pen) => {
+          pen.text(X, 40, "Field Maintenance Manual");
+          pen.lines(X, TOP + PARAGRAPH, prose(2, n));
+          pen.text(300, 760, String(n));
+        }),
+      ),
+    ],
+    "a.pdf",
+  );
+const markdownText = () =>
+  readingOf()?.status === "ready"
+    ? (readingOf() as Extract<Reading, { status: "ready" }>).markdown.text
+    : "";
+
+test("page numbers are decided in the Headers & footers panel, beside each repeated line, as edits", async () => {
+  await workspace(await withFurniture());
+  mount("/edit/a");
+  await ready();
+  // One button for what is printed around the text, counting what there
+  // is to decide: the page numbers and the one repeated line.
+  const buttons = () => Array.from(document.querySelectorAll("button"));
+  const button = () =>
+    buttons().find((b) => b.textContent?.startsWith("Headers & footers"));
+  await expect.poll(() => button()?.textContent).toBe("Headers & footers2");
+  expect(buttons().some((b) => b.textContent?.startsWith("Page numbers"))).toBe(
+    false,
+  );
+  await userEvent.click(button()!);
+  const group = (name: string) =>
+    document.querySelector<HTMLElement>(`[role="group"][aria-label="${name}"]`);
+  /** The button of group `name` that says `word`. */
+  const move = (name: string, word: string) =>
+    Array.from(group(name)?.querySelectorAll("button") ?? []).find(
+      (b) => b.textContent?.trim() === word,
+    );
+  await expect.poll(() => group("Page numbers")?.textContent).toMatch(/123/);
+  expect(group("Repeated lines")?.textContent).toContain(
+    "Field Maintenance Manual",
+  );
+
+  // Hidden: each page number a comment in the markdown.
+  await userEvent.click(move("Page numbers", "hide")!);
+  await expect.poll(markdownText).toContain("<!-- page 2 -->");
+  await expect.poll(() => move("Page numbers", "show")).toBeTruthy();
+  // The line deleted on its own: gone from every page, the numbers as they
+  // were.
+  await userEvent.click(move("Repeated lines", "delete")!);
+  await expect.poll(markdownText).not.toContain("Field Maintenance Manual");
+  expect(markdownText()).toContain("<!-- page 3 -->");
+  // Each its own step: undo brings the line back and leaves the numbers.
+  await page.getByRole("button", { name: "Undo (Ctrl+Z)" }).click();
+  await expect.poll(markdownText).toContain("Field Maintenance Manual");
+  expect(markdownText()).toContain("<!-- page 2 -->");
+
+  // Kept with the document.
+  await saved("a");
+  await page.getByRole("button", { name: "Close a" }).click();
+  await expect.poll(() => readingOf()).toBeUndefined();
+  root!.unmount();
+  host!.remove();
+  mount("/edit/a");
+  const again = await ready();
+  expect(again.edits.page_numbers).toBe("hide");
+  expect(again.markdown.text).toContain("<!-- page 1 -->");
+});

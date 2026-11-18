@@ -15,35 +15,38 @@ import {
   Undo2,
   type LucideIcon,
 } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useMenuDismiss } from "src/components/shared/useMenuDismiss";
-import { redoEdit, revertEdits, undoEdit } from "src/lib/editing";
+import {
+  redoEdit,
+  revertEdits,
+  setFurnitureEdit,
+  setLineEdit,
+  undoEdit,
+} from "src/lib/editing";
 import { revertToOriginal } from "src/lib/edits";
+import {
+  pageNumbers,
+  repeatedLines,
+  type Choice,
+  type RepeatedLine,
+} from "src/lib/furniture";
 import { useEditor, type Boxes } from "src/lib/store";
 import { barButton, iconButton } from "./controls";
 
-/** What a document does with one kind of page furniture: keep it as text,
- *  hide it as an HTML comment, or delete it. As `furniture.ts` names it on
- *  init/monorepo, where it moves to once that is ported. */
-type Choice = "keep" | "hide" | "delete";
-
-/** One running header or footer: a wording printed in a margin band on
- *  more than one page, numbers wildcarded, so `Page 3 of 40` is one line.
- *  `key` is that wording, which is what an edit to the line is keyed by. */
-interface Line {
-  key: string;
-  text: string;
-  where: "top" | "bottom";
-  pages: number[];
+/** One running header or footer, as the panel lists it: what was found,
+ *  and what the document does with it now. */
+interface Line extends RepeatedLine {
   choice: Choice;
 }
 
-// TODO: from findFurniture(analysis) once furniture.ts and the reading are
-// ported. Until then nothing is found, and the controls show their empty state.
-const FOUND: { pageNumbers: number; lines: Line[] } = {
-  pageNumbers: 0,
-  lines: [],
-};
+/** The printed page numbers, as the panel lists them. */
+interface Numbers {
+  labels: string[];
+  pages: number[];
+  where: "top" | "bottom";
+  choice: Choice;
+}
 
 /** An action inside a flyout or a menu row: an icon and a word. */
 const action = (lit = false) =>
@@ -215,66 +218,89 @@ function Flyout({
   );
 }
 
-/** Printed page numbers: the button says what they are now, and its
- *  options are the ways out of that. The count is the review -- a page
- *  number is a page number. */
-function PageNumbers({
-  count,
+/** A few of the page numbers, to say what sequence was found: the first
+ *  three and the last, `i ii iii … 404`. */
+function sample(labels: string[]): string[] {
+  return labels.length <= 5
+    ? labels
+    : [...labels.slice(0, 3), "…", labels[labels.length - 1]];
+}
+
+/** One row of the panel: the band it is printed in, what it prints, the
+ *  pages it is on, and the ways out of what it is now. */
+function Row({
+  where,
   choice,
-  locked,
+  pages,
   onPick,
+  children,
 }: {
-  count: number;
+  where: "top" | "bottom";
   choice: Choice;
-  locked: boolean;
+  pages: string;
   onPick: (choice: Choice) => void;
+  children: ReactNode;
 }) {
-  const Icon = choice === "hide" ? EyeOff : choice === "delete" ? Trash2 : null;
   return (
-    <Flyout
-      label="Page numbers"
-      disabled={locked || count === 0}
-      button={{
-        className: barButton(),
-        title: count === 0 ? "No page numbers found" : undefined,
-        content: (
-          <>
-            {Icon && <Icon className="h-3.5 w-3.5" />}
-            <span
-              className={
-                choice === "delete"
-                  ? "line-through decoration-brand-lit decoration-2"
-                  : ""
-              }
-            >
-              Page numbers
-            </span>
-            <Count n={count} />
-          </>
-        ),
-      }}
-    >
-      <Moves choice={choice} onPick={onPick} />
-    </Flyout>
+    <li className="grid grid-cols-[3.5rem_minmax(0,1fr)_7rem_10rem] items-center gap-3 px-3 py-1.5 text-xs hover:bg-edge/40">
+      <span className="justify-self-start rounded bg-ground px-1.5 py-px text-[10px] tracking-wider text-muted uppercase">
+        {where}
+      </span>
+      <span
+        className={`flex min-w-0 items-center gap-1.5 font-mono ${
+          choice === "keep" ? "text-ink" : "text-faint"
+        }`}
+      >
+        {choice === "hide" && <EyeOff className="h-3.5 w-3.5 shrink-0" />}
+        {choice === "delete" && <Trash2 className="h-3.5 w-3.5 shrink-0" />}
+        {children}
+      </span>
+      <span className="text-muted tabular-nums">{pages}</span>
+      <span className="flex justify-end gap-0.5">
+        <Moves choice={choice} onPick={onPick} />
+      </span>
+    </li>
   );
 }
 
-/** Running headers and footers, one row per repeated line: each is its own
- *  choice, since a line repeated on every page can still be one worth
- *  keeping. */
+/** A group of the panel's rows, under its name. */
+function Group({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <div className="border-t border-edge">
+      <div className="px-3 pt-2 text-[10px] tracking-wider text-faint uppercase">
+        {name}
+      </div>
+      <ul role="group" aria-label={name} className="py-1">
+        {children}
+      </ul>
+    </div>
+  );
+}
+
+/** What a page prints around its text, decided in one place as Word
+ *  groups it: the printed page numbers, then each running header and
+ *  footer, one row per repeated line -- each its own choice, since a line
+ *  repeated on every page can still be one worth keeping. */
 function HeadersFooters({
+  numbers,
   lines,
   locked,
-  onPick,
+  onPickNumbers,
+  onPickLine,
 }: {
+  numbers: Numbers | null;
   lines: Line[];
   locked: boolean;
-  onPick: (key: string, choice: Choice) => void;
+  onPickNumbers: (choice: Choice) => void;
+  onPickLine: (key: string, choice: Choice) => void;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   useMenuDismiss(open, root, setOpen);
   const places = lines.reduce((n, line) => n + line.pages.length, 0);
+  const count = lines.length + (numbers ? 1 : 0);
+  const struck = (choice: Choice) =>
+    choice === "delete" ? "line-through decoration-brand-lit decoration-2" : "";
 
   return (
     <div ref={root} className="relative">
@@ -282,22 +308,19 @@ function HeadersFooters({
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        disabled={locked || lines.length === 0}
+        disabled={locked || count === 0}
         title={
-          lines.length === 0
-            ? "No repeated headers or footers found"
-            : undefined
+          count === 0 ? "No page numbers, headers or footers found" : undefined
         }
         onClick={() => setOpen((o) => !o)}
         className={barButton(open)}
       >
         Headers &amp; footers
-        <Count n={lines.length} />
+        <Count n={count} />
         <ChevronDown
           className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`}
         />
       </button>
-
       {open && (
         <div
           role="dialog"
@@ -307,54 +330,58 @@ function HeadersFooters({
           <div className="flex items-baseline justify-between px-3 pt-2.5 pb-1.5">
             <span className="text-ink">Headers &amp; footers</span>
             <span className="text-xs text-muted">
-              {lines.length} repeated {lines.length === 1 ? "line" : "lines"} ·{" "}
-              {places} {places === 1 ? "place" : "places"}
+              {[
+                numbers && "page numbers",
+                lines.length &&
+                  `${lines.length} repeated ${lines.length === 1 ? "line" : "lines"}`,
+                lines.length &&
+                  `${places} ${places === 1 ? "place" : "places"}`,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </span>
           </div>
-          <ul className="border-t border-edge py-1">
-            {lines.map((line) => (
-              <li
-                key={line.key}
-                className="grid grid-cols-[3.5rem_minmax(0,1fr)_5.5rem_10rem] items-center gap-3 px-3 py-1.5 text-xs hover:bg-edge/40"
+          {numbers && (
+            <Group name="Page numbers">
+              <Row
+                where={numbers.where}
+                choice={numbers.choice}
+                pages={`${numbers.pages.length} ${numbers.pages.length === 1 ? "page" : "pages"}`}
+                onPick={onPickNumbers}
               >
-                <span className="justify-self-start rounded bg-ground px-1.5 py-px text-[10px] tracking-wider text-muted uppercase">
-                  {line.where}
-                </span>
                 <span
-                  className={`flex min-w-0 items-center gap-1.5 font-mono ${
-                    line.choice === "keep" ? "text-ink" : "text-faint"
-                  }`}
+                  className={`flex min-w-0 gap-1 truncate ${struck(numbers.choice)}`}
+                  title={numbers.labels.join(" ")}
                 >
-                  {line.choice === "hide" && (
-                    <EyeOff className="h-3.5 w-3.5 shrink-0" />
-                  )}
-                  {line.choice === "delete" && (
-                    <Trash2 className="h-3.5 w-3.5 shrink-0" />
-                  )}
+                  {sample(numbers.labels).map((label, i) => (
+                    <span key={i} className="rounded bg-ground px-1">
+                      {label}
+                    </span>
+                  ))}
+                </span>
+              </Row>
+            </Group>
+          )}
+          {lines.length > 0 && (
+            <Group name="Repeated lines">
+              {lines.map((line) => (
+                <Row
+                  key={line.key}
+                  where={line.where}
+                  choice={line.choice}
+                  pages={`${line.pages.length === 1 ? "page" : "pages"} ${runs(line.pages)}`}
+                  onPick={(choice) => onPickLine(line.key, choice)}
+                >
                   <span
-                    className={`truncate ${
-                      line.choice === "delete"
-                        ? "line-through decoration-brand-lit decoration-2"
-                        : ""
-                    }`}
+                    className={`truncate ${struck(line.choice)}`}
                     title={line.text}
                   >
                     {line.text}
                   </span>
-                </span>
-                <span className="text-muted tabular-nums">
-                  {line.pages.length === 1 ? "page" : "pages"}{" "}
-                  {runs(line.pages)}
-                </span>
-                <span className="flex justify-end gap-0.5">
-                  <Moves
-                    choice={line.choice}
-                    onPick={(choice) => onPick(line.key, choice)}
-                  />
-                </span>
-              </li>
-            ))}
-          </ul>
+                </Row>
+              ))}
+            </Group>
+          )}
         </div>
       )}
     </div>
@@ -411,12 +438,31 @@ export function Toolbar({ docId }: { docId: string }) {
     const r = s.readings[docId];
     return r?.status === "ready" ? r.edits : null;
   });
+  const analysis = useEditor((s) => {
+    const r = s.readings[docId];
+    return r?.status === "ready" ? r.analysis : null;
+  });
+  // What the pages print around their text: found once a reading, not
+  // once an edit.
+  const found = useMemo(
+    () =>
+      analysis
+        ? { numbers: pageNumbers(analysis), lines: repeatedLines(analysis) }
+        : null,
+    [analysis],
+  );
+  const numbers: Numbers | null =
+    found && found.numbers.labels.length
+      ? { ...found.numbers, choice: edits?.page_numbers ?? "keep" }
+      : null;
+  const lines: Line[] = (found?.lines ?? []).map((line) => ({
+    ...line,
+    choice:
+      edits?.repeated_lines?.[line.key] ?? edits?.headers_footers ?? "keep",
+  }));
   const canUndo = !isDone && !!edits?.undo.length;
   const canRedo = !isDone && !!edits?.redo.length;
   const canRevert = !isDone && !!edits && revertToOriginal(edits) !== edits;
-  // TODO: the editor's store, once ported: the furniture choices are edits.
-  const [pageNumbers, setPageNumbers] = useState<Choice>("keep");
-  const [lines, setLines] = useState<Line[]>(FOUND.lines);
   const boxes = useEditor((s) => s.boxes);
   const setBoxes = useEditor((s) => s.setBoxes);
   const indices = useEditor((s) => s.indices);
@@ -451,22 +497,14 @@ export function Toolbar({ docId }: { docId: string }) {
 
       {/* page furniture: edits, so undo reaches them and done locks them */}
       <div className="flex items-center gap-2">
-        <PageNumbers
-          count={FOUND.pageNumbers}
-          choice={pageNumbers}
-          locked={isDone}
-          onPick={setPageNumbers}
-        />
         <HeadersFooters
+          numbers={numbers}
           lines={lines}
           locked={isDone}
-          onPick={(key, choice) =>
-            setLines((prev) =>
-              prev.map((line) =>
-                line.key === key ? { ...line, choice } : line,
-              ),
-            )
+          onPickNumbers={(choice) =>
+            setFurnitureEdit(docId, "page_numbers", choice)
           }
+          onPickLine={(key, choice) => setLineEdit(docId, key, choice)}
         />
       </div>
 

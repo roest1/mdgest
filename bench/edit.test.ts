@@ -14,9 +14,12 @@ import {
   redoEdit,
   revertEdits,
   saved,
+  setFurnitureEdit,
+  setLineEdit,
   undoEdit,
 } from "src/lib/editing";
 import { emit } from "src/lib/emit";
+import { repeatedLines } from "src/lib/furniture";
 import { engine } from "src/lib/engine";
 import { useEditor, type Reading } from "src/lib/store";
 import { assetsPrefix } from "src/lib/workspace";
@@ -126,6 +129,11 @@ const headingPara = alternate(
   () => formatSelection("h2"),
   () => formatSelection("para"),
 );
+/** Every page number hidden, then kept: the whole book written again. */
+const pageNumbersHideKeep = alternate(
+  () => setFurnitureEdit(DOC, "page_numbers", "hide"),
+  () => setFurnitureEdit(DOC, "page_numbers", "keep"),
+);
 const undoRedo = alternate(
   () => undoEdit(DOC),
   () => redoEdit(DOC),
@@ -213,6 +221,18 @@ test("edits on a long book", async () => {
   await scenario("rendered: hide mid", [mid], button("hide"));
   await scenario("rendered: delete early", [early], button("del"));
   await scenario("rendered: H2/¶ early", [para], headingPara);
+  await scenario("rendered: hide page numbers", [early], pageNumbersHideKeep);
+  // The book's first repeated header or footer, deleted then kept.
+  const line = repeatedLines(r.analysis)[0];
+  if (line)
+    await scenario(
+      "rendered: delete a repeated line",
+      [early],
+      alternate(
+        () => setLineEdit(DOC, line.key, "delete"),
+        () => setLineEdit(DOC, line.key, "keep"),
+      ),
+    );
   if (!only || only.test("rendered: undo")) {
     await made([early], "del");
     await scenario("rendered: undo/redo delete", [early], undoRedo);
@@ -235,6 +255,7 @@ test("edits on a long book", async () => {
   await scenario("raw: delete early", [early], button("del"));
   await scenario("raw: delete mid", [mid], button("del"));
   await scenario("raw: H2/¶ early", [para], headingPara);
+  await scenario("raw: hide page numbers", [early], pageNumbersHideKeep);
   if (!only || only.test("raw: undo")) {
     await made([early], "del");
     await scenario("raw: undo/redo delete", [early], undoRedo);
