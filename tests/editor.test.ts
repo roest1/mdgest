@@ -1510,6 +1510,47 @@ test("the selection's buttons hang on the selected block under the pointer, in e
   expect(placedOf(para.id)?.hidden).toBe(false);
 });
 
+test("the selection's buttons stay in the pane's view, at its top and its right", async () => {
+  const { para } = await openedToEdit();
+  // Zoomed in until the page overflows the pane both ways.
+  for (let i = 0; i < 5; i++)
+    await page.getByRole("button", { name: "Zoom in" }).click();
+  await userEvent.click(boxOf(para.id));
+  pointAt(boxOf(para.id));
+  await expect.poll(actions).not.toBeNull();
+  const pane = actions()!.parentElement!;
+  expect(pane.scrollWidth).toBeGreaterThan(pane.clientWidth);
+  // The real pointer out of the pane, so the scroll below brings no block
+  // under it in place of this one.
+  await page.getByRole("button", { name: "Zoom in" }).hover();
+  // The block's top at the view's top, and its right edge past the view's
+  // right -- as far as the pane scrolls: hung off its corner, the buttons
+  // would be cut off at both.
+  const frame = pane.getBoundingClientRect();
+  const box = boxOf(para.id).getBoundingClientRect();
+  pane.scrollTop += box.top - frame.top - 2;
+  pane.scrollLeft += box.right - (frame.left + pane.clientWidth) - 40;
+  await expect
+    .poll(() => {
+      const at = boxOf(para.id).getBoundingClientRect();
+      return [
+        Math.round(at.top - frame.top),
+        at.right > frame.left + pane.clientWidth,
+      ];
+    })
+    .toEqual([2, true]);
+  pointAt(boxOf(para.id));
+  await expect
+    .poll(() => {
+      const bar = actions()!.getBoundingClientRect();
+      return [
+        bar.top - frame.top >= 3.5,
+        frame.left + pane.clientWidth - bar.right >= 3.5,
+      ];
+    })
+    .toEqual([true, true]);
+});
+
 test("a deleted block is struck through on the page and restored from there, and kept", async () => {
   const { para, line, picture } = await openedToEdit();
   expect(para.lines).toHaveLength(3);
