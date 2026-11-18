@@ -1,0 +1,19 @@
+# The olmOCR-bench scorer and everything it runs on, pinned: this file names
+# the scorer's version (the one `manifest.ts` expects) and `uv.lock`
+# beside it names every package under it, so a score never moves because a
+# dependency did. `bun run bench:accuracy olmocr` makes the environment from the
+# lock; nothing here is installed by hand.
+[project]
+name = "mdgest-bench-olmocr"
+version = "0"
+requires-python = "==3.12.*"
+dependencies = [
+  "olmocr[bench]==0.4.27",
+  # Imported by `olmocr.bench` but not declared by it.
+  "beautifulsoup4",
+  "numpy",
+  "tqdm",
+]
+
+[tool.uv]
+package = false

@@ -1,0 +1,11 @@
+# PyMuPDF4LLM, a peer baseline, pinned: this file names its version and
+# `uv.lock` beside it every package under it. Run by `bun run bench:accuracy <name>
+# --tool pymupdf4llm`, through the same adapter and scorer as mdgest.
+[project]
+name = "mdgest-bench-pymupdf4llm"
+version = "0"
+requires-python = "==3.12.*"
+dependencies = ["pymupdf4llm==2.1"]
+
+[tool.uv]
+package = false

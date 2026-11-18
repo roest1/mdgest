@@ -15,7 +15,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "bench": "vitest run --config bench/vitest.config.ts",
+    "bench:accuracy": "bun bench/accuracy/run.ts",
+    "bench:speed": "vitest run --config bench/speed/vitest.config.ts",
     "fixtures": "bun tests/fixtures/write.ts"
   },
   "dependencies": {
