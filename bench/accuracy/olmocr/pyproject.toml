@@ -6,7 +6,7 @@
 [project]
 name = "mdgest-bench-olmocr"
 version = "0"
-requires-python = "==3.12.*"
+requires-python = "==3.14.*"
 dependencies = [
   "olmocr[bench]==0.4.27",
   # Imported by `olmocr.bench` but not declared by it.
