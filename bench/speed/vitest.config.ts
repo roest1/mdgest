@@ -1,9 +1,9 @@
 import { execSync } from "node:child_process";
 import { defineConfig, mergeConfig } from "vitest/config";
-import base from "../vitest.config.ts";
+import base from "../../vitest.config.ts";
 
-// The suite's config, pointed at the benchmarks: run by hand, never in CI
-// (`bun run bench`; README.md says how).
+// The suite's config, pointed at the edit timings: run by hand, never in CI
+// (`bun run bench:speed`; README.md says how).
 //
 // React is its production build unless BENCH_DEV is set: the development
 // build's own bookkeeping -- it copies a component's changed props into
@@ -35,5 +35,5 @@ const config = mergeConfig(
   }),
 );
 // Replaced, not merged: merging appends to the suite's.
-config.test.include = ["bench/**/*.test.ts"];
+config.test.include = ["bench/speed/**/*.test.ts"];
 export default config;

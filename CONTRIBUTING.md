@@ -23,18 +23,21 @@ bun run dev # http://127.0.0.1:2048, or set WEB_PORT
 
 ### Scripts
 
-| Command                | What it does                                                                    | CI  |
-| ---------------------- | ------------------------------------------------------------------------------- | --- |
-| `bun run dev`          | vite dev server on 127.0.0.1:2048 (`WEB_PORT` to change it)                     |     |
-| `bun run lint`         | oxlint                                                                          | ✓   |
-| `bun run format:check` | prettier, pinned exactly, every option spelled out in `.prettierrc.json`        | ✓   |
-| `bun run format`       | prettier, writing the fixes                                                     |     |
-| `bun run typecheck`    | `tsc -b`, on its own so a type error does not read as a build failure           | ✓   |
-| `bun run test`         | vitest in headless Chromium, see [tests/README.md](tests/README.md)             | ✓   |
-| `bun run test:watch`   | the same, re-run on save                                                        |     |
-| `bun run build`        | `tsc -b`, then `vite build` into `dist/`                                        | ✓   |
-| `bun run preview`      | serves `dist/` as it would be deployed                                          |     |
-| `bun run fixtures`     | writes every reader case to `tests/out/` as a PDF, to look at or open in mdgest |     |
+| Command                         | What it does                                                                                                                   | CI  |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --- |
+| `bun run dev`                   | vite dev server on 127.0.0.1:2048 (`WEB_PORT` to change it)                                                                    |     |
+| `bun run lint`                  | oxlint                                                                                                                         | ✓   |
+| `bun run format:check`          | prettier, pinned exactly, every option spelled out in `.prettierrc.json`                                                       | ✓   |
+| `bun run format`                | prettier, writing the fixes                                                                                                    |     |
+| `bun run typecheck`             | `tsc -b`, on its own so a type error does not read as a build failure                                                          | ✓   |
+| `bun run test`                  | vitest in headless Chromium, see [tests/README.md](tests/README.md)                                                            | ✓   |
+| `bun run test:watch`            | the same, re-run on save                                                                                                       |     |
+| `bun run build`                 | `tsc -b`, then `vite build` into `dist/`                                                                                       | ✓   |
+| `bun run preview`               | serves `dist/` as it would be deployed                                                                                         |     |
+| `bun run fixtures`              | writes every reader case to `tests/out/` as a PDF, to look at or open in mdgest                                                |     |
+| `bun run bench:accuracy <name>` | scores mdgest on a public benchmark, see [bench/accuracy/README.md](bench/accuracy/README.md)                                  |     |
+| `bun run bench:report <name>`   | draws the pages whose tests failed in the last run, see [bench/accuracy/README.md](bench/accuracy/README.md#the-review-report) |     |
+| `bun run bench:speed`           | times an edit on a long book, see [bench/speed/README.md](bench/speed/README.md)                                               |     |
 
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the ✓ rows in
 that order, after `bun install --frozen-lockfile`, on every push to `main` and

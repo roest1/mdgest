@@ -3,7 +3,7 @@
  *  person drives it. What `edit.test.ts` reports should agree with this.
  *
  *    bun run build && bun run preview --port 4173 --strictPort &
- *    bun bench/preview.ts
+ *    bun bench/speed/preview.ts
  */
 
 import { chromium, type Page } from "playwright";

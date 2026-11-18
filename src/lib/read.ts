@@ -504,6 +504,21 @@ const PICTURE_FACE = /wingding|webding/i;
  *  Symbol's other private-use glyphs are mathematics, and stay as they are. */
 const SYMBOL_BULLET = "\uf0b7";
 
+/** The control characters: what pdf.js hands over for a glyph whose font
+ *  does not say which character it is -- the glyph's code in the font,
+ *  which for a mathematical or symbol face is often under 32. Nobody
+ *  printed a NUL or an escape; in the markdown they show as nothing, and a
+ *  tool handed the file can take it for binary. Each is written as
+ *  U+FFFD, the character for one that could not be named, after `glyphOf`
+ *  has had its say on a lone one.
+ *
+ *  Written, not left out: the glyph is ink on the page -- a minus sign, a
+ *  delta, a bracket -- and the run it is in is part of how lines and
+ *  paragraphs are told apart. Taking the run away reads "mol⁻¹" as two
+ *  lines; and a person shown "mol � 1" knows to look, where "mol 1" is
+ *  simply wrong. */
+const UNNAMED = /\p{Cc}/gu;
+
 /** A run of one picture glyph, as `•`. Set at the start of a line, such a
  *  glyph is a bullet all but always; read as the code pdf.js reports, it is
  *  neither a bullet to `structure.ts` nor a character anyone printed. */
@@ -622,7 +637,7 @@ async function readRuns(page: PDFPageProxy): Promise<Run[]> {
     const ascent = style?.ascent > 0 ? style.ascent : 0.9;
     const descent = style?.descent < 0 ? style.descent : -0.21;
     const face = styleOf(item.fontName);
-    const text = glyphOf(raw.trim(), face.font);
+    const text = glyphOf(raw.trim(), face.font).replace(UNNAMED, "\uFFFD");
     // The run in its own frame, on the two axes `transform` lays down,
     // each divided by its own length to take a step along it.
     //

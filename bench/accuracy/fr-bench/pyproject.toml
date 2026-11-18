@@ -1,0 +1,30 @@
+# The fr-bench-pdf2md scorer and everything it runs on, pinned. The scorer,
+# benchpdf2md, is not on PyPI: it is installed from its repository at one
+# commit (the one `manifest.ts` expects), and `uv.lock` beside this file
+# names every package under it. `bun run bench:accuracy fr-bench` makes the
+# environment from the lock; nothing here is installed by hand.
+[project]
+name = "mdgest-bench-fr-bench"
+version = "0"
+requires-python = "==3.14.*"
+dependencies = [
+  "benchpdf2md",
+  # The packages that decide whether a test passes, at the versions the
+  # scorer's own lock has them: the newest html-to-markdown no longer has
+  # the function the scorer normalises text with.
+  "html-to-markdown==2.20.0",
+  "rapidfuzz==3.14.3",
+  "unidecode==1.4.0",
+  "fuzzysearch==0.8.1",
+  # Imported by benchpdf2md but not declared by it.
+  "pandas",
+  "pyarrow",
+  "huggingface-hub",
+  "tqdm",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+benchpdf2md = { git = "https://github.com/ld-lab-pulsia/benchpdf2md", rev = "ceab1548ac914bff6585fa5c6227e2b24c35cfdb" }
