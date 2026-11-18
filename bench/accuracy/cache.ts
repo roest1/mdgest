@@ -5,15 +5,15 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Benchmark } from "./manifest.ts";
+import { revisionOf, type Benchmark } from "./manifest.ts";
 
 /** `~/.cache/mdgest-bench`, or wherever `MDGEST_BENCH_CACHE` says. */
 export const CACHE =
   process.env.MDGEST_BENCH_CACHE || join(homedir(), ".cache", "mdgest-bench");
 
-/** A benchmark's files, as its repo lays them out, at the pinned revision. */
+/** A benchmark's files, as its repo lays them out, at the pinned revisions. */
 export const dataDir = (b: Benchmark) =>
-  join(CACHE, "data", b.name, b.revision);
+  join(CACHE, "data", b.name, revisionOf(b));
 
 /** What `tool` made of a benchmark's inputs: `<input>.md` for each, and
  *  `run.json` on how the conversion went. */

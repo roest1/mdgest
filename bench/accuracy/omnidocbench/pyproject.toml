@@ -1,0 +1,22 @@
+# The OmniDocBench evaluator and everything it runs on, pinned. It is not
+# on PyPI: it is installed from its repository at one commit (the one
+# `manifest.ts` expects), which itself pins every package it uses to an
+# exact version, and `uv.lock` beside this file names the rest.
+#
+# Python 3.11 because the evaluator asks for 3.10 or 3.11: the versions of
+# numpy, scipy and pandas it pins have no builds for anything newer.
+[project]
+name = "mdgest-bench-omnidocbench"
+version = "0"
+requires-python = "==3.11.*"
+dependencies = ["omnidocbench-eval"]
+
+[tool.uv]
+package = false
+# The evaluator pins what it imports but not what those import, and today's
+# pyarrow will not load beside the numpy it pins. So everything is resolved
+# as it stood when the newest of its pins was current.
+exclude-newer = "2025-01-01T00:00:00Z"
+
+[tool.uv.sources]
+omnidocbench-eval = { git = "https://github.com/opendatalab/OmniDocBench", rev = "7ddb8df411ad9bd2fff139acafe0ed16aa1694fe" }

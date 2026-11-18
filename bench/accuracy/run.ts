@@ -18,6 +18,7 @@ import { fetchData } from "./fetch.ts";
 import * as frBench from "./fr-bench/adapter.ts";
 import { BENCHMARKS, benchmark, type Benchmark } from "./manifest.ts";
 import * as olmocr from "./olmocr/adapter.ts";
+import * as omnidocbench from "./omnidocbench/adapter.ts";
 import * as readoc from "./readoc/adapter.ts";
 import { append, line, show, tree } from "./results.ts";
 import { makeSplit, storedSplit } from "./split.ts";
@@ -27,6 +28,7 @@ const ADAPTERS: Record<string, Adapter> = {
   olmocr,
   "fr-bench": frBench,
   readoc,
+  omnidocbench,
 };
 
 interface Options {

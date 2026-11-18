@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { outDir } from "./cache.ts";
 import type { FileRun, Job, MdgestRun, PeerRun } from "./job.ts";
-import type { Benchmark } from "./manifest.ts";
+import { revisionOf, type Benchmark } from "./manifest.ts";
 import { python } from "./python.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
@@ -187,7 +187,7 @@ function peer(name: string): Tool {
       let kept: Kept | null = existsSync(at)
         ? (JSON.parse(await readFile(at, "utf8")) as Kept)
         : null;
-      if (kept && (kept.revision !== b.revision || kept.lock !== lock))
+      if (kept && (kept.revision !== revisionOf(b) || kept.lock !== lock))
         kept = null;
       const todo = files.filter((f) => !kept?.files[f]);
       if (todo.length) {
@@ -203,7 +203,7 @@ function peer(name: string): Tool {
           await readFile(join(out, "run.json"), "utf8"),
         ) as PeerRun;
         kept = {
-          revision: b.revision,
+          revision: revisionOf(b),
           version: run.version,
           lock,
           files: { ...kept?.files, ...run.files },

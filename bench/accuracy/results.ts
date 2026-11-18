@@ -9,7 +9,7 @@ import { execSync } from "node:child_process";
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Benchmark } from "./manifest.ts";
+import { revisionOf, type Benchmark } from "./manifest.ts";
 import type { Score } from "./adapter.ts";
 import type { Conversion } from "./tools.ts";
 
@@ -17,6 +17,9 @@ export interface Line {
   date: string;
   benchmark: string;
   revision: string;
+  /** What the numbers are to be read with, for a benchmark not run as
+   *  published. */
+  label?: string;
   scorer: string;
   tool: string;
   /** What the tool was: mdgest's `READER` and pdf.js, a peer's version. */
@@ -61,7 +64,8 @@ export function line(
   return {
     date: new Date().toISOString(),
     benchmark: b.name,
-    revision: b.revision,
+    revision: revisionOf(b),
+    ...(b.label ? { label: b.label } : {}),
     scorer,
     tool,
     made: made.made,
@@ -117,11 +121,17 @@ export function show(entry: Line): string {
       cell(entry.text_layer, name),
     ]),
   ];
+  const wide = Math.max(...rows.map(([name]) => name.length)) + 2;
   return [
-    `${entry.benchmark} at ${entry.revision.slice(0, 8)}, ${entry.scorer}`,
+    `${entry.benchmark}${entry.label ? ` (${entry.label})` : ""} at ${entry.revision
+      .split("+")
+      .map((revision) => revision.slice(0, 8))
+      .join("+")}, ${entry.scorer}`,
     `${entry.tool} (${made}) at ${entry.commit}`,
     "",
-    ...rows.map(([a, b, c]) => `${a.padEnd(22)}${b.padEnd(24)}${c}`.trimEnd()),
+    ...rows.map(([a, b, c]) =>
+      `${a.padEnd(wide)}${b.padEnd(24)}${c}`.trimEnd(),
+    ),
     "",
     `${entry.pages} pages at ${entry.pages_per_second} a second` +
       (entry.unread ? `; ${entry.unread} could not be read` : "") +

@@ -14,7 +14,7 @@ import { existsSync } from "node:fs";
 import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { dataDir } from "./cache.ts";
-import type { Benchmark } from "./manifest.ts";
+import { revisionOf, type Benchmark } from "./manifest.ts";
 
 const HUB = "https://huggingface.co";
 /** Downloads at once: enough to be quick, few enough to stay polite. */
@@ -28,6 +28,8 @@ interface Entry {
   /** The git blob id: of the file, or of its LFS pointer. */
   oid: string;
   lfs?: { oid: string; size: number };
+  /** The commit it is listed at: added here, not part of the listing. */
+  revision: string;
 }
 
 interface Verified {
@@ -62,18 +64,25 @@ async function get(url: string): Promise<Response> {
   throw new Error(`${url}: ${problem}`);
 }
 
-/** Every file of `b.repo` at its revision that `b.files` asks for. The
- *  tree comes a thousand entries at a time, the next page named in `Link`. */
-async function listing(b: Benchmark): Promise<Entry[]> {
+/** Every file of `b.repo` at `revision` that `files` asks for. The tree
+ *  comes a thousand entries at a time, the next page named in `Link`. */
+async function listing(
+  b: Benchmark,
+  revision: string,
+  files: RegExp,
+): Promise<Entry[]> {
   const entries: Entry[] = [];
   let url: string | undefined =
-    `${HUB}/api/datasets/${b.repo}/tree/${b.revision}?recursive=true&limit=1000`;
+    `${HUB}/api/datasets/${b.repo}/tree/${revision}?recursive=true&limit=1000`;
   while (url) {
     const res = await get(url);
     entries.push(...((await res.json()) as Entry[]));
     url = /<([^>]+)>;\s*rel="next"/.exec(res.headers.get("link") ?? "")?.[1];
   }
-  return entries.filter((e) => e.type === "file" && b.files.test(e.path));
+  const wanted = entries.filter((e) => e.type === "file" && files.test(e.path));
+  if (!wanted.length)
+    throw new Error(`${b.repo} at ${revision} has none of the files asked for`);
+  return wanted.map((entry) => ({ ...entry, revision }));
 }
 
 /** `entry` downloaded to its place under `dir`, checked against the hash
@@ -81,7 +90,7 @@ async function listing(b: Benchmark): Promise<Entry[]> {
  *  a gigabyte, to a name beside its own, and moved into place only once
  *  the hash agrees. A download cut short is begun again. */
 async function download(b: Benchmark, entry: Entry, dir: string) {
-  const url = `${HUB}/datasets/${b.repo}/resolve/${b.revision}/${entry.path
+  const url = `${HUB}/datasets/${b.repo}/resolve/${entry.revision}/${entry.path
     .split("/")
     .map(encodeURIComponent)
     .join("/")}`;
@@ -117,7 +126,7 @@ async function download(b: Benchmark, entry: Entry, dir: string) {
   }
   throw new Error(
     got
-      ? `${entry.path} is not the file at ${b.revision.slice(0, 8)}: its hash is ${got}, the revision's is ${want}`
+      ? `${entry.path} is not the file at ${entry.revision.slice(0, 8)}: its hash is ${got}, the revision's is ${want}`
       : `${entry.path} could not be downloaded`,
   );
 }
@@ -128,14 +137,17 @@ export async function fetchData(b: Benchmark): Promise<string> {
   const marker = join(dir, "verified.json");
   if (existsSync(marker)) return dir;
 
-  const entries = await listing(b);
-  if (!entries.length)
-    throw new Error(
-      `${b.repo} at ${b.revision} has none of the files asked for`,
-    );
+  const entries = (
+    await Promise.all(
+      [b, ...(b.also ?? [])].map((at) => listing(b, at.revision, at.files)),
+    )
+  ).flat();
   const bytes = entries.reduce((sum, e) => sum + e.size, 0);
   console.log(
-    `fetching ${b.repo} at ${b.revision.slice(0, 8)}: ${entries.length} files, ${(bytes / 1e6).toFixed(0)} MB`,
+    `fetching ${b.repo} at ${revisionOf(b)
+      .split("+")
+      .map((revision) => revision.slice(0, 8))
+      .join("+")}: ${entries.length} files, ${(bytes / 1e6).toFixed(0)} MB`,
   );
 
   const files: Record<string, string> = {};
@@ -152,7 +164,7 @@ export async function fetchData(b: Benchmark): Promise<string> {
 
   const verified: Verified = {
     repo: b.repo,
-    revision: b.revision,
+    revision: revisionOf(b),
     files: Object.fromEntries(
       Object.entries(files).sort(([a], [z]) => (a < z ? -1 : 1)),
     ),

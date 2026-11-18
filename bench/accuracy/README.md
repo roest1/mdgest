@@ -15,15 +15,16 @@ bun run bench:accuracy olmocr --only arxiv_math --limit 50   # a slice, while wo
 bun run bench:accuracy all                                   # every benchmark in turn
 ```
 
-| Benchmark  | Inputs                                    | Scored by                                                          |
-| ---------- | ----------------------------------------- | ------------------------------------------------------------------ |
-| `olmocr`   | 1,403 single-page PDFs                    | `olmocr.bench`, 8,413 unit tests                                   |
-| `fr-bench` | 721 single-page French PDFs               | `benchpdf2md`, 2,318 unit tests of that kind                       |
-| `readoc`   | 2,233 whole documents, about 20,000 pages | READoc's evaluation suite, against the markdown each was made from |
+| Benchmark      | Inputs                                                    | Scored by                                                             |
+| -------------- | --------------------------------------------------------- | --------------------------------------------------------------------- |
+| `olmocr`       | 1,403 single-page PDFs                                    | `olmocr.bench`, 8,413 unit tests                                      |
+| `fr-bench`     | 721 single-page French PDFs                               | `benchpdf2md`, 2,318 unit tests of that kind                          |
+| `readoc`       | 2,233 whole documents, about 20,000 pages                 | READoc's evaluation suite, against the markdown each was made from    |
+| `omnidocbench` | 981 single pages, the ones OmniDocBench published as PDFs | OmniDocBench's evaluator, against v1.6's ground truth for those pages |
 
 It needs [uv](https://docs.astral.sh/uv/), the Pythons the scorers and peers
 are pinned to (3.13 for olmOCR-bench's scorer, which does not start on 3.14;
-3.14 for the rest), and the Chromium `bun run test` already uses. The first run of a benchmark
+3.11 for OmniDocBench's, the newest it allows; 3.14 for the rest), and the Chromium `bun run test` already uses. The first run of a benchmark
 fetches its data (about 350 MB each, and 1.8 GB for READoc, which unpacks
 to as much again) and builds its scorer's environment;
 both are kept in `~/.cache/mdgest-bench/`, or wherever `MDGEST_BENCH_CACHE`
@@ -78,6 +79,9 @@ of what the page should say (`split.ts`):
 - **A document with ground truth**, in READoc, is held against stretches
   of its ground truth's prose, eight words at a time and up to 200 of
   them, with everything written in LaTeX left out.
+- **A page with ground truth**, in OmniDocBench, is held against the text
+  of its regions, thirty letters at a time -- by letters, since Chinese
+  sets no spaces -- with formulas and tables left out.
 - **A page tested only on formulas** quotes nothing to hold its text layer
   against. It is a text-layer page when the layer has at least 200 letters
   and digits: a scan has none, a printed page thousands.
@@ -112,6 +116,17 @@ and the score is the one number each scorer gives:
   gives the mean of each measure over the documents, for the arXiv papers
   and the GitHub READMEs apart. `average` is the mean of the measures the
   paper's tables list, which is what the paper calls a system's score.
+
+- **OmniDocBench**: no one number here. Its evaluator gives, for text,
+  formulas, tables and reading order, an edit distance (`Edit_dist`: 0 is
+  the ground truth exactly, lower is better) and for tables TEDS (higher
+  is better); `ALL_page_avg` is the mean over pages, the one its
+  leaderboard lists. The leaderboard's Overall needs CDM, a formula
+  measure that renders LaTeX and is left off until mdgest writes formulas.
+
+  **Never set these beside the leaderboard.** It scores all 1,651 pages of
+  v1.6 from images. This is the 981 of them that exist as PDFs, the easier
+  ones, so it runs high, and every line says so in its `label`.
 
 A document the tool could not read is scored as empty markdown, and so is
 one fr-bench's scorer will not take: its text normaliser raises on a NUL
