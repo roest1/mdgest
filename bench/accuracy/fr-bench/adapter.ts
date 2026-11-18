@@ -10,7 +10,8 @@
  *  The scorer, benchpdf2md, is pinned in `pyproject.toml` to a commit of
  *  its repository. It scores vlmparse documents rather than markdown
  *  files, so `score.py` wraps each input's markdown in one and calls the
- *  scorer's own entry point. Its score is the share of all tests passed,
+ *  scorer's own entry point -- and says which documents the scorer would
+ *  not take, which are scored as empty. Its score is the share of all tests passed,
  *  its own "baseline" checks left out; the categories, baseline among
  *  them, are reported as it reports them. */
 
@@ -109,6 +110,7 @@ export async function quoted(data: string): Promise<Map<string, Quote[]>> {
 interface Summary {
   metrics: { avg_result: number; num_tests: number } & Record<string, unknown>;
   categories: Record<string, Tally>;
+  refused: { file: string; why: string }[];
 }
 
 export async function score(
@@ -132,7 +134,7 @@ export async function score(
     join(work, "scorer.txt"),
     python(PROJECT, [fileURLToPath(new URL("score.py", import.meta.url)), job]),
   );
-  const { metrics, categories } = JSON.parse(
+  const { metrics, categories, refused } = JSON.parse(
     await readFile(join(work, "summary.json"), "utf8"),
   ) as Summary;
 
@@ -153,11 +155,14 @@ export async function score(
     throw new Error(
       `the scorer's metrics.json and its test results disagree: see ${work}`,
     );
+  for (const { file, why } of refused)
+    console.log(`  the scorer refused ${file} (${why}): scored as empty`);
   return {
     score: metrics.avg_result,
     inputs: files.length,
     tests: total,
     categories,
+    ...(refused.length ? { refused: refused.length } : {}),
     scorer,
   };
 }

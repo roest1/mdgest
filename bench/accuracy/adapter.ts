@@ -27,6 +27,9 @@ export interface Score {
   tests: number;
   /** The scorer's own breakdown. */
   categories: Record<string, Tally>;
+  /** Inputs whose markdown the scorer would not take at all, scored as
+   *  empty, when there are any. */
+  refused?: number;
 }
 
 export interface Adapter {

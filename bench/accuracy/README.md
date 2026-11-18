@@ -96,6 +96,11 @@ and the score is the one number each scorer gives:
 - **fr-bench**: the share of all tests passed. Its `baseline` checks, one
   beside every test, are listed but not in the score.
 
+A document the tool could not read is scored as empty markdown, and so is
+one fr-bench's scorer will not take: its text normaliser raises on a NUL
+character, which would end the run with no score. Both are counted on the
+line (`unread`, `refused`) and named when the run prints.
+
 ## Peers
 
 A peer is another converter put through the same fetch, adapter, scorer

@@ -116,7 +116,10 @@ export function show(entry: Line): string {
     ...rows.map(([a, b, c]) => `${a.padEnd(20)}${b.padEnd(24)}${c}`.trimEnd()),
     "",
     `${entry.pages} pages at ${entry.pages_per_second} a second` +
-      (entry.unread ? `; ${entry.unread} could not be read` : ""),
+      (entry.unread ? `; ${entry.unread} could not be read` : "") +
+      (entry.all.refused
+        ? `; the scorer refused ${entry.all.refused}, scored as empty`
+        : ""),
     `markdown ${entry.markdown.slice(0, 16)}`,
   ].join("\n");
 }
