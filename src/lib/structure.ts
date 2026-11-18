@@ -125,6 +125,31 @@ const COMPOUND = /\p{L}+(?:[-\u2010]\p{L}+)+/gu;
 /** Words a hyphen can be left hanging before: "pre- and post-war", "Vor-
  *  und Nachteile", "avant- et après-guerre". */
 const HANGING = new Set(["and", "or", "und", "oder", "et", "ou"]);
+/** "to" with a second hyphenated word after it: "mid- to late-1990s". On
+ *  its own "to" is as often the end of a word, "toma-" and "to". */
+const HANGING_TO = /^to\s+[\p{L}\p{N}]+[-\u2010][\p{L}\p{N}]/iu;
+/** Words French sets a hyphen before whatever the line: the subject after
+ *  its verb ("dit-il", "avez-vous"), and "celui-ci", "lui-même",
+ *  "peut-être". Left out are the ones that are as often the end of a
+ *  divided word: "nous" ("androgy-" and "nous"), "tu" ("ver-" and "tu"),
+ *  "ce", "le", "les", "leur", "lui". */
+const ENCLITIC = new Set(
+  "je il ils elle elles on vous ci là même mêmes être".split(" "),
+);
+/** A hyphen straight after the letters `REST` found, and the words that
+ *  are then the middle of a compound: "to" in "signal-to-noise", "à" in
+ *  "c'est-à-dire", "t" in "reste-t-il". A list and not a length: "ty" in
+ *  "twen-" and "ty-two" is as short and is a syllable. */
+const MIDDLE = /^[-\u2010]/u;
+const LINK = new Set(
+  (
+    "a to of in on by the and or for und oder " +
+    "de du des à au aux en et ou le la les sur t y"
+  ).split(" "),
+);
+/** A word on from the letters `REST` found: "n't" after "did", "d'hui"
+ *  after "aujour". */
+const APOSTROPHE = /^['\u2019][\p{L}\p{N}]/u;
 
 const lower = (word: string) => word.toLowerCase().replaceAll("\u2010", "-");
 
@@ -138,6 +163,32 @@ function compounds(pages: ReadPage[]): Set<string> {
   return found;
 }
 
+/** One letter that is no syllable of a longer word: a consonant, "p" in
+ *  "p-value". A vowel alone is one, and older typesetting divides after
+ *  it: "é-" and "lèves". */
+const lone = (word: string) =>
+  [...word].length === 1 && !/[aeiouy]/i.test(word.normalize("NFD"));
+
+/** Whether the hyphen between `word`, at a line's end, and `rest`, the
+ *  letters the next line starts with, is the writer's own for a reason the
+ *  two lines show: `after` is what follows `rest` on its line.
+ *
+ *  - A word with a hyphen after it that compounds are made around is the
+ *    middle of one divided at its first hyphen (`LINK`): "signal-" and
+ *    "to-noise", "reste-" and "t-il", "three-" and "and-a-half".
+ *  - One consonant before the hyphen, or one letter that is the whole of
+ *    the next word, is a word of its own, since a typesetter leaves a
+ *    syllable either side of a division: "p-" and "value", "x-" and
+ *    "ray", "vitamin-" and "c".
+ *  - French sets its own (`ENCLITIC`): "avez-" and "vous". */
+function spelled(word: string, rest: string, after: string): boolean {
+  const low = rest.toLowerCase();
+  if (MIDDLE.test(after) && LINK.has(low)) return true;
+  const whole = !APOSTROPHE.test(after) && !MIDDLE.test(after);
+  if (lone(word) || ([...rest].length < 2 && whole)) return true;
+  return whole && ENCLITIC.has(low);
+}
+
 /** A block's lines as one text. Lines are joined by a space, but a word
  *  the line break divided is put back together: a hyphen set against a
  *  word at a line's end has no space after it in what the writer wrote.
@@ -147,29 +198,57 @@ function compounds(pages: ReadPage[]): Set<string> {
  *  -- "nega-" and "tive" -- which is how a typesetter divides a word. It
  *  stays when the word had a hyphen already ("state-of-the-" and "art"),
  *  when either side is a capital or a digit ("TGF-" and "beta", "1990-"
- *  and "1995"), and when the document sets the same word with its hyphen
- *  within a line somewhere (`compound`). A compound seen nowhere else
- *  and divided at its hyphen loses it; that is the price of the guess. */
+ *  and "1995"), when the two lines show it to be spelling (`spelled`),
+ *  and when the document sets the same word with its hyphen within a line
+ *  somewhere (`compound`). A compound seen nowhere else and divided at
+ *  its hyphen loses it; that is the price of the guess.
+ *
+ *  What the guess cannot tell, and gets wrong: a hyphen typed for a dash
+ *  with no space before it ("Contact-" and "see the desk" reads as one
+ *  word), and a minus sign or a grade at a line's end ("CD8-" and
+ *  "cells", "A-" and "by"), which lose the space after them. */
 function joinLines(lines: string[], compound: Set<string>): string {
   let text = "";
+  // The end of `text` back to its last space: all a divided word can be
+  // in, so a line is looked at once however long the block grows.
+  let tail = "";
+  const add = (line: string, glue: string) => {
+    text += glue + line;
+    tail = (glue ? "" : tail) + line;
+    tail = tail.slice(tail.lastIndexOf(" ") + 1);
+  };
   for (const line of lines) {
     if (!line) continue;
     if (!text) {
-      text = line;
+      add(line, "");
       continue;
     }
-    const broken = BROKEN.exec(text);
+    const hyphen = tail.endsWith("-") || tail.endsWith("\u2010");
+    const broken = hyphen ? BROKEN.exec(tail) : null;
     const rest = REST.exec(line)?.[0];
-    if (!broken || !rest || HANGING.has(rest.toLowerCase())) {
-      text += ` ${line}`;
+    if (!broken || !rest) {
+      add(line, " ");
+      continue;
+    }
+    const after = line.slice(rest.length);
+    const hanging = MIDDLE.test(after)
+      ? false
+      : HANGING.has(rest.toLowerCase()) || HANGING_TO.test(line);
+    if (hanging) {
+      add(line, " ");
       continue;
     }
     const word = broken[1];
     const typeset =
       /^\p{L}*\p{Ll}$/u.test(word) &&
       /^\p{Ll}/u.test(rest) &&
+      !spelled(word, rest, after) &&
       !compound.has(lower(`${word}-${rest}`));
-    text = (typeset ? text.slice(0, -1) : text) + line;
+    if (typeset) {
+      text = text.slice(0, -1);
+      tail = tail.slice(0, -1);
+    }
+    add(line, "");
   }
   return text.trim();
 }
