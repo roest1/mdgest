@@ -17,6 +17,11 @@ import {
   EDITS_VERSION,
   join,
   parseEdits,
+  redo,
+  revertToOriginal,
+  setCuts,
+  setFurniture,
+  addInsert,
   undo,
   unjoin,
   type BlockEdit,
@@ -203,5 +208,53 @@ describe("checkEdits", () => {
         "its edits.json",
       ),
     ).toThrow(/format this version reads/);
+  });
+});
+
+describe("undo, redo and revert to original", () => {
+  const hide = (edits: Edits, id: string) =>
+    apply(edits, [doc.pages[0].blocks.find((b) => b.id === id)!], () => ({
+      hidden: true,
+    }));
+  const text = (edits: Edits) => emit(doc, "a/", edits).text;
+  const original = text(blankEdits());
+
+  test("undo takes back a step and redo makes it again; a new step drops what was undone", () => {
+    const one = hide(blankEdits(), "p1b1");
+    const two = hide(one, "p1b2");
+    const back = undo(two);
+    expect(back.blocks).toEqual(one.blocks);
+    expect(redo(back).blocks).toEqual(two.blocks);
+    // Nothing to undo, nothing to redo: the same edits.
+    expect(undo(blankEdits())).toEqual(blankEdits());
+    expect(redo(two)).toBe(two);
+    // A step made after an undo is a new branch: the undone one is gone.
+    expect(hide(back, "p1b3").redo).toEqual([]);
+  });
+
+  test("revert takes every kind of decision back to the reader's, as one step undo takes back", () => {
+    let edits = hide(blankEdits(), "p1b1");
+    edits = join(edits, ["p1b2", "p1b3"]);
+    edits = setCuts(edits, "p1b0", [1]);
+    edits = addInsert(edits, 1, "p1b0", "Written in.");
+    edits = setFurniture(edits, "page_numbers", "hide");
+    const before = { ...edits, done: true, later: "a newer build's" };
+    const reverted = revertToOriginal(before);
+    expect(text(reverted)).toBe(original);
+    expect(reverted.page_numbers).toBeUndefined();
+    // Kept: what is not a decision, and the history, one step longer.
+    expect(reverted.done).toBe(true);
+    expect(reverted.later).toBe("a newer build's");
+    expect(reverted.undo).toHaveLength(before.undo.length + 1);
+    // And undone in one.
+    expect(text(undo(reverted))).toBe(text(before));
+    expect(undo(reverted).page_numbers).toBe("hide");
+  });
+
+  test("nothing decided is nothing to revert, history or no history", () => {
+    const blank = blankEdits();
+    expect(revertToOriginal(blank)).toBe(blank);
+    const undone = undo(hide(blank, "p1b1"));
+    expect(revertToOriginal(undone)).toBe(undone);
   });
 });
