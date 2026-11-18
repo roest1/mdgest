@@ -7,6 +7,7 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { envDir } from "./cache.ts";
+import type { Benchmark } from "./manifest.ts";
 
 const BENCH = fileURLToPath(new URL(".", import.meta.url));
 
@@ -38,10 +39,35 @@ export function python(project: string, args: string[], show = false): string {
 }
 
 /** The version of `pkg` installed in the environment of
- *  `bench/accuracy/<project>`. */
+ *  `bench/accuracy/<project>`, with the commit it was installed from when
+ *  it came from a repository: "0.1.0 @ceab1548". */
 export function installed(project: string, pkg: string): string {
   return python(project, [
     "-c",
-    `import importlib.metadata as m; print(m.version(${JSON.stringify(pkg)}))`,
+    [
+      "import importlib.metadata as m, json",
+      `d = m.distribution(${JSON.stringify(pkg)})`,
+      "url = json.loads(d.read_text('direct_url.json') or '{}')",
+      "commit = url.get('vcs_info', {}).get('commit_id')",
+      "print(d.version + (' @' + commit[:8] if commit else ''))",
+    ].join("\n"),
   ]).trim();
+}
+
+const checked = new Map<string, string>();
+
+/** The scorer of `b`, as the history names it, once its environment at
+ *  `bench/accuracy/<project>` is seen to hold the version the manifest
+ *  pins. Checked once a process. */
+export function scorerOf(b: Benchmark, project: string): string {
+  let name = checked.get(project);
+  if (!name) {
+    const version = installed(project, b.scorer.package);
+    if (version !== b.scorer.version)
+      throw new Error(
+        `the scorer is ${b.scorer.package} ${version}, the manifest says ${b.scorer.version}: bring ${project}/pyproject.toml and manifest.ts together`,
+      );
+    checked.set(project, (name = `${b.scorer.package} ${version}`));
+  }
+  return name;
 }

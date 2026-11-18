@@ -10,7 +10,7 @@ import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Benchmark } from "./manifest.ts";
-import type { Score } from "./olmocr/adapter.ts";
+import type { Score } from "./adapter.ts";
 import type { Conversion } from "./tools.ts";
 
 export interface Line {

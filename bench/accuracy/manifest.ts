@@ -15,7 +15,9 @@ export interface Benchmark {
   /** The files of `repo` that are fetched; the rest is left there. */
   files: RegExp;
   /** The scorer's package and the version of it that scores: the one
-   *  `<name>/pyproject.toml` installs, checked before each scoring. */
+   *  `<name>/pyproject.toml` installs, checked before each scoring. One
+   *  installed from a repository is pinned by its commit, written after
+   *  the version: "0.1.0 @ceab1548". */
   scorer: { package: string; version: string };
 }
 
@@ -26,6 +28,13 @@ export const BENCHMARKS: Benchmark[] = [
     revision: "54a96a6fb6a2bd3b297e59869491db4d3625b711",
     files: /^bench_data\/(?:[^/]+\.jsonl|pdfs\/.+\.pdf)$/,
     scorer: { package: "olmocr", version: "0.4.27" },
+  },
+  {
+    name: "fr-bench",
+    repo: "pulsia/fr-bench-pdf2md",
+    revision: "7f1f8e7896474cea34a46c15a72a7be3c01e8c4b",
+    files: /^pdfs\/.+\.(?:pdf|json|jsonl)$/,
+    scorer: { package: "benchpdf2md", version: "0.1.0 @ceab1548" },
   },
 ];
 

@@ -26,9 +26,10 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { Input, Score, Tally } from "../adapter.ts";
 import { envDir, workDir } from "../cache.ts";
 import type { Benchmark } from "../manifest.ts";
-import { installed, python } from "../python.ts";
+import { python, scorerOf } from "../python.ts";
 import type { Quote } from "../split.ts";
 import { stem } from "../tools.ts";
 
@@ -70,12 +71,6 @@ async function categories(data: string): Promise<Category[]> {
         .map((text) => ({ text, test: JSON.parse(text) as Test })),
     })),
   );
-}
-
-/** An input: its PDF, as a path under `pdfs()`, and the category it is in. */
-export interface Input {
-  file: string;
-  category: string;
 }
 
 export const pdfs = (data: string) => join(data, "bench_data", "pdfs");
@@ -129,40 +124,16 @@ export async function quoted(data: string): Promise<Map<string, Quote[]>> {
   return quotes;
 }
 
-/** Passed and total, as the scorer counted them. */
-export interface Tally {
-  passed: number;
-  total: number;
-}
-
-export interface Score {
-  /** The mean of the categories' pass rates, 0 to 1: the scorer's "Average
-   *  Score", unrounded. */
-  score: number;
-  /** The inputs scored. */
-  inputs: number;
-  tests: number;
-  /** By `.jsonl` file, and the scorer's own "baseline". */
-  categories: Record<string, Tally>;
-}
-
-/** The scorer's environment, ready: the pinned version in it, and the
- *  Chromium it renders formulas with. Checked once a process. */
-let ready: string | null = null;
+/** The scorer, with the Chromium it renders formulas in: fetched once into
+ *  Playwright's own cache. */
 function scorer(b: Benchmark): string {
-  if (ready) return ready;
-  const version = installed(PROJECT, b.scorer.package);
-  if (version !== b.scorer.version)
-    throw new Error(
-      `the scorer is ${b.scorer.package} ${version}, the manifest says ${b.scorer.version}: bring olmocr/pyproject.toml and manifest.ts together`,
-    );
-  // Fetched once into Playwright's own cache; a no-op after.
+  const name = scorerOf(b, PROJECT);
   const marker = join(envDir(PROJECT), ".chromium");
   if (!existsSync(marker)) {
     python(PROJECT, ["-m", "playwright", "install", "chromium"], true);
     writeFileSync(marker, "");
   }
-  return (ready = `${b.scorer.package} ${version}`);
+  return name;
 }
 
 /** The scorer's last summary of `tool`, read back. */

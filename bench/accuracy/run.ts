@@ -13,14 +13,16 @@
  *  added to the history; neither is a run from a tree with changes in it,
  *  whose score no commit could give again. */
 
+import type { Adapter } from "./adapter.ts";
 import { fetchData } from "./fetch.ts";
+import * as frBench from "./fr-bench/adapter.ts";
 import { BENCHMARKS, benchmark, type Benchmark } from "./manifest.ts";
 import * as olmocr from "./olmocr/adapter.ts";
 import { append, line, show, tree } from "./results.ts";
 import { makeSplit, storedSplit } from "./split.ts";
 import { mdgest, tool, type Conversion, type Tool } from "./tools.ts";
 
-const ADAPTERS: Record<string, typeof olmocr> = { olmocr };
+const ADAPTERS: Record<string, Adapter> = { olmocr, "fr-bench": frBench };
 
 interface Options {
   tool: Tool;

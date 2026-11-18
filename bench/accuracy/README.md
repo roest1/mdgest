@@ -10,15 +10,21 @@ How long an edit takes to show is measured apart, in
 
 ```sh
 bun run bench:accuracy olmocr                                # mdgest, every input
-bun run bench:accuracy olmocr --tool pymupdf4llm             # a peer, through the same steps
+bun run bench:accuracy fr-bench --tool pymupdf4llm           # a peer, through the same steps
 bun run bench:accuracy olmocr --only arxiv_math --limit 50   # a slice, while working on one thing
 bun run bench:accuracy all                                   # every benchmark in turn
 ```
 
+| Benchmark  | Inputs                      | Scored by                                        |
+| ---------- | --------------------------- | ------------------------------------------------ |
+| `olmocr`   | 1,403 single-page PDFs      | `olmocr.bench`, 8,413 unit tests                 |
+| `fr-bench` | 721 single-page French PDFs | `benchpdf2md`, 2,318 unit tests of the same kind |
+
 It needs [uv](https://docs.astral.sh/uv/) and a Python 3.12 for the scorers,
-and the Chromium `bun run test` already uses. The first run fetches the data
-(357 MB for olmOCR-bench) and builds the scorer's environment; both are kept
-in `~/.cache/mdgest-bench/`, or wherever `MDGEST_BENCH_CACHE` says.
+and the Chromium `bun run test` already uses. The first run of a benchmark
+fetches its data (about 350 MB each) and builds its scorer's environment;
+both are kept in `~/.cache/mdgest-bench/`, or wherever `MDGEST_BENCH_CACHE`
+says.
 
 ## What a run does
 
@@ -53,7 +59,9 @@ of what the page should say (`split.ts`):
 - **What the page should say** is the text its tests quote from it: a
   present or an absent test's text, both stretches of an order test, a
   table test's cell and its neighbours. A formula is not counted, since its
-  LaTeX is not text the page prints.
+  LaTeX is not text the page prints. fr-bench's tests on charts quote what
+  a description of the chart should say, so a chart drawn as a picture is
+  not a text-layer page.
 - **What the PDF carries** is the text pdf.js finds in it, before the reader
   touches it, so a change to the reader never moves a page across the line.
 - **A quote is there** when it is found with spaces, punctuation, case and
@@ -80,9 +88,13 @@ A line is added only by a run of every input from a tree with no changes in
 it. A slice, or a run from a tree a commit does not describe, prints its
 scores and adds nothing: nobody could make that number again.
 
-Categories are reported as the scorer reports them and never re-weighted.
-For olmOCR-bench the score is the mean of the pass rates of its seven test
-files and of the `baseline` test the scorer adds for every page.
+Categories are reported as the scorer reports them and never re-weighted,
+and the score is the one number each scorer gives:
+
+- **olmOCR-bench**: the mean of the pass rates of its seven test files and
+  of the `baseline` test the scorer adds for every page.
+- **fr-bench**: the share of all tests passed. Its `baseline` checks, one
+  beside every test, are listed but not in the score.
 
 ## Peers
 
@@ -98,18 +110,18 @@ kept in the cache and reused until its lock or the revision changes.
 
 ## Layout
 
-| Path                        | Holds                                                    | Committed |
-| --------------------------- | -------------------------------------------------------- | --------- |
-| `run.ts`                    | `bun run bench:accuracy`: the steps above, in order      | yes       |
-| `manifest.ts`               | the pins                                                 | yes       |
-| `fetch.ts`, `cache.ts`      | the data, and where everything uncommitted is kept       | yes       |
-| `vitest.config.ts`          | the converter's own config: Chromium, nothing from tests | yes       |
-| `convert.run.ts`, `job.ts`  | the converter, in the browser, and what it is asked for  | yes       |
-| `tools.ts`, `tools/<name>/` | mdgest and the peers as converters                       | yes       |
-| `split.ts`                  | the text-layer split                                     | yes       |
-| `<benchmark>/`              | its adapter and its scorer's pins                        | yes       |
-| `results/`                  | the history, and each benchmark's split                  | yes       |
-| `~/.cache/mdgest-bench/`    | datasets, converted markdown, scorer environments        | no        |
+| Path                         | Holds                                                                   | Committed |
+| ---------------------------- | ----------------------------------------------------------------------- | --------- |
+| `run.ts`                     | `bun run bench:accuracy`: the steps above, in order                     | yes       |
+| `manifest.ts`                | the pins                                                                | yes       |
+| `fetch.ts`, `cache.ts`       | the data, and where everything uncommitted is kept                      | yes       |
+| `vitest.config.ts`           | the converter's own config: Chromium, nothing from tests                | yes       |
+| `convert.run.ts`, `job.ts`   | the converter, in the browser, and what it is asked for                 | yes       |
+| `tools.ts`, `tools/<name>/`  | mdgest and the peers as converters                                      | yes       |
+| `split.ts`                   | the text-layer split                                                    | yes       |
+| `adapter.ts`, `<benchmark>/` | what a benchmark must say for itself; its adapter and its scorer's pins | yes       |
+| `results/`                   | the history, and each benchmark's split                                 | yes       |
+| `~/.cache/mdgest-bench/`     | datasets, converted markdown, scorer environments                       | no        |
 
 In the cache, `work/<benchmark>/<tool>/<set>/` is the folder the scorer was
 last given, with `scorer.txt`, everything it printed: each failed test and
