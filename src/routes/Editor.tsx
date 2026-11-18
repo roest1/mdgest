@@ -9,6 +9,7 @@ import {
 } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import {
+  CircleAlert,
   CircleCheck,
   CircleHelp,
   Download,
@@ -180,6 +181,11 @@ export default function Editor() {
   // not there -- or no longer is. Nothing opens for it until the listing
   // says it is, and one it does not hold is let go of below.
   const docId = docs?.includes(asked) ? asked : "";
+  // Why the open document's last edit was not saved, if it was not.
+  const unsaved = useEditor((s) => {
+    const reading = s.readings[docId];
+    return reading?.status === "ready" ? reading.unsaved : undefined;
+  });
   const [missing, setMissing] = useState<string | null>(null);
 
   // What was held of every document goes when the editor does. A reading is
@@ -325,13 +331,26 @@ export default function Editor() {
             }
             className="max-w-[min(40vw,24rem)] text-center"
           />
-          <span
-            className="absolute top-1/2 left-full ml-2 hidden -translate-y-1/2 items-center gap-1 text-xs leading-none whitespace-nowrap text-faint xl:flex"
-            title="Every edit is written to this browser as it is made. Export is the copy you keep."
-          >
-            <CircleCheck className="h-3.5 w-3.5" aria-hidden />
-            Autosaved in this browser · export to keep it
-          </span>
+          {unsaved ? (
+            // A save that failed is said at every width: what is on screen
+            // is not what the browser holds.
+            <span
+              role="alert"
+              className="absolute top-1/2 left-full ml-2 flex -translate-y-1/2 items-center gap-1 text-xs leading-none whitespace-nowrap text-red-300"
+              title={unsaved}
+            >
+              <CircleAlert className="h-3.5 w-3.5" aria-hidden />
+              Not saved in this browser
+            </span>
+          ) : (
+            <span
+              className="absolute top-1/2 left-full ml-2 hidden -translate-y-1/2 items-center gap-1 text-xs leading-none whitespace-nowrap text-faint xl:flex"
+              title="Every edit is written to this browser as it is made. Export is the copy you keep."
+            >
+              <CircleCheck className="h-3.5 w-3.5" aria-hidden />
+              Autosaved in this browser · export to keep it
+            </span>
+          )}
         </div>
 
         <div className="flex min-w-0 items-center justify-end gap-3">

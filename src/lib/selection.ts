@@ -4,7 +4,10 @@
  *
  * Only a block the markdown placed can be selected. A block with no words
  * is boxed on the page but written nowhere, so it has no number and no
- * line to select it by. */
+ * line to select it by. A deleted block is placed but written nowhere: it
+ * is selected on the page, where its box still is and is the only place it
+ * can be restored from, and never from the markdown, where a range would
+ * take in blocks no one there can see. */
 
 import type { Placed } from "./emit";
 
@@ -55,13 +58,15 @@ export function offBlocks(e: {
   return window.getSelection()?.isCollapsed ?? true;
 }
 
-/** Whether block `id` can be selected: the markdown placed it. */
+/** Whether block `id` can be selected from `from`: the markdown placed
+ *  it, and wrote it unless it is picked on the page. */
 export function selectable(
   blocks: Record<string, Placed>,
   id: string,
+  from: Side,
 ): boolean {
   const at = blocks[id];
-  return at !== undefined && !at.deleted;
+  return at !== undefined && (!at.deleted || from === "page");
 }
 
 /** The selection after a click on block `id` of `docId`, whose blocks the
@@ -75,7 +80,7 @@ export function picked(
   { range, toggle }: Modifiers,
   from: Side,
 ): Selection | null {
-  if (!selectable(blocks, id)) return selection;
+  if (!selectable(blocks, id, from)) return selection;
   const same = selection?.docId === docId ? selection : null;
 
   if (range && same) {
@@ -86,7 +91,7 @@ export function picked(
     if (a >= 0 && b >= 0) {
       const ids = order
         .slice(Math.min(a, b), Math.max(a, b) + 1)
-        .filter((x) => selectable(blocks, x));
+        .filter((x) => selectable(blocks, x, from));
       return { docId, ids, focus: id, anchor: same.anchor, from };
     }
   }
@@ -115,7 +120,7 @@ export function lassoed(
   base: Selection | null,
   from: Side,
 ): Selection | null {
-  const swept = new Set(hits.filter((id) => selectable(blocks, id)));
+  const swept = new Set(hits.filter((id) => selectable(blocks, id, from)));
   const kept = base?.docId === docId ? base : null;
   const ids = order.filter((id) => swept.has(id) || kept?.ids.includes(id));
   // The first block swept, in the order they were written, is what a

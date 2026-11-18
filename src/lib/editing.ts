@@ -12,6 +12,7 @@
 import type { Edits } from "./edits";
 import { emit } from "./emit";
 import { engine } from "./engine";
+import { actionsFor, hiding } from "./hiding";
 import { useEditor } from "./store";
 import { messageOf } from "./words";
 import { assetsPrefix } from "./workspace";
@@ -40,6 +41,24 @@ export function commitEdits(
   const markdown = emit(reading.analysis, assetsPrefix(docId), edits);
   setReading(docId, { ...reading, edits, markdown });
   save(docId, edits, markdown.text);
+}
+
+/** Press one of the selection's two buttons: `hide` hides or shows it,
+ *  `del` deletes or restores it, whichever the selection offers
+ *  (`hiding.ts`). Nothing with
+ *  nothing selected, or when the button is not offered. */
+export function actOnSelection(button: "hide" | "del"): void {
+  const { selection, readings } = useEditor.getState();
+  if (!selection) return;
+  const reading = readings[selection.docId];
+  if (reading?.status !== "ready") return;
+  const placed = reading.markdown.blocks;
+  const offered = actionsFor(selection.ids, placed)?.[button];
+  if (!offered) return;
+  commitEdits(
+    selection.docId,
+    hiding(selection.ids, reading.analysis, placed, offered.action),
+  );
 }
 
 /** Settled once every edit of `docId` made so far has been written, or has

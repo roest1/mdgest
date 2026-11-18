@@ -9,6 +9,7 @@
  * draws it as: on every case, and on markdown no reader writes but a
  * person can, HTML and unsafe links among it. */
 
+import type { Element, Root } from "hast";
 import { createElement, type HTMLAttributes } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown, {
@@ -21,7 +22,7 @@ import { drawTree } from "src/components/editor/drawTree";
 import type { Analysis } from "src/lib/analysis";
 import { blankEdits, type BlockEdit, type Edits } from "src/lib/edits";
 import { emit, type Markdown, type SourceLine } from "src/lib/emit";
-import { toHast } from "src/lib/hast";
+import { isComment, toHast } from "src/lib/hast";
 import { openPdf } from "src/lib/pdf";
 import { pieces } from "src/lib/pieces";
 import { readPage } from "src/lib/read";
@@ -60,11 +61,29 @@ function marking(lines: SourceLine[]): Components {
   );
 }
 
+/** react-markdown's HTML, but for the pane's one departure from it: an
+ *  HTML comment is drawn as nothing (`hast.ts`). Taken out before
+ *  react-markdown writes HTML out as text, and only that. */
+const dropComments = () => (tree: Root) => {
+  const walk = (node: Root | Element) => {
+    node.children = node.children.filter(
+      (child) => !(child.type === "raw" && isComment(child.value)),
+    ) as typeof node.children;
+    for (const child of node.children)
+      if (child.type === "element") walk(child);
+  };
+  walk(tree);
+};
+
 const html = (text: string, lines: SourceLine[]) =>
   renderToStaticMarkup(
     createElement(
       ReactMarkdown,
-      { remarkPlugins: [remarkGfm], components: marking(lines) },
+      {
+        remarkPlugins: [remarkGfm],
+        rehypePlugins: [dropComments],
+        components: marking(lines),
+      },
       text,
     ),
   );
@@ -115,8 +134,16 @@ const written: Record<string, string> = {
     '<div onclick="alert(1)">a block</div>',
     "",
     "A line with <b>bold</b>, <img src=x onerror=alert(1)> and <script>alert(1)</script> in it.",
+  ].join("\n"),
+  // A hidden block, as emit writes one: alone, and inside a list.
+  "a comment is drawn as nothing, as a block, in a line and in a list": [
+    "<!-- # A hidden heading -->",
     "",
-    "<!-- hidden: a comment -->",
+    "A line with <!-- an aside --> in it.",
+    "",
+    "- an item",
+    "  <!-- - a hidden item -->",
+    "- another",
   ].join("\n"),
   "an unsafe link or image is kept with its URL emptied": [
     "[a](javascript:alert(1)) [b](JAVASCRIPT:alert(1)) [c](vbscript:x) [d](data:text/html,x)",
@@ -179,6 +206,7 @@ describe("markdown a person writes", () => {
         block: `p1b${i}`,
       }));
       expect(ours(text, lines)).toBe(html(text, lines));
+      expect(ours(text, lines)).not.toContain("&lt;!--");
     });
   }
 });
