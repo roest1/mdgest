@@ -1771,6 +1771,21 @@ test("the page column ends far enough below the last page to scroll it clear of 
   expect(paper().getBoundingClientRect().bottom).toBeLessThanOrEqual(bar.top);
 });
 
+test("the bar lights what was pressed in the frame the page shows it, with no fade", async () => {
+  const { para } = await openedToEdit();
+  await userEvent.click(boxOf(para.id));
+  await expect.poll(() => pressed("para")).toBe("true");
+  const ground = (action: string) =>
+    getComputedStyle(formatButton(action)).backgroundColor;
+  const on = ground("para");
+  const off = ground("h2");
+  formatButton("h2").click();
+  await new Promise((r) => requestAnimationFrame(r));
+  expect(writtenBy(para.id).tagName).toBe("H2");
+  expect(ground("h2")).toBe(on);
+  expect(ground("para")).toBe(off);
+});
+
 // ---- headers, footers and page numbers --------------------------------------
 
 /** `a.pdf` of three pages, each with a running head in the top band, two

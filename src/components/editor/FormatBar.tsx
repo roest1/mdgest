@@ -134,7 +134,9 @@ export function FormatBar({ docId }: { docId: string }) {
 }
 
 /** Lit: what every selected block already is, on a ground of its own.
- *  Pointed at, only the mark brightens -- the ground is for "on". */
+ *  Pointed at, only the mark brightens -- the ground is for "on". Only
+ *  the mark's color eases: the ground changes in the frame the edit
+ *  shows in, or a press would look slower than the page it changed. */
 const LIT = "bg-raised text-ink";
 const UNLIT = "text-muted enabled:hover:text-ink";
 
@@ -163,7 +165,7 @@ function Tool({
       data-action={action}
       disabled={disabled}
       onClick={onClick}
-      className={`flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors
+      className={`flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color]
         disabled:cursor-default disabled:opacity-35 ${on ? LIT : UNLIT}`}
     >
       {children}
@@ -195,7 +197,7 @@ function Glyph({
       data-action={action}
       onClick={onClick}
       className={`flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md font-mono text-xs
-        transition-colors ${on ? LIT : UNLIT}`}
+        transition-[color] ${on ? LIT : UNLIT}`}
     >
       {children}
     </button>
