@@ -101,6 +101,37 @@ test("a font still loading is waited for, not read as regular", async () => {
   });
 });
 
+test("a glyph named only by a control character is written as U+FFFD, in place", async () => {
+  const run = (str: string, y: number) => ({
+    str,
+    transform: [12, 0, 0, 12, 72, y],
+    width: 100,
+    height: 12,
+    fontName: "g_d0_f1",
+    dir: "ltr",
+    hasEOL: false,
+  });
+  const { page } = await readPage(
+    standIn({
+      getTextContent: async () => ({
+        // A bracket from a math face between two words, one such glyph on
+        // a line of its own, and a line with none.
+        items: [
+          run("Radiative\u0000 transfer\u001b", 700),
+          run("\u0001", 650),
+          run("where the constants are arbitrary", 600),
+        ],
+        styles: { g_d0_f1: { ascent: 0.9, descent: -0.2, vertical: false } },
+      }),
+    }),
+  );
+  expect(page.lines.map((line) => line.text)).toEqual([
+    "Radiative\uFFFD transfer\uFFFD",
+    "\uFFFD",
+    "where the constants are arbitrary",
+  ]);
+});
+
 /** The RGB of the pixel at (`x`, `y`) in a PNG. */
 async function pixel(png: ArrayBuffer, x: number, y: number) {
   const bitmap = await createImageBitmap(new Blob([png]));
