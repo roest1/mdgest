@@ -9,9 +9,18 @@
  * written next. Nothing between the first and the last of the run needs to
  * be on disk, and the last is what is. */
 
-import { redo, revertToOriginal, undo, type Edits } from "./edits";
+import {
+  redo,
+  revertToOriginal,
+  setFurniture,
+  setLine,
+  undo,
+  type Edits,
+} from "./edits";
 import { emit } from "./emit";
 import { engine } from "./engine";
+import { restyle, type Press } from "./formatting";
+import type { Choice, Furniture } from "./furniture";
 import { actionsFor, hiding } from "./hiding";
 import { useEditor } from "./store";
 import { messageOf } from "./words";
@@ -59,6 +68,34 @@ export function actOnSelection(button: "hide" | "del"): void {
     selection.docId,
     hiding(selection.ids, reading.analysis, placed, offered.action),
   );
+}
+
+/** Press one of the format bar's buttons on the selection
+ *  (`formatting.ts`). Nothing with nothing selected, or when the bar is
+ *  not offered for it. */
+export function formatSelection(press: Press): void {
+  const { selection, readings } = useEditor.getState();
+  if (!selection) return;
+  const reading = readings[selection.docId];
+  if (reading?.status !== "ready") return;
+  commitEdits(
+    selection.docId,
+    restyle(selection.ids, reading.analysis, reading.markdown.blocks, press),
+  );
+}
+
+/** Keep, hide or delete one kind of `docId`'s page furniture, or one of
+ *  its repeated headers and footers by its wording (`furniture.ts`): one
+ *  step each. */
+export function setFurnitureEdit(
+  docId: string,
+  kind: Furniture,
+  choice: Choice,
+): void {
+  commitEdits(docId, (edits) => setFurniture(edits, kind, choice));
+}
+export function setLineEdit(docId: string, key: string, choice: Choice): void {
+  commitEdits(docId, (edits) => setLine(edits, key, choice));
 }
 
 /** Take back `docId`'s last step, make again the one last taken back, or

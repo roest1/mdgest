@@ -7,14 +7,19 @@ import { commands, page } from "vitest/browser";
 import { createRoot } from "react-dom/client";
 import { act, createElement } from "react";
 import { RouterProvider, createMemoryRouter } from "react-router";
+import { blocksById } from "src/lib/analysis";
 import {
   actOnSelection,
+  formatSelection,
   redoEdit,
   revertEdits,
   saved,
+  setFurnitureEdit,
+  setLineEdit,
   undoEdit,
 } from "src/lib/editing";
 import { emit } from "src/lib/emit";
+import { repeatedLines } from "src/lib/furniture";
 import { engine } from "src/lib/engine";
 import { useEditor, type Reading } from "src/lib/store";
 import { assetsPrefix } from "src/lib/workspace";
@@ -118,6 +123,17 @@ function alternate(first: Press, then: Press): Press {
   let n = 0;
   return () => (n++ % 2 === 0 ? first : then)();
 }
+/** A paragraph made a heading and back: what the format bar's buttons
+ *  cost, each press a real edit. */
+const headingPara = alternate(
+  () => formatSelection("h2"),
+  () => formatSelection("para"),
+);
+/** Every page number hidden, then kept: the whole book written again. */
+const pageNumbersHideKeep = alternate(
+  () => setFurnitureEdit(DOC, "page_numbers", "hide"),
+  () => setFurnitureEdit(DOC, "page_numbers", "keep"),
+);
 const undoRedo = alternate(
   () => undoEdit(DOC),
   () => redoEdit(DOC),
@@ -187,6 +203,9 @@ test("edits on a long book", async () => {
   const written = r.markdown.order.filter((id) => r.markdown.blocks[id].n > 0);
   const early = written[5];
   const mid = written[written.length >> 1];
+  // A paragraph near `early`, for the format bar: a role a press changes.
+  const byId = blocksById(r.analysis);
+  const para = written.slice(5).find((id) => byId.get(id)?.role === "para")!;
 
   const filled = (sel: string) =>
     expect
@@ -201,6 +220,19 @@ test("edits on a long book", async () => {
   await scenario("rendered: hide early", [early], button("hide"));
   await scenario("rendered: hide mid", [mid], button("hide"));
   await scenario("rendered: delete early", [early], button("del"));
+  await scenario("rendered: H2/¶ early", [para], headingPara);
+  await scenario("rendered: hide page numbers", [early], pageNumbersHideKeep);
+  // The book's first repeated header or footer, deleted then kept.
+  const line = repeatedLines(r.analysis)[0];
+  if (line)
+    await scenario(
+      "rendered: delete a repeated line",
+      [early],
+      alternate(
+        () => setLineEdit(DOC, line.key, "delete"),
+        () => setLineEdit(DOC, line.key, "keep"),
+      ),
+    );
   if (!only || only.test("rendered: undo")) {
     await made([early], "del");
     await scenario("rendered: undo/redo delete", [early], undoRedo);
@@ -222,6 +254,8 @@ test("edits on a long book", async () => {
   await scenario("raw: hide early", [early], button("hide"));
   await scenario("raw: delete early", [early], button("del"));
   await scenario("raw: delete mid", [mid], button("del"));
+  await scenario("raw: H2/¶ early", [para], headingPara);
+  await scenario("raw: hide page numbers", [early], pageNumbersHideKeep);
   if (!only || only.test("raw: undo")) {
     await made([early], "del");
     await scenario("raw: undo/redo delete", [early], undoRedo);

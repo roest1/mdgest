@@ -10,8 +10,8 @@ line calls it. No test is run or judged here.
 The job is the JSON file named on the command line: the folder the PDFs
 and their tests are in, the folder the markdown is in, the PDFs to score,
 the folder to work in, and the tool's name. What the scorer wrote is
-summed up in `summary.json` there: its `metrics.json` as it stands, and
-how many tests each category held and passed.
+summed up in `summary.json` there: its `metrics.json` as it stands, how
+many tests each category held and passed, and each test's own verdict.
 
 One thing is settled before the scorer runs. Its tests normalise the text
 with a function that raises on markdown it takes for binary -- a NUL
@@ -31,6 +31,29 @@ from benchpdf2md.bench_tests.benchmark_tsts import BaselineTest
 from benchpdf2md.create_dataset import create_dataset
 from benchpdf2md.run_benchmark import run_and_save_benchmark
 from vlmparse.data_model.document import Document, Page
+
+
+def wants(row: dict) -> str:
+    """What a test looks for, in a line."""
+
+    def quote(key: str) -> str:
+        value = row.get(key)
+        return json.dumps(value if isinstance(value, str) else "", ensure_ascii=False)
+
+    if row["type"] == "present":
+        return f"{quote('text')} present"
+    if row["type"] == "absent":
+        return f"{quote('text')} absent"
+    if row["type"] == "order":
+        return f"{quote('before')} before {quote('after')}"
+    if row["type"] == "table":
+        near = [
+            f"{side} {quote(side)}"
+            for side in ("up", "down", "left", "right")
+            if isinstance(row.get(side), str) and row[side]
+        ]
+        return f"cell {quote('cell')}" + (", " + ", ".join(near) if near else "")
+    return "text, and not the same thing over and over"
 
 
 def main() -> None:
@@ -67,6 +90,18 @@ def main() -> None:
     summary = {
         "metrics": json.loads((written / "metrics.json").read_text()),
         "refused": refused,
+        "verdicts": [
+            {
+                "file": os.path.relpath(row["pdf_path"], pdfs),
+                "id": row["test_id"],
+                "type": row["type"],
+                "category": row["category"],
+                "wants": wants(row),
+                "passed": bool(row["result"]),
+                "why": None if row["result"] else str(row["explanation"]),
+            }
+            for row in results.to_dict(orient="records")
+        ],
         "categories": {
             name: {"passed": int(row["sum"]), "total": int(row["count"])}
             for name, row in by_category.iterrows()

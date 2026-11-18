@@ -26,18 +26,20 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { Input, Score, Tally } from "../adapter.ts";
+import type { Input, Score, Scored, Tally, Verdict } from "../adapter.ts";
 import { envDir, workDir } from "../cache.ts";
 import type { Benchmark } from "../manifest.ts";
 import { python, scorerOf } from "../python.ts";
 import type { Quote } from "../split.ts";
-import { stem } from "../tools.ts";
+import { stem } from "../job.ts";
 
 const PROJECT = "olmocr";
 
 /** A test as its `.jsonl` line has it; only the fields read here. */
 interface Test {
   pdf: string;
+  id: string;
+  math?: string;
   page: number;
   type: "present" | "absent" | "order" | "table" | "math" | "baseline";
   max_diffs?: number;
@@ -51,6 +53,25 @@ interface Test {
   right?: string | null;
   top_heading?: string | null;
   left_heading?: string | null;
+}
+
+/** What a test looks for, in a line. */
+function wants(test: Test): string {
+  const quote = (text?: string | null) => JSON.stringify(text ?? "");
+  if (test.type === "present") return `${quote(test.text)} present`;
+  if (test.type === "absent") return `${quote(test.text)} absent`;
+  if (test.type === "order")
+    return `${quote(test.before)} before ${quote(test.after)}`;
+  if (test.type === "table") {
+    const near = (["up", "down", "left", "right"] as const)
+      .filter((side) => test[side])
+      .map((side) => `${side} ${quote(test[side])}`);
+    if (test.top_heading) near.push(`under ${quote(test.top_heading)}`);
+    if (test.left_heading) near.push(`beside ${quote(test.left_heading)}`);
+    return `cell ${quote(test.cell)}${near.length ? `, ${near.join(", ")}` : ""}`;
+  }
+  if (test.type === "math") return `formula ${test.math ?? ""}`;
+  return "text, and not the same thing over and over";
 }
 
 /** A category: its `.jsonl`, line by line, each with the test it parses to. */
@@ -179,7 +200,7 @@ export async function score(
   out: string,
   files: string[],
   set: string,
-): Promise<Score & { scorer: string }> {
+): Promise<Scored> {
   const version = scorer(b);
   const work = workDir(b, tool, set);
   await rm(work, { recursive: true, force: true });
@@ -210,5 +231,53 @@ export async function score(
     tool,
   ]);
   await writeFile(join(work, "scorer.txt"), printed);
-  return { ...parse(printed, tool), inputs: files.length, scorer: version };
+
+  // Each test's verdict: the scorer prints the ones that failed, and why.
+  const failed = new Map<string, string>();
+  for (const [, id, why] of printed.matchAll(
+    /^\s*\[FAIL\] Test (\S+) on .*? Ex: (.*)$/gm,
+  ))
+    failed.set(id, why);
+  const verdicts: Verdict[] = [];
+  const tested = new Set<string>();
+  for (const { name, lines } of await categories(data))
+    for (const { test } of lines) {
+      if (!wanted.has(test.pdf)) continue;
+      if (test.type === "baseline") tested.add(test.pdf);
+      verdicts.push({
+        file: test.pdf,
+        id: test.id,
+        type: test.type,
+        category: name,
+        wants: wants(test),
+        passed: !failed.has(test.id),
+        why: failed.get(test.id),
+      });
+    }
+  // The baseline test the scorer adds for a PDF that has none of its own.
+  for (const file of files) {
+    if (tested.has(file)) continue;
+    const id = `${file}_baseline`;
+    verdicts.push({
+      file,
+      id,
+      type: "baseline",
+      category: "baseline",
+      wants: "text, and not the same thing over and over",
+      passed: !failed.has(id),
+      why: failed.get(id),
+    });
+  }
+  const parsed = parse(printed, tool);
+  // The verdicts are read off the lines the scorer prints for a failure;
+  // its own count of each file's tests says whether every one was read.
+  for (const [name, tally] of Object.entries(parsed.categories ?? {})) {
+    const mine = verdicts.filter((verdict) => verdict.category === name);
+    const passed = mine.filter((verdict) => verdict.passed).length;
+    if (passed !== tally.passed || mine.length !== tally.total)
+      throw new Error(
+        `the scorer has ${tally.passed} of ${tally.total} tests passed in ${name}; the failures it printed come to ${passed} of ${mine.length}`,
+      );
+  }
+  return { ...parsed, inputs: files.length, scorer: version, verdicts };
 }

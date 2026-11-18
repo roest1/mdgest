@@ -26,3 +26,9 @@ dist-ssr
 # Test runs: failure screenshots, and the fixture PDFs `bun run fixtures` writes
 .vitest/
 tests/out/
+
+# The benchmarks' review report: `bun run bench:report` writes it
+bench/accuracy/out/
+
+# Python's, from the peers' shared helper
+__pycache__/

@@ -14,6 +14,13 @@ export interface Benchmark {
   revision: string;
   /** The files of `repo` that are fetched; the rest is left there. */
   files: RegExp;
+  /** Files taken from other commits of `repo`, when one commit does not
+   *  hold everything: a later one's ground truth for an earlier one's
+   *  PDFs. */
+  also?: { revision: string; files: RegExp }[];
+  /** What every number of this benchmark is to be read with, when it is
+   *  not the benchmark as published. */
+  label?: string;
   /** The scorer's package and the version of it that scores: the one
    *  `<name>/pyproject.toml` installs, checked before each scoring. One
    *  installed from a repository is pinned by its commit, written after
@@ -58,7 +65,30 @@ export const BENCHMARKS: Benchmark[] = [
       },
     },
   },
+  {
+    name: "omnidocbench",
+    repo: "opendatalab/OmniDocBench",
+    // The pages that were published as PDFs: v1.0's 981, the originals
+    // and not the copies made from their images. The 670 pages v1.5 and
+    // v1.6 added exist only as images, which mdgest cannot read.
+    revision: "f5f559bddf50e36f7f9899d842d0006f13ce8afc",
+    files: /^ori_pdfs\/.+\.pdf$/,
+    // Scored against v1.6's ground truth, for those pages.
+    also: [
+      {
+        revision: "aa1ee96d106dbe53d0ae59474d75c6e6d9b53fec",
+        files: /^OmniDocBench\.json$/,
+      },
+    ],
+    label: "v1.6 GT, 981-page PDF subset",
+    scorer: { package: "omnidocbench-eval", version: "1.6.0 @7ddb8df4" },
+  },
 ];
+
+/** Every commit `b`'s data is pinned to, as one word: what a results line
+ *  and the cache know a benchmark's data by. */
+export const revisionOf = (b: Benchmark) =>
+  [b.revision, ...(b.also ?? []).map((more) => more.revision)].join("+");
 
 export function benchmark(name: string): Benchmark {
   const found = BENCHMARKS.find((b) => b.name === name);

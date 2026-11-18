@@ -4,6 +4,10 @@
 /** Around the pages, and between them, in CSS px. */
 export const PAD = 16;
 export const GAP = 16;
+/** Below the last row, past `PAD`: room to scroll the last page's foot
+ *  clear of the format bar floating over the bottom of the panes
+ *  (`FormatBar`, 12px up and about 38px tall). */
+export const FOOT = 56;
 
 export interface Row {
   /** The row's pages left to right: 1-based number and drawn size in CSS px.
