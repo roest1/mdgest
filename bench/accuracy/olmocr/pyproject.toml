@@ -6,7 +6,9 @@
 [project]
 name = "mdgest-bench-olmocr"
 version = "0"
-requires-python = "==3.14.*"
+# Not 3.14: its argparse refuses a help string in the scorer's command line,
+# and the scorer does not start.
+requires-python = "==3.13.*"
 dependencies = [
   "olmocr[bench]==0.4.27",
   # Imported by `olmocr.bench` but not declared by it.

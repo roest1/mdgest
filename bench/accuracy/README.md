@@ -20,8 +20,9 @@ bun run bench:accuracy all                                   # every benchmark i
 | `olmocr`   | 1,403 single-page PDFs      | `olmocr.bench`, 8,413 unit tests                 |
 | `fr-bench` | 721 single-page French PDFs | `benchpdf2md`, 2,318 unit tests of the same kind |
 
-It needs [uv](https://docs.astral.sh/uv/) and a Python 3.14 for the scorers,
-and the Chromium `bun run test` already uses. The first run of a benchmark
+It needs [uv](https://docs.astral.sh/uv/), the Pythons the scorers and peers
+are pinned to (3.13 for olmOCR-bench's scorer, which does not start on 3.14;
+3.14 for the rest), and the Chromium `bun run test` already uses. The first run of a benchmark
 fetches its data (about 350 MB each) and builds its scorer's environment;
 both are kept in `~/.cache/mdgest-bench/`, or wherever `MDGEST_BENCH_CACHE`
 says.
