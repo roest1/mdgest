@@ -191,13 +191,13 @@ function interpolate(from: number[], to: number[], x: number): number {
  *  when scrolled to the top, to its bottom edge at the bottom. With the
  *  scrollers' ends paired, that puts both ends of one at both ends of the
  *  other, and the middle of the view in the middle. */
-function probe(el: HTMLElement): number {
+export function probe(el: HTMLElement): number {
   const room = el.scrollHeight - el.clientHeight;
   return room > 0 ? el.scrollTop + (el.scrollTop / room) * el.clientHeight : 0;
 }
 
 /** The scrollTop whose probe is at `y`: `probe` solved for scrollTop. */
-function scrollFor(el: HTMLElement, y: number): number {
+export function scrollFor(el: HTMLElement, y: number): number {
   return (y * (el.scrollHeight - el.clientHeight)) / el.scrollHeight;
 }
 

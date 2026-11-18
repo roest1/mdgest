@@ -1,3 +1,4 @@
+import { probe } from "src/lib/scrollsync";
 import {
   ChevronRight,
   createLucideIcon,
@@ -79,6 +80,7 @@ export function PdfSidebar({
   current,
   outline,
   onPage,
+  onStrip,
   onOutline,
 }: {
   state: SlideState;
@@ -92,6 +94,9 @@ export function PdfSidebar({
   current: number;
   outline: OutlineNode[];
   onPage: (page: number) => void;
+  /** The strip scrolled by a person: the pages are to be at `fraction` of
+   *  the way through `page`. */
+  onStrip: (page: number, fraction: number) => void;
   onOutline: (node: OutlineNode) => void;
 }) {
   const picked = outline.length === 0 ? "thumbnails" : view;
@@ -134,6 +139,7 @@ export function PdfSidebar({
             snapshots={snapshots}
             current={current}
             onPage={onPage}
+            onStrip={onStrip}
           />
         ) : (
           <Outline nodes={outline} onOutline={onOutline} />
@@ -154,6 +160,7 @@ function Thumbnails({
   snapshots,
   current,
   onPage,
+  onStrip,
 }: {
   state: SlideState;
   pages: PDFPageProxy[];
@@ -161,8 +168,13 @@ function Thumbnails({
   snapshots: Snapshots;
   current: number;
   onPage: (page: number) => void;
+  onStrip: (page: number, fraction: number) => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
+  /** The offset the strip was last scrolled to here, following the pages:
+   *  a scroll event landing there is this one's, and leads nothing. */
+  const placed = useRef<number | null>(null);
+
   const [near, setNear] = useState<ReadonlySet<number>>(NONE);
 
   // Which thumbnails are within a screen of the view, and so worth drawing.
@@ -208,10 +220,51 @@ function Thumbnails({
     if (top < strip.scrollTop + STRIP_PAD) strip.scrollTop = top - STRIP_PAD;
     else if (bottom > strip.scrollTop + strip.clientHeight - STRIP_PAD)
       strip.scrollTop = bottom - strip.clientHeight + STRIP_PAD;
+    else return;
+    // As the browser kept it: what its scroll event will find.
+    placed.current = strip.scrollTop;
   }, [current, shown]);
 
+  // Scrolled by a person, the strip leads: the pages go to where it is
+  // looking -- the same sliding line the panes keep in step by
+  // (`scrollsync.ts`), so the strip's top is the first page and its bottom
+  // the last -- as far through that page as it is through its thumbnail.
+  const onScroll = () => {
+    const strip = scroller.current;
+    if (!strip) return;
+    if (
+      placed.current !== null &&
+      Math.abs(strip.scrollTop - placed.current) < 1
+    )
+      return;
+    placed.current = null;
+    const thumbs = strip.querySelectorAll<HTMLElement>("[data-page]");
+    if (thumbs.length === 0) return;
+    const y = probe(strip);
+    // The last thumbnail starting at or above the line.
+    let lo = 0;
+    let hi = thumbs.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (thumbs[mid].offsetTop <= y) lo = mid;
+      else hi = mid - 1;
+    }
+    // Its share of the strip: to the next thumbnail, the first from the
+    // strip's top and the last to its foot.
+    const from = lo === 0 ? 0 : thumbs[lo].offsetTop;
+    const to =
+      lo === thumbs.length - 1 ? strip.scrollHeight : thumbs[lo + 1].offsetTop;
+    const fraction = Math.min(1, Math.max(0, (y - from) / (to - from)));
+    const thumb = thumbs[lo];
+    onStrip(Number(thumb.dataset.page), fraction);
+  };
+
   return (
-    <div ref={scroller} className="relative h-full overflow-y-auto py-3 pr-3">
+    <div
+      ref={scroller}
+      onScroll={onScroll}
+      className="relative h-full overflow-y-auto py-3 pr-3"
+    >
       <div className="flex flex-col items-center gap-3">
         {pages.map((page, i) => (
           <Thumb

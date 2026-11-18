@@ -73,6 +73,7 @@ export interface Step {
    *  was kept, which leaves that setting as it is. */
   page_numbers?: Choice;
   headers_footers?: Choice;
+  repeated_lines?: Record<string, Choice>;
 }
 
 export interface Edits {
@@ -96,6 +97,10 @@ export interface Edits {
    *  repeated from page to page (`furniture.ts`). Absent is `keep`. */
   page_numbers?: Choice;
   headers_footers?: Choice;
+  /** One repeated header or footer's own choice, by its wording
+   *  (`RepeatedLine.key`), over `headers_footers` for that line. Absent
+   *  when no line has one. */
+  repeated_lines?: Record<string, Choice>;
   undo: Step[];
   redo: Step[];
   /** Whatever else the file held, passed through untouched. */
@@ -115,6 +120,7 @@ export function isBlank(edits: Edits): boolean {
     Object.keys(edits.cuts ?? {}).length === 0 &&
     (edits.inserts ?? []).length === 0 &&
     FURNITURE.every((kind) => edits[kind] === undefined) &&
+    Object.keys(edits.repeated_lines ?? {}).length === 0 &&
     edits.undo.length === 0 &&
     edits.redo.length === 0
   );
@@ -243,6 +249,15 @@ function checkFurniture(
       throw problem(`has a ${kind} setting it cannot have`);
     }
   }
+  const lines = value.repeated_lines;
+  if (lines === undefined) return;
+  if (
+    !isRecord(lines) ||
+    !Object.values(lines).every(
+      (c) => typeof c === "string" && (CHOICES as string[]).includes(c),
+    )
+  )
+    throw problem("has a repeated line setting it cannot have");
 }
 
 /** Whether `raw` is a step undo could put back: its decisions checked as
@@ -482,6 +497,17 @@ export function setFurniture(
   return step(edits, { ...decided(edits), [kind]: choice });
 }
 
+/** The edits with the repeated header or footer `key` kept, hidden or
+ *  deleted, over the `headers_footers` setting for it, as one step. A
+ *  choice that is what the setting would give anyway is stored as
+ *  nothing. */
+export function setLine(edits: Edits, key: string, choice: Choice): Edits {
+  const lines = { ...edits.repeated_lines };
+  if (choice === (edits.headers_footers ?? "keep")) delete lines[key];
+  else lines[key] = choice;
+  return step(edits, { ...decided(edits), repeated_lines: lines });
+}
+
 /** What one step records of `edits`: everything undo puts back. */
 function decided(edits: Edits): Required<Step> {
   return {
@@ -491,6 +517,7 @@ function decided(edits: Edits): Required<Step> {
     inserts: edits.inserts ?? [],
     page_numbers: edits.page_numbers ?? "keep",
     headers_footers: edits.headers_footers ?? "keep",
+    repeated_lines: edits.repeated_lines ?? {},
   };
 }
 
@@ -513,6 +540,9 @@ function restore(edits: Edits, s: Step): Edits {
     if (choice === undefined || choice === "keep") delete next[kind];
     else next[kind] = choice;
   }
+  const lines = s.repeated_lines ?? edits.repeated_lines;
+  if (lines && Object.keys(lines).length) next.repeated_lines = lines;
+  else delete next.repeated_lines;
   return next;
 }
 
@@ -524,7 +554,8 @@ function step(edits: Edits, next: Required<Step>): Edits {
     shallowEqual(edits.joins, next.joins) &&
     sameCuts(edits.cuts ?? {}, next.cuts) &&
     JSON.stringify(edits.inserts ?? []) === JSON.stringify(next.inserts) &&
-    FURNITURE.every((kind) => (edits[kind] ?? "keep") === next[kind])
+    FURNITURE.every((kind) => (edits[kind] ?? "keep") === next[kind]) &&
+    shallowEqual(edits.repeated_lines ?? {}, next.repeated_lines)
   ) {
     return edits;
   }
@@ -644,6 +675,7 @@ export function revertToOriginal(edits: Edits): Edits {
     inserts: [],
     page_numbers: "keep",
     headers_footers: "keep",
+    repeated_lines: {},
   });
 }
 

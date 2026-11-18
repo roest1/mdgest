@@ -1678,3 +1678,326 @@ test("undo, redo and revert to original, from the tool bar and the keys, kept wi
   await expect.poll(() => placedOf(title)?.deleted).toBe(false);
   expect(placedOf(para.id)?.hidden).toBe(true);
 });
+
+// ---- formatting -------------------------------------------------------------
+
+/** The format bar, where it is shown, or null. */
+const formatBar = () =>
+  document.querySelector<HTMLElement>("[data-format-bar]");
+/** The bar's button for `action`: `h2`, `para`, `quote`, `bold`... */
+const formatButton = (action: string) =>
+  formatBar()!.querySelector<HTMLButtonElement>(`[data-action="${action}"]`)!;
+const pressed = (action: string) =>
+  formatBar()?.querySelector(`[data-action="${action}"]`)?.ariaPressed;
+/** The source line block `id` wrote, as it stands. */
+const sourceOf = (id: string) =>
+  readingOf()?.status === "ready"
+    ? (
+        readingOf() as Extract<Reading, { status: "ready" }>
+      ).markdown.lines.find((l) => l.block === id)?.text
+    : undefined;
+
+test("the format bar is there while the selection is text, and sets how it is written, lit for what it is", async () => {
+  const { title, para, picture } = await openedToEdit();
+  expect(formatBar()).toBeNull();
+  await userEvent.click(boxOf(para.id));
+  await expect.poll(() => pressed("para")).toBe("true");
+  expect(pressed("h2")).toBe("false");
+  // Indent is a list's, and this is a paragraph: there, but not pressable.
+  expect(formatButton("indent").disabled).toBe(true);
+  expect(formatButton("outdent").disabled).toBe(true);
+
+  // A heading, in the source and the rendered view, and the selection kept.
+  await userEvent.click(formatButton("h2"));
+  await expect.poll(() => sourceOf(para.id)?.startsWith("## ")).toBe(true);
+  await expect.poll(() => writtenBy(para.id).tagName).toBe("H2");
+  expect(selectedIds()).toEqual([para.id]);
+  await expect.poll(() => pressed("h2")).toBe("true");
+  expect(pressed("para")).toBe("false");
+  // A heading is set in its own weight.
+  expect(formatButton("bold").disabled).toBe(true);
+  // One step, which undo takes back.
+  await page.getByRole("button", { name: "Undo (Ctrl+Z)" }).click();
+  await expect.poll(() => writtenBy(para.id).tagName).toBe("P");
+
+  // Bulleted, then bulleted again: a paragraph once more. Alone in its
+  // list it is the first item, which has nothing to nest under.
+  await userEvent.click(formatButton("bullet"));
+  await expect.poll(() => sourceOf(para.id)?.startsWith("- ")).toBe(true);
+  await expect.poll(() => pressed("bullet")).toBe("true");
+  expect(formatButton("indent").disabled).toBe(true);
+  await userEvent.click(formatButton("bullet"));
+  await expect.poll(() => writtenBy(para.id).tagName).toBe("P");
+  await expect.poll(() => pressed("para")).toBe("true");
+
+  // Two quoted: one quote in the rendered view, each block lit in it, the
+  // quote itself no block of its own.
+  await userEvent.click(writtenBy(title), { modifiers: ["Shift"] });
+  expect(selectedIds()).toEqual([title, para.id]);
+  await userEvent.click(formatButton("quote"));
+  await expect
+    .poll(() => document.querySelectorAll(".markdown blockquote").length)
+    .toBe(1);
+  const quote = document.querySelector(".markdown blockquote")!;
+  expect(quote.hasAttribute("data-block")).toBe(false);
+  expect(quote.contains(writtenBy(title))).toBe(true);
+  expect(quote.contains(writtenBy(para.id))).toBe(true);
+  expect(writtenBy(title).matches(".selection")).toBe(true);
+  expect(writtenBy(para.id).matches(".selection")).toBe(true);
+  expect(pressed("quote")).toBe("true");
+  // In the source, each line tinted for what follows its `>`.
+  await page.getByRole("radio", { name: "raw" }).click();
+  const rawLine = (id: string) =>
+    document.querySelector<HTMLElement>(`.source > li[data-block="${id}"]`);
+  await expect.poll(() => rawLine(title)?.dataset.kind).toBe("heading");
+  expect(rawLine(title)!.textContent).toMatch(/^> # /);
+
+  // A picture is not formatted: alone, the bar goes.
+  await userEvent.click(boxOf(picture));
+  expect(selectedIds()).toEqual([picture]);
+  await expect.poll(formatBar).toBeNull();
+});
+
+test("the page column ends far enough below the last page to scroll it clear of the format bar", async () => {
+  const { line } = await openedToEdit();
+  await userEvent.click(boxOf(line));
+  await expect.poll(formatBar).not.toBeNull();
+  const scroller = pdfScroller();
+  await scrollTo(scroller, room(scroller));
+  const bar = formatBar()!.getBoundingClientRect();
+  const view = scroller.getBoundingClientRect();
+  // Over the pane: it is the page it would cover.
+  expect(bar.top).toBeLessThan(view.bottom);
+  expect(paper().getBoundingClientRect().bottom).toBeLessThanOrEqual(bar.top);
+});
+
+test("the bar lights what was pressed in the frame the page shows it, with no fade", async () => {
+  const { para } = await openedToEdit();
+  await userEvent.click(boxOf(para.id));
+  await expect.poll(() => pressed("para")).toBe("true");
+  const ground = (action: string) =>
+    getComputedStyle(formatButton(action)).backgroundColor;
+  const on = ground("para");
+  const off = ground("h2");
+  formatButton("h2").click();
+  await new Promise((r) => requestAnimationFrame(r));
+  expect(writtenBy(para.id).tagName).toBe("H2");
+  expect(ground("h2")).toBe(on);
+  expect(ground("para")).toBe(off);
+});
+
+// ---- headers, footers and page numbers --------------------------------------
+
+/** `a.pdf` of three pages, each with a running head in the top band, two
+ *  lines of body, and its page number in the bottom band. */
+const withFurniture = async () =>
+  new File(
+    [
+      await buildPdf(
+        [1, 2, 3].map((n) => (pen: Pen) => {
+          pen.text(X, 40, "Field Maintenance Manual");
+          pen.lines(X, TOP + PARAGRAPH, prose(2, n));
+          pen.text(300, 760, String(n));
+        }),
+      ),
+    ],
+    "a.pdf",
+  );
+const markdownText = () =>
+  readingOf()?.status === "ready"
+    ? (readingOf() as Extract<Reading, { status: "ready" }>).markdown.text
+    : "";
+
+test("page numbers are decided in the Headers & footers panel, beside each repeated line, as edits", async () => {
+  await workspace(await withFurniture());
+  mount("/edit/a");
+  await ready();
+  // One button for what is printed around the text, counting what there
+  // is to decide: the page numbers and the one repeated line.
+  const buttons = () => Array.from(document.querySelectorAll("button"));
+  const button = () =>
+    buttons().find((b) => b.textContent?.startsWith("Headers & footers"));
+  await expect.poll(() => button()?.textContent).toBe("Headers & footers2");
+  expect(buttons().some((b) => b.textContent?.startsWith("Page numbers"))).toBe(
+    false,
+  );
+  await userEvent.click(button()!);
+  const group = (name: string) =>
+    document.querySelector<HTMLElement>(`[role="group"][aria-label="${name}"]`);
+  /** The button of group `name` that says `word`. */
+  const move = (name: string, word: string) =>
+    Array.from(group(name)?.querySelectorAll("button") ?? []).find(
+      (b) => b.textContent?.trim() === word,
+    );
+  await expect.poll(() => group("Page numbers")?.textContent).toMatch(/123/);
+  expect(group("Repeated lines")?.textContent).toContain(
+    "Field Maintenance Manual",
+  );
+
+  // Hidden: each page number a comment in the markdown.
+  await userEvent.click(move("Page numbers", "hide")!);
+  await expect.poll(markdownText).toContain("<!-- page 2 -->");
+  await expect.poll(() => move("Page numbers", "show")).toBeTruthy();
+  // The line deleted on its own: gone from every page, the numbers as they
+  // were.
+  await userEvent.click(move("Repeated lines", "delete")!);
+  await expect.poll(markdownText).not.toContain("Field Maintenance Manual");
+  expect(markdownText()).toContain("<!-- page 3 -->");
+  // Each its own step: undo brings the line back and leaves the numbers.
+  await page.getByRole("button", { name: "Undo (Ctrl+Z)" }).click();
+  await expect.poll(markdownText).toContain("Field Maintenance Manual");
+  expect(markdownText()).toContain("<!-- page 2 -->");
+
+  // Kept with the document.
+  await saved("a");
+  await page.getByRole("button", { name: "Close a" }).click();
+  await expect.poll(() => readingOf()).toBeUndefined();
+  root!.unmount();
+  host!.remove();
+  mount("/edit/a");
+  const again = await ready();
+  expect(again.edits.page_numbers).toBe("hide");
+  expect(again.markdown.text).toContain("<!-- page 1 -->");
+});
+
+test("the Headers & footers panel stays inside the window, and its rows scroll", async () => {
+  await workspace(await withFurniture());
+  mount("/edit/a");
+  await ready();
+  await page.viewport(1280, 250);
+  try {
+    const button = () =>
+      Array.from(document.querySelectorAll("button")).find((b) =>
+        b.textContent?.startsWith("Headers & footers"),
+      );
+    await expect.poll(() => button()?.disabled).toBe(false);
+    await userEvent.click(button()!);
+    const panel = () =>
+      document.querySelector<HTMLElement>(
+        '[role="dialog"][aria-label="Headers and footers"]',
+      );
+    await expect.poll(panel).not.toBeNull();
+    const at = panel()!.getBoundingClientRect();
+    expect(at.bottom).toBeLessThanOrEqual(window.innerHeight);
+    expect(at.right).toBeLessThanOrEqual(window.innerWidth);
+    // What does not fit scrolls, under the panel's name.
+    const rows = panel()!.querySelector<HTMLElement>(".overflow-y-auto")!;
+    expect(rows.scrollHeight).toBeGreaterThan(rows.clientHeight);
+    rows.scrollTop = rows.scrollHeight;
+    expect(rows.scrollTop).toBeGreaterThan(0);
+    expect(panel()!.textContent).toContain("Headers & footers");
+  } finally {
+    await page.viewport(1280, 800);
+  }
+});
+
+test("scrolling the pages keeps the current page's thumbnail lit and in sight", async () => {
+  await workspace(pdf(40));
+  mount("/edit/a");
+  await pagesDrawn();
+  await page.getByTitle("Show sidebar").click();
+  const strip = () => document.querySelector<HTMLElement>('[role="tabpanel"]')!;
+  const lit = () => strip().querySelector<HTMLElement>('[aria-current="page"]');
+  await expect.poll(() => lit()?.dataset.page ?? lit()?.title).toBeTruthy();
+  /** Whether the lit thumbnail is wholly inside what the strip shows. */
+  const inSight = () => {
+    const thumb = lit()?.getBoundingClientRect();
+    const view = strip().getBoundingClientRect();
+    return (
+      !!thumb && thumb.top >= view.top - 1 && thumb.bottom <= view.bottom + 1
+    );
+  };
+  // Three quarters down the book, then back to the start.
+  for (const at of [0.75, 0.4, 0]) {
+    const scroller = pdfScroller();
+    await scrollTo(scroller, room(scroller) * at);
+    const want = at === 0 ? "Page 1" : null;
+    await expect
+      .poll(() => lit()?.title, settle)
+      .toSatisfy((t: string | undefined) =>
+        want ? t === want : !!t && t !== "Page 1",
+      );
+    await expect.poll(inSight, settle).toBe(true);
+  }
+});
+
+test("scrolling the thumbnails scrolls the pages with them, end to end, and the strip stays where it was put", async () => {
+  await workspace(pdf(40));
+  mount("/edit/a");
+  await pagesDrawn();
+  await page.getByTitle("Show sidebar").click();
+  const strip = () =>
+    document.querySelector<HTMLElement>('[role="tabpanel"] .overflow-y-auto')!;
+  const lit = () =>
+    document.querySelector<HTMLElement>(
+      '[role="tabpanel"] [aria-current="page"]',
+    )?.title;
+  await expect.poll(lit).toBe("Page 1");
+  // Slid in, and the pane done resizing under it: its thumbnails drawn.
+  await expect
+    .poll(() => document.querySelectorAll('[role="tabpanel"] canvas').length)
+    .toBeGreaterThan(0);
+  await new Promise((r) => setTimeout(r, 300));
+  const pages = pdfScroller();
+  const through = () => pages.scrollTop / room(pages);
+
+  // Half way down the strip: half way down the pages, and the page lit is
+  // one in the middle of the book.
+  await scrollTo(strip(), room(strip()) * 0.5);
+  await expect.poll(through, settle).toBeCloseTo(0.5, 1);
+  await expect
+    .poll(() => Number(lit()?.replace("Page ", "")), settle)
+    .toSatisfy((n: number) => n >= 15 && n <= 26);
+  // Led by the strip, the pages do not pull it back.
+  const left = strip().scrollTop;
+  await new Promise((r) => setTimeout(r, 500));
+  expect(strip().scrollTop).toBeCloseTo(left, 0);
+
+  // Its ends are the book's.
+  await scrollTo(strip(), room(strip()));
+  await expect
+    .poll(() => room(pages) - pages.scrollTop, settle)
+    .toBeLessThan(2);
+  await expect.poll(lit, settle).toBe("Page 40");
+  await scrollTo(strip(), 0);
+  await expect.poll(() => pages.scrollTop, settle).toBeLessThan(2);
+  await expect.poll(lit, settle).toBe("Page 1");
+
+  // And the pages, scrolled, lead the strip again.
+  await new Promise((r) => setTimeout(r, 400));
+  await scrollTo(pages, room(pages) * 0.75);
+  const put = pages.scrollTop;
+  await expect
+    .poll(() => Number(lit()?.replace("Page ", "")), settle)
+    .toBeGreaterThan(25);
+  await expect.poll(() => strip().scrollTop, settle).toBeGreaterThan(left);
+  // The strip following is not a person scrolling it: the pages stay put.
+  await new Promise((r) => setTimeout(r, 300));
+  expect(pages.scrollTop).toBeCloseTo(put, 0);
+});
+
+test("in a window short enough to show one thumbnail, the strip still leads without being pulled back", async () => {
+  await workspace(pdf(40));
+  mount("/edit/a");
+  await pagesDrawn();
+  await page.viewport(1280, 330);
+  try {
+    await page.getByTitle("Show sidebar").click();
+    await expect
+      .poll(() => document.querySelectorAll('[role="tabpanel"] canvas').length)
+      .toBeGreaterThan(0);
+    await new Promise((r) => setTimeout(r, 300));
+    const strip = document.querySelector<HTMLElement>(
+      '[role="tabpanel"] .overflow-y-auto',
+    )!;
+    // A person's scroll comes as many small ones, each a frame apart.
+    for (let i = 1; i <= 20; i++) {
+      strip.scrollTop = i * 37;
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    await new Promise((r) => setTimeout(r, 500));
+    expect(strip.scrollTop).toBeCloseTo(20 * 37, 0);
+  } finally {
+    await page.viewport(1280, 800);
+  }
+});

@@ -11,7 +11,11 @@ import {
 import {
   blankEdits,
   checkEdits,
+  isBlank,
+  redo,
+  revertToOriginal,
   setFurniture,
+  setLine,
   undo,
   type Edits,
 } from "src/lib/edits";
@@ -20,6 +24,8 @@ import {
   countFurniture,
   headersFooters,
   label,
+  pageNumbers,
+  repeatedLines,
   wording,
 } from "src/lib/furniture";
 
@@ -246,5 +252,96 @@ describe("headers and footers", () => {
     const back = undo(both);
     expect(back.headers_footers).toBeUndefined();
     expect(back.page_numbers).toBe("delete");
+  });
+});
+
+describe("each repeated line on its own", () => {
+  const doc3 = threePages();
+  const lines = repeatedLines(doc3);
+  const head = wording("Annual Report 2024");
+  const foot = wording("Chapter 1 — Findings");
+
+  test("lines are grouped by wording, with their band, pages and blocks", () => {
+    expect(lines).toEqual([
+      {
+        key: head,
+        text: "Annual Report 2024",
+        where: "top",
+        pages: [1, 2, 3],
+        ids: ["p1b0", "p2b0", "p3b0"],
+      },
+      {
+        key: foot,
+        text: "Chapter 1 — Findings",
+        where: "bottom",
+        pages: [1, 2, 3],
+        ids: ["p1b3", "p2b3", "p3b3"],
+      },
+    ]);
+    // One detector: the flat set is the lines' blocks.
+    expect(headersFooters(doc3)).toEqual(
+      new Set(lines.flatMap((line) => line.ids)),
+    );
+  });
+
+  test("the page numbers, in page order, and their band", () => {
+    expect(pageNumbers(doc3)).toEqual({
+      labels: ["1", "2", "3"],
+      pages: [1, 2, 3],
+      where: "bottom",
+    });
+  });
+
+  test("a line's own choice writes only that line", () => {
+    const md = emit(doc3, "a/", setLine(blankEdits(), head, "hide")).text;
+    expect(md).toContain("<!-- Annual Report 2024 -->");
+    expect(md).toMatch(/^Chapter 2 — Findings$/m);
+    const gone = emit(doc3, "a/", setLine(blankEdits(), foot, "delete")).text;
+    expect(gone).not.toContain("Findings");
+    expect(gone).toMatch(/^Annual Report 2024$/m);
+  });
+
+  test("a line's own choice is over the setting for all of them", () => {
+    const all = setFurniture(blankEdits(), "headers_footers", "hide");
+    const kept = setLine(all, head, "keep");
+    expect(kept.repeated_lines).toEqual({ [head]: "keep" });
+    const md = emit(doc3, "a/", kept).text;
+    expect(md).toMatch(/^Annual Report 2024$/m);
+    expect(md).toContain("<!-- Chapter 1 — Findings -->");
+    // What the setting gives anyway is stored as nothing.
+    expect(setLine(all, foot, "hide")).toBe(all);
+  });
+
+  test("one step each, which undo, redo and revert take as they take any", () => {
+    const hid = setLine(blankEdits(), head, "hide");
+    expect(hid.undo).toHaveLength(1);
+    expect(isBlank(hid)).toBe(false);
+    const back = undo(hid);
+    expect(back.repeated_lines).toBeUndefined();
+    expect(redo(back).repeated_lines).toEqual({ [head]: "hide" });
+    // Keep, where nothing is set for them all, is no entry at all.
+    expect(setLine(hid, head, "keep").repeated_lines).toBeUndefined();
+    const reverted = revertToOriginal(setLine(hid, foot, "delete"));
+    expect(reverted.repeated_lines).toBeUndefined();
+    expect(undo(reverted).repeated_lines).toEqual({
+      [head]: "hide",
+      [foot]: "delete",
+    });
+  });
+
+  test("read back from edits.json, and refused when it cannot be", () => {
+    const hid = setLine(blankEdits(), head, "delete");
+    const back = checkEdits(JSON.parse(JSON.stringify(hid)), "its edits.json");
+    expect(back.repeated_lines).toEqual({ [head]: "delete" });
+    expect(back.undo).toHaveLength(1);
+    expect(() =>
+      checkEdits(
+        { ...blankEdits(), repeated_lines: { [head]: "mark" } },
+        "its edits.json",
+      ),
+    ).toThrow(/repeated line/);
+    expect(() =>
+      checkEdits({ ...blankEdits(), repeated_lines: [] }, "its edits.json"),
+    ).toThrow(/repeated line/);
   });
 });
