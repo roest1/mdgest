@@ -31,6 +31,10 @@ import { figureName } from "./workspace";
 export interface Read {
   page: ReadPage;
   figures: Figure[];
+  /** Every run's text on the page as it was read, before any of it was
+   *  made into lines: what the fidelity check (`fidelity.ts`) holds the
+   *  markdown to, so a word the grouping loses is still expected. */
+  text: string;
 }
 
 type Matrix = [number, number, number, number, number, number];
@@ -944,8 +948,7 @@ function lineOf(group: Run[]): Line {
   };
 }
 
-async function readLines(page: PDFPageProxy): Promise<Line[]> {
-  const runs = await readRuns(page);
+function readLines(runs: Run[]): Line[] {
   const lines: Line[] = [];
   const bands = baselines(runs);
   for (let i = 0; i < bands.length; i += 1) {
@@ -1024,7 +1027,10 @@ function markLinks(lines: Line[], links: { box: Box; url: string }[]): void {
 export async function readPage(page: PDFPageProxy): Promise<Read> {
   const { width, height } = page.getViewport({ scale: 1 });
   const { pictures, figures } = await readPictures(page);
-  const lines = await readLines(page);
+  const runs = await readRuns(page);
+  // Taken before the runs are grouped, whatever the grouping does to them.
+  const text = runs.map((run) => run.text).join(" ");
+  const lines = readLines(runs);
   markLinks(lines, await readLinks(page));
   // The decoded images are the bulk of what pdf.js holds per page, and a
   // page being drawn keeps its own; this only frees what nothing is using.
@@ -1038,5 +1044,6 @@ export async function readPage(page: PDFPageProxy): Promise<Read> {
       pictures,
     },
     figures,
+    text,
   };
 }

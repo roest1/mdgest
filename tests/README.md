@@ -14,7 +14,15 @@ What this code decides, not what the language or the browser guarantees.
 **The reader.** `reader.test.ts` runs every case through the app's own path
 -- pdf.js opens the fixture, `readPage` reads each page, `structure` makes
 the blocks, `emit` writes the markdown -- and asserts that the installed
-pdf.js is the version `READER` was made with (`src/lib/analysis.ts`). The reader is almost all decisions:
+pdf.js is the version `READER` was made with (`src/lib/analysis.ts`). Every
+case is also held to the fidelity check (`src/lib/fidelity.ts`): its markdown
+carries every letter and digit its pages print, as `readPage` read them
+before any were grouped -- a case the reader is known to get wrong as well,
+since a wrong reading may still lose nothing. `fidelity.test.ts` covers what
+the check leaves out of a page: deleted blocks, deleted page furniture,
+corrected blocks on both sides, list markers; that hidden words are carried
+and counted apart; and that markup, a figure's alt text among it, is not
+words. The reader is almost all decisions:
 every threshold in `read.ts` and `structure.ts` is a guess about how a page
 is read, so most cases sit a known distance either side of one. The cases
 live in `cases/`, one file per area its name says: headings, lists, blocks, words,
