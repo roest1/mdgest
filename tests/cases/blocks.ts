@@ -7,7 +7,7 @@
  * the prose here has a capital and a descender on every line, so each line's
  * ink is 9.2pt tall and a 1.1 × gap is 10.12pt. */
 
-import { LEADING, PARAGRAPH } from "../fixtures/pdf";
+import { LEADING, PARAGRAPH, widthOf, type Pen } from "../fixtures/pdf";
 import type { Case } from "./case";
 import { joined, prose, TOP, X } from "./text";
 
@@ -20,6 +20,23 @@ const RIGHT = [
   ["Any reading outside the posted", "range is reported the same day."],
   ["Grease the pump bearings every", "quarter with the lithium type."],
 ];
+
+/** A line set one run per word, `space` points between them, the way some
+ *  PDFs store justified type. Returns where the line ends. */
+function wordRuns(pen: Pen, x: number, y: number, text: string, space: number) {
+  const [first, ...rest] = text.split(" ");
+  pen.text(x, y, first);
+  for (const word of rest) pen.then(space, word);
+  return x + widthOf(text.replaceAll(" ", "")) + space * rest.length;
+}
+
+/** Wider than the space the reader always joins at (0.6 × 9.2pt, 5.5pt),
+ *  as loose justified type sets them; and a gutter wider than that, still
+ *  narrower than the widest space a line may hold (2.5 × 10pt). */
+const LOOSE = 7;
+const NARROW_GUTTER = 12;
+/** Two lines of a column, the second ending in a reference. */
+const MANUAL = ["Spare gaskets are listed in", "the supply manual (Fig."];
 
 export const blocks: Case[] = [
   {
@@ -178,16 +195,72 @@ export const blocks: Case[] = [
   {
     name: "blocks-runs-on-a-line",
     about:
-      "Two runs on one baseline join as one line when the gap between them is under 0.6 × the line height (5pt against 9.2pt); wider (6.5pt) they are two columns.",
+      "Two runs on one baseline join as one line when the gap between them is under 0.6 × the line height (5pt against 9.2pt); wider (6.5pt), on a line with no line near it to say the gap is a space, they are two columns.",
     pages: [
       (pen) => {
         pen.text(X, TOP, "Pressure");
         pen.then(5, "Gauge reading");
-        pen.text(X, TOP + PARAGRAPH, "Pressure");
+        pen.text(X, TOP + 3 * PARAGRAPH, "Pressure");
         pen.then(6.5, "Gauge reading");
       },
     ],
     blocks: ["p Pressure Gauge reading", "p Pressure", "p Gauge reading"],
+  },
+  {
+    name: "blocks-word-runs-wide-spaces",
+    about:
+      "Justified type stored one run per word, its spaces 7pt wide: wider than the gap the reader always joins, and the lines around have ink where each space is, so each line is one line and the lines one paragraph.",
+    pages: [
+      (pen) =>
+        prose(4).forEach((t, i) =>
+          wordRuns(pen, X, TOP + i * LEADING, t, LOOSE),
+        ),
+    ],
+    blocks: [`p ${joined(prose(4))}`],
+  },
+  {
+    name: "blocks-word-runs-gutter",
+    about:
+      "Two columns of word runs with 7pt spaces and a 12pt gutter, the right column's baselines 1pt below the left's: the strip between the columns is clear on every line around, so it is a gutter, and each column is read whole.",
+    pages: [
+      (pen) => {
+        const left = LEFT.flat();
+        const ends = left.map(
+          (t) =>
+            X +
+            widthOf(t.replaceAll(" ", "")) +
+            LOOSE * (t.split(" ").length - 1),
+        );
+        const right = Math.max(...ends) + NARROW_GUTTER;
+        left.forEach((t, i) => wordRuns(pen, X, TOP + i * LEADING, t, LOOSE));
+        RIGHT.flat().forEach((t, i) =>
+          wordRuns(pen, right, TOP + 1 + i * LEADING, t, LOOSE),
+        );
+      },
+    ],
+    blocks: [`p ${joined(LEFT.flat())}`, `p ${joined(RIGHT.flat())}`],
+  },
+  {
+    name: "blocks-marker-ends-a-line",
+    about:
+      'A run like a list marker at the end of a line -- "54)" in "(Fig. 54)", a run of its own -- is no bullet: the gap after it is not widened as a bullet\'s is, and the 12pt gutter after it stays a gutter.',
+    pages: [
+      (pen) => {
+        const left = [MANUAL[0], `${MANUAL[1]} 54)`, ...LEFT[1]];
+        const right =
+          X + Math.max(...left.map((t) => widthOf(t))) + LOOSE + NARROW_GUTTER;
+        pen.text(X, TOP, MANUAL[0]);
+        pen.text(X, TOP + LEADING, MANUAL[1]);
+        // Far enough off for pdf.js to keep it a run of its own.
+        pen.then(LOOSE, "54)");
+        LEFT[1].forEach((t, i) => pen.text(X, TOP + (i + 2) * LEADING, t));
+        RIGHT.flat().forEach((t, i) => pen.text(right, TOP + i * LEADING, t));
+      },
+    ],
+    blocks: [
+      `p ${joined([MANUAL[0], `${MANUAL[1]} 54)`, ...LEFT[1]])}`,
+      `p ${joined(RIGHT.flat())}`,
+    ],
   },
   {
     name: "blocks-space-or-kerning",
