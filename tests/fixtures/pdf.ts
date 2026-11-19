@@ -6,7 +6,13 @@
  * no metadata that changes per run, so a fixture written twice is the same
  * file. */
 
-import { PDFDocument, PDFString, StandardFonts, type PDFFont } from "pdf-lib";
+import {
+  PDFDocument,
+  PDFString,
+  StandardFontEmbedder,
+  StandardFonts,
+  type PDFFont,
+} from "pdf-lib";
 import { solidPng } from "./png";
 
 export const PAGE_W = 612;
@@ -65,6 +71,21 @@ type Op =
       mask: boolean;
       shade: number;
     };
+
+/** How wide `text` is set, in points: for a case that places one run where
+ *  another ends, as a column's edge does. */
+export function widthOf(
+  text: string,
+  size: number = BODY,
+  face: Face = "regular",
+): number {
+  // pdf-lib's own names for the standard faces, which `StandardFonts`
+  // spells out the same strings of.
+  const name = FONTS[face] as unknown as Parameters<
+    typeof StandardFontEmbedder.for
+  >[0];
+  return StandardFontEmbedder.for(name).widthOfTextAtSize(text, size);
+}
 
 /** The body size every case sets its paragraphs in, unless it says otherwise. */
 export const BODY = 10;

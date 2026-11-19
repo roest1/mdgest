@@ -472,10 +472,26 @@ const BASELINE_OVERLAP = 0.5;
  *  subscript, which is set small and shifted by a third of the body's
  *  size, and not enough for the line above or below. */
 const BASELINE_SHIFT = 0.8;
+/** Runs within this ratio of each other's size are set in one size. */
+const SAME_SIZE = 1.25;
 /** Runs closer than this (× the taller one's height) are one line... */
 const JOIN_GAP_RATIO = 0.6;
 /** ...and after a list marker, this much: the gap behind a bullet is wide. */
 const MARKER_GAP_RATIO = 3;
+/** A wider gap than that, up to this (× the font size), can still be a
+ *  space: justified type stored one run per word spreads its spaces past an
+ *  em on a loose line, and a gutter can be narrower than that. Which it is,
+ *  the lines around it say (`spaceBetween`)... */
+const WORD_SPACE = 2.5;
+/** ...looked for this far above and below (× the font size)... */
+const GUTTER_LOOK = 5;
+/** ...on this many lines each way, and clear on at least this many of
+ *  them... */
+const GUTTER_LINES = 3;
+const GUTTER_CLEAR = 3;
+/** ...in each half of the gap, short of its edge by this much (× the font
+ *  size): a column's edge wanders that far from line to line. */
+const GUTTER_INSET = 0.15;
 /** A gap this wide (× height) between two runs of a line is a space. */
 const SPACE_GAP_RATIO = 0.15;
 
@@ -718,41 +734,169 @@ function oneBaseline(span: [number, number], box: Box): boolean {
  * So the ink test decides, and the baseline has a veto. */
 function baselines(runs: Run[]): Run[][] {
   const bands: Run[][] = [];
-  let span: [number, number] = [0, 0];
-  let base = 0;
-  let size = 0;
+  // Bands a later run can still reach. The runs come top to bottom, so a
+  // band whose ink ends above this run's top is out of reach for good; and
+  // one beside a newer one is not: two columns whose baselines do not meet
+  // take turns, and the run after one column's band can be the other's.
+  // The newest band takes any run that stands on it; an older one only a
+  // run of its own size, so a drop cap is not drawn into the line it
+  // stands on by the order the runs came in.
+  let open: {
+    runs: Run[];
+    span: [number, number];
+    base: number;
+    size: number;
+  }[] = [];
   for (const run of [...runs].sort(
     (p, q) => p.box.y - q.box.y || p.box.x - q.box.x,
   )) {
     const { y, h } = run.box;
-    const stands =
-      Math.abs(run.base - base) <= BASELINE_SHIFT * Math.min(run.size, size);
-    if (bands.length && stands && oneBaseline(span, run.box)) {
-      bands[bands.length - 1].push(run);
-      span = [Math.min(span[0], y), Math.max(span[1], y + h)];
+    open = open.filter((band) => band.span[1] >= y);
+    let best: (typeof open)[number] | null = null;
+    for (const band of open) {
+      const off = Math.abs(run.base - band.base);
+      const alike =
+        Math.max(run.size, band.size) <=
+        SAME_SIZE * Math.min(run.size, band.size);
+      if (
+        (band.runs === bands[bands.length - 1] || alike) &&
+        off <= BASELINE_SHIFT * Math.min(run.size, band.size) &&
+        oneBaseline(band.span, run.box) &&
+        (best === null || off < Math.abs(run.base - best.base))
+      )
+        best = band;
+    }
+    if (best) {
+      best.runs.push(run);
+      best.span = [Math.min(best.span[0], y), Math.max(best.span[1], y + h)];
       // The band stands where its plainest run does: a superscript joins
       // the line, and the line does not move up to meet the next one.
-      if (run.size > size) [base, size] = [run.base, run.size];
+      if (run.size > best.size) [best.base, best.size] = [run.base, run.size];
     } else {
-      bands.push([run]);
-      span = [y, y + h];
-      [base, size] = [run.base, run.size];
+      const band = {
+        runs: [run],
+        span: [y, y + h] as [number, number],
+        base: run.base,
+        size: run.size,
+      };
+      open.push(band);
+      bands.push(band.runs);
     }
   }
   return bands;
 }
 
+/** Whether any of `band`'s ink is in `[a, b]` across the page, and whether
+ *  it starts before the strip and ends after it -- a line that runs across. */
+function across(band: Run[], a: number, b: number) {
+  let inside = false;
+  let left = false;
+  let right = false;
+  for (const { box } of band) {
+    if (box.x < b && box.x + box.w > a) inside = true;
+    if (box.x < a) left = true;
+    if (box.x + box.w > b) right = true;
+  }
+  return { spans: left && right, free: !inside };
+}
+
+/** What the lines around band `i` say of the strip `[a, b]`: the nearest
+ *  `GUTTER_LINES` above it and below it, within `GUTTER_LOOK`, that run
+ *  across it in type of its size. A line that does not reach across the
+ *  strip -- the short last line of a paragraph, a column whose baselines do
+ *  not meet the other's -- says nothing, and nor does a headline or a note
+ *  set larger or smaller. Of the rest, how many are clear there and how
+ *  many have ink, and whether one side's lines, all `GUTTER_LINES` of them,
+ *  are clear. */
+function lined(
+  bands: Run[][],
+  i: number,
+  a: number,
+  b: number,
+  size: number,
+): { clear: number; ink: number; side: boolean } {
+  const y = bands[i][0].box.y;
+  let clear = 0;
+  let ink = 0;
+  let whole = false;
+  for (const step of [-1, 1]) {
+    let side = 0;
+    let inked = false;
+    for (let k = i + step; k >= 0 && k < bands.length; k += step) {
+      if (Math.abs(bands[k][0].box.y - y) > GUTTER_LOOK * size) break;
+      const near = bands[k].filter(
+        (r) => Math.max(r.size, size) <= SAME_SIZE * Math.min(r.size, size),
+      );
+      const { spans, free } = across(near, a, b);
+      if (!spans) continue;
+      if (free) clear += 1;
+      else [ink, inked] = [ink + 1, true];
+      side += 1;
+      if (side === GUTTER_LINES) break;
+    }
+    if (side === GUTTER_LINES && !inked) whole = true;
+  }
+  return { clear, ink, side: whole };
+}
+
+/** Whether a gap between two runs, wider than a plain space, is still one.
+ *  It is a gutter, not a space, where the lines around it are clear in one
+ *  half of it -- the half by a left-aligned column's edge, or by a
+ *  right-aligned one's -- on `GUTTER_CLEAR` lines or more, and on more of
+ *  the lines that run across it than not: a strip empty down the page, a
+ *  title or a rule across the top of it notwithstanding -- or on every
+ *  line on one side of it, where a column ends above a table or a list
+ *  that runs the width of the page. Word spaces line up now and then, two
+ *  lines at a time; they do not do it for long. It is a space where a line
+ *  around it has ink in it. With no line around it to say either, it is
+ *  not: a lone line keeps the reading it had. */
+function spaceBetween(
+  bands: Run[][],
+  i: number,
+  edge: number,
+  start: number,
+  size: number,
+): boolean {
+  const inset = GUTTER_INSET * size;
+  const middle = (edge + start) / 2;
+  const halves = [
+    lined(bands, i, edge + inset, middle, size),
+    lined(bands, i, middle, start - inset, size),
+  ];
+  if (
+    halves.some((h) => h.side || (h.clear >= GUTTER_CLEAR && h.clear > h.ink))
+  )
+    return false;
+  return halves.some((h) => h.ink > 0);
+}
+
 /** A band's runs left to right, cut where the gap is wide enough to be a
  *  column, not a space. */
-function neighbors(band: Run[]): Run[][] {
+function neighbors(bands: Run[][], i: number): Run[][] {
+  const band = bands[i];
   const groups: Run[][] = [];
   let edge = 0;
   let previous: Run | null = null;
   for (const run of [...band].sort((p, q) => p.box.x - q.box.x)) {
-    const ratio =
-      previous && isMarker(previous.text) ? MARKER_GAP_RATIO : JOIN_GAP_RATIO;
+    // A marker opens its line: "54)" at the end of one, as in "(Hom. 54)",
+    // is not a bullet, and the gap after it may be a gutter.
+    const marker =
+      previous !== null &&
+      groups[groups.length - 1].length === 1 &&
+      isMarker(previous.text);
+    const ratio = marker ? MARKER_GAP_RATIO : JOIN_GAP_RATIO;
     const reach = ratio * Math.max(previous?.box.h ?? 0, run.box.h);
-    if (groups.length && run.box.x - edge <= reach) {
+    const gap = run.box.x - edge;
+    // A space is set in the type on either side of it: between a headline
+    // and a line of body text, a gap is not one.
+    const size = Math.min(previous?.size ?? 0, run.size);
+    const spaced = () =>
+      previous !== null &&
+      !marker &&
+      Math.max(previous.size, run.size) <= SAME_SIZE * size &&
+      gap <= WORD_SPACE * size &&
+      spaceBetween(bands, i, edge, run.box.x, size);
+    if (groups.length && (gap <= reach || spaced())) {
       groups[groups.length - 1].push(run);
       edge = Math.max(edge, run.box.x + run.box.w);
     } else {
@@ -803,8 +947,9 @@ function lineOf(group: Run[]): Line {
 async function readLines(page: PDFPageProxy): Promise<Line[]> {
   const runs = await readRuns(page);
   const lines: Line[] = [];
-  for (const band of baselines(runs)) {
-    for (const group of neighbors(band)) lines.push(lineOf(group));
+  const bands = baselines(runs);
+  for (let i = 0; i < bands.length; i += 1) {
+    for (const group of neighbors(bands, i)) lines.push(lineOf(group));
   }
   return lines.sort((p, q) => p.box.y - q.box.y || p.box.x - q.box.x);
 }

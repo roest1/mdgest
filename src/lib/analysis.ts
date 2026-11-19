@@ -46,7 +46,7 @@ export const UNUSABLE_ANALYSIS = "UnusableAnalysis";
  *  of a block's words, so edits made on one reader's blocks mean nothing
  *  on another's. An export carries each document's, and an import from
  *  another reader starts that document over. */
-export const READER = 4;
+export const READER = 5;
 
 /** The pdf.js `READER` was made with. pdf.js is part of the reader: an
  *  upgrade can change the text runs `read.ts` is given. A test fails when
