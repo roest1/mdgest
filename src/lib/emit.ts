@@ -62,6 +62,38 @@ export interface Markdown {
   order: string[];
 }
 
+/** A roman numeral's value, or NaN for one that is not well formed. */
+function romanValue(numeral: string): number {
+  const digits: Record<string, number> = { i: 1, v: 5, x: 10, l: 50, c: 100 };
+  const values = [...numeral.toLowerCase()].map((c) => digits[c] ?? NaN);
+  return values.reduce(
+    (sum, v, i) => sum + (v < (values[i + 1] ?? 0) ? -v : v),
+    0,
+  );
+}
+
+/** Where in its list the page printed `block`: its number, the letter's
+ *  place in the alphabet, the numeral's value -- what the markdown writes
+ *  it as. NaN when its marker says none for its role, as for a block a
+ *  person made an item: it is counted on from the item before. */
+export function printedValue(block: Block): number {
+  const inside = /^\(?([^().]+)[.)]$/.exec(block.marker.trim())?.[1] ?? "";
+  if (block.role === "numbered" && /^\d{1,3}$/.test(inside))
+    return Number(inside);
+  if (block.role === "alpha" && /^[a-z]$/i.test(inside))
+    return inside.toLowerCase().charCodeAt(0) - 96;
+  if (block.role === "roman" && /^[ivxlc]+$/i.test(inside))
+    return romanValue(inside);
+  return NaN;
+}
+
+/** The number a hidden item's comment writes it with: the one it
+ *  printed, or 1. */
+function firstNumber(block: Block): number {
+  const printed = printedValue(block);
+  return Number.isNaN(printed) ? 1 : printed;
+}
+
 /** The list markers, counted, and the column each item starts in: a
  *  paragraph resets the numbering, and coming back up a level resets the
  *  deeper ones.
@@ -69,11 +101,21 @@ export interface Markdown {
  * Every ordered marker is decimal, whatever style the page printed --
  * CommonMark reads only digits as ordered lists, so `a.` or `iii.` would
  * be a paragraph -- and the pane's nested-list styles letter and numeral
- * the levels back. A nested item starts in the column its parent's text
- * did, which is what makes it nested at all: a fixed two spaces is not
- * enough under `1. `. */
+ * the levels back. Each is the number the page printed (`printedValue`):
+ * CommonMark starts a list at its first item's number, so a reference
+ * list printed from 113 is written and shown from 113, and a list that
+ * goes on over a page goes on counting there. An item printed out of
+ * turn -- 10 after 2 -- would be shown as 3 in the list it is in, so it
+ * starts one of its own, by the other delimiter, `)` for `.`: the one
+ * thing that ends an ordered list in CommonMark without a blank line,
+ * which would make the list loose.
+ *
+ * A nested item starts in the column its parent's text did, which is what
+ * makes it nested at all: a fixed two spaces is not enough under `1. `. */
 class Counters {
-  private counts = new Map<string, number>();
+  /** `open[d]`: the ordered list open at depth `d` -- its last item's
+   *  number and its delimiter -- or null for none. */
+  private open: ({ last: number; delimiter: "." | ")" } | null)[] = [];
   /** `cols[d]`: the column depth `d`'s markers go in. Grown one level at
    *  a time, so an item deeper than any list yet open joins the deepest
    *  one there is. */
@@ -85,20 +127,26 @@ class Counters {
     block: Block,
   ): { marker: string; indent: string; depth: number } | null {
     if (!LIST_ROLES.includes(block.role)) {
-      this.counts.clear();
+      this.open = [];
       this.cols = [0];
       return null;
     }
     const depth = Math.min(Math.max(0, block.depth), this.cols.length - 1);
-    for (const key of [...this.counts.keys()]) {
-      if (Number(key.split(":")[1]) > depth) this.counts.delete(key);
-    }
+    this.open.length = Math.min(this.open.length, depth + 1);
     let marker = "-";
-    if (block.role !== "bullet") {
-      const key = `${block.role}:${depth}`;
-      const k = (this.counts.get(key) ?? 0) + 1;
-      this.counts.set(key, k);
-      marker = `${k}.`;
+    if (block.role === "bullet") this.open[depth] = null;
+    else {
+      const list = this.open[depth] ?? null;
+      const printed = printedValue(block);
+      const value = Number.isNaN(printed) ? (list?.last ?? 0) + 1 : printed;
+      const delimiter =
+        list === null || value === list.last + 1
+          ? (list?.delimiter ?? ".")
+          : list.delimiter === "."
+            ? ")"
+            : ".";
+      this.open[depth] = { last: value, delimiter };
+      marker = `${value}${delimiter}`;
     }
     const col = this.cols[depth];
     this.cols = [...this.cols.slice(0, depth + 1), col + marker.length + 1];
@@ -272,9 +320,9 @@ export function emit(
       }
       if (block.hidden) {
         // The line it would be, commented out: markup and all, so reading
-        // it back is reading any line. A list item takes its kind's first
-        // marker, since a comment is not counted in the list. A page
-        // number hidden by the setting is the number it prints.
+        // it back is reading any line. A list item takes the number it
+        // printed, or 1, since a comment is not counted in the list. A
+        // page number hidden by the setting is the number it prints.
         const said =
           printed !== null
             ? `page ${printed}`
@@ -285,7 +333,7 @@ export function emit(
                 : block.role === "bullet"
                   ? `- ${words}`
                   : LIST_ROLES.includes(block.role)
-                    ? `1. ${words}`
+                    ? `${firstNumber(block)}. ${words}`
                     : words;
         const q = block.quote ? "> " : "";
         // Inside a list the comment is indented into the item before it,

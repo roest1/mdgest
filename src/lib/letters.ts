@@ -57,12 +57,26 @@ export function carriedOf(expected: Counts, got: Counts): number {
 }
 
 /** The text of a tree as a reader of the rendered markdown sees it: every
- *  text node, a space between. Attributes -- a figure's alt text, a link's
- *  target -- are not text. */
+ *  text node, a space between, and each ordered list item's number, which
+ *  is drawn although no text node holds it -- from the list's `start`, one
+ *  up for each item. Attributes -- a figure's alt text, a link's target --
+ *  are not text. */
 function textIn(nodes: (RootContent | ElementContent)[], into: string[]): void {
   for (const node of nodes) {
     if (node.type === "text") into.push(node.value);
-    else if (node.type === "element") textIn(node.children, into);
+    else if (node.type === "element") {
+      if (node.tagName !== "ol") {
+        textIn(node.children, into);
+        continue;
+      }
+      const start = Number(node.properties.start ?? 1);
+      let n = Number.isFinite(start) ? start : 1;
+      for (const item of node.children) {
+        if (item.type !== "element" || item.tagName !== "li") continue;
+        into.push(String(n++));
+        textIn(item.children, into);
+      }
+    }
   }
 }
 

@@ -201,3 +201,21 @@ test("markup is not words: a figure's alt text covers no word lost", () => {
 test("a document with nothing printed has nothing to carry", () => {
   expect(score("", doc([])).coverage).toBe(1);
 });
+
+test("a numbered item's number is expected, and read off the list as drawn", () => {
+  const items = ["113.", "114."].map((marker, i) =>
+    block(`p1b${i}`, i ? "Log it." : "Grease it.", "numbered", { marker }),
+  );
+  const layer = "113. Grease it. 114. Log it.";
+  expect(score(layer, doc(items)).coverage).toBe(1);
+  // Written from 1, as emit did before #98, the numbers are lost.
+  const renumbered = fidelity([layer], doc(items), {
+    ...emit(doc(items), "doc.assets/"),
+    text: "1. Grease it.\n2. Log it.\n",
+    lines: [
+      { text: "1. Grease it.", block: "p1b0", page: 1 },
+      { text: "2. Log it.", block: "p1b1", page: 1 },
+    ],
+  });
+  expect(renumbered.pages[0].missing).toEqual(["113", "114"]);
+});

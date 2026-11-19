@@ -107,14 +107,15 @@ describe("emit", () => {
     expect(md.text.trim()).toBe("<!-- a -- > b -->");
   });
 
-  test("a hidden list item is indented into the list, which goes on past it", () => {
+  test("a hidden list item is indented into the list, by its own number, and the next item keeps its own", () => {
     const list = analysis([
       block("p1b0", "one", "numbered", "1."),
       block("p1b1", "two", "numbered", "2."),
       block("p1b2", "three", "numbered", "3."),
     ]);
     const md = emit(list, "doc.assets/", withEdits({ p1b1: { hidden: true } }));
-    expect(md.text).toBe("1. one\n   <!-- 1. two -->\n2. three\n");
+    // 3 after 1 would be shown as 2 in the list it is in: it starts its own.
+    expect(md.text).toBe("1. one\n   <!-- 2. two -->\n3) three\n");
   });
 });
 
