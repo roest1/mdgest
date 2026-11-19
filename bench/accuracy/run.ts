@@ -19,7 +19,8 @@ import { existsSync } from "node:fs";
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Adapter } from "./adapter.ts";
-import { keptDir } from "./cache.ts";
+import { keptDir, outDir } from "./cache.ts";
+import { coverage, tallies } from "./coverage.ts";
 import { fetchData } from "./fetch.ts";
 import * as frBench from "./fr-bench/adapter.ts";
 import { BENCHMARKS, benchmark, type Benchmark } from "./manifest.ts";
@@ -141,6 +142,9 @@ async function run(b: Benchmark, { tool: t, only, limit }: Options) {
         .then((scored) => ({ ...scored, verdicts: undefined }))
     : null;
 
+  // Held against the text layers mdgest's converter wrote, whichever tool
+  // this is: what the PDF carries is the same for all of them.
+  const each = await tallies(outDir(b, mdgest.name), made.out, files);
   const entry = line(
     b,
     everything.scorer,
@@ -149,6 +153,10 @@ async function run(b: Benchmark, { tool: t, only, limit }: Options) {
     everything,
     textLayer,
     began.commit,
+    {
+      all: coverage(each, files),
+      text_layer: withLayer.length ? coverage(each, withLayer) : null,
+    },
   );
   console.log(`\n${show(entry)}`);
   for (const [file, why] of Object.entries(made.errors))

@@ -7,6 +7,7 @@ import { version } from "pdfjs-dist";
 import { describe, expect, test } from "vitest";
 import { READ_WITH } from "src/lib/analysis";
 import { emit } from "src/lib/emit";
+import { fidelity } from "src/lib/fidelity";
 import { openPdf } from "src/lib/pdf";
 import { readPage } from "src/lib/read";
 import { structure, type ReadPage } from "src/lib/structure";
@@ -19,9 +20,13 @@ async function read(bytes: Uint8Array<ArrayBuffer>) {
   const pdf = await task.promise;
   try {
     const pages: ReadPage[] = [];
-    for (let n = 1; n <= pdf.numPages; n++)
-      pages.push((await readPage(await pdf.getPage(n))).page);
-    return structure(pages);
+    const layers: string[] = [];
+    for (let n = 1; n <= pdf.numPages; n++) {
+      const { page, text } = await readPage(await pdf.getPage(n));
+      pages.push(page);
+      layers.push(text);
+    }
+    return { analysis: structure(pages), layers };
   } finally {
     await task.destroy();
   }
@@ -50,10 +55,24 @@ for (const [group, list] of Object.entries(cases)) {
     for (const c of list) {
       const run = c.known ? test.fails : test;
       run(`${c.name}: ${c.about}`, async () => {
-        const analysis = await read(await buildPdf(c.pages));
+        const { analysis } = await read(await buildPdf(c.pages));
         expect(summarize(analysis)).toEqual(c.blocks);
         if (c.markdown !== undefined)
           expect(emit(analysis, "doc.assets/").text).toBe(c.markdown);
+      });
+      // Whatever the blocks: a case the reader gets wrong still loses no
+      // word.
+      test(`${c.name}: the markdown carries every word`, async () => {
+        const { analysis, layers } = await read(await buildPdf(c.pages));
+        const scored = fidelity(
+          layers,
+          analysis,
+          emit(analysis, "doc.assets/"),
+        );
+        expect(
+          scored.pages.map(({ page, missing }) => ({ page, missing })),
+        ).toEqual(scored.pages.map(({ page }) => ({ page, missing: [] })));
+        expect(scored.carried).toBe(scored.expected);
       });
     }
   });

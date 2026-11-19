@@ -106,6 +106,17 @@ of what the page should say (`split.ts`):
   against. It is a text-layer page when the layer has at least 200 letters
   and digits: a scan has none, a printed page thousands.
 
+Beside both scores goes **words carried** (`coverage.ts`): of the letters
+and digits each PDF's text layer prints, the share the tool's markdown
+carries, pooled over the inputs -- the reader cases' fidelity check
+(`src/lib/fidelity.ts`) over whole documents, and for every tool the same
+way. Case, spacing and punctuation are set aside, so a hyphen rejoined
+across a line loses nothing; the markdown is read as rendered text, so
+markup is not counted. It is reported and held to nothing. It cannot see
+order, which the scores measure, and the text layer is pdf.js's as the PDF
+carries it, so an ordered list's `a.` that mdgest writes as `1.` is a
+letter mdgest does not carry.
+
 The split is made once for a pinned revision and committed as
 `results/<benchmark>.text-layer.json`, so every run and every tool is
 scored on the same pages. Delete the file to have it made again. No split
@@ -117,7 +128,8 @@ would be out for every tool, for good, by that run's accident.
 `results/<benchmark>.jsonl` holds one line a run: the date, the commit, the
 tool and what it was made of (`READER` and pdf.js for mdgest, the version
 for a peer), the dataset's revision, the scorer's version, pages a second,
-both scores with every category's passed and total under them, and a hash
+both scores with every category's passed and total under them, the words
+carried (absent from lines from before it was measured), and a hash
 of all the markdown written, which is equal on two lines exactly when the
 two runs wrote the same markdown.
 

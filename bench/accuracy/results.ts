@@ -45,6 +45,10 @@ export interface Line {
   all: Score;
   /** The inputs with a text layer (`split.ts`). */
   text_layer: Score | null;
+  /** The share of the text layer's letters and digits the markdown
+   *  carries (`coverage.ts`), over every input and over those with a text
+   *  layer. Absent from lines from before it was measured. */
+  coverage?: { all: number | null; text_layer: number | null };
 }
 
 /** What is kept of a tool's last run of every input, beside its verdicts
@@ -91,6 +95,7 @@ export function line(
   all: Score,
   textLayer: Score | null,
   commit: string,
+  coverage: Line["coverage"],
 ): Line {
   return {
     date: new Date().toISOString(),
@@ -111,6 +116,7 @@ export function line(
     markdown: made.markdown,
     all,
     text_layer: textLayer,
+    coverage,
   };
 }
 
@@ -147,9 +153,20 @@ export function show(entry: Line): string {
     ...Object.keys(entry.all.categories ?? {}),
     ...Object.keys(entry.all.measures ?? {}),
   ].sort();
+  const carried = (share: number | null | undefined) =>
+    share === null || share === undefined ? "" : percent(share);
   const rows = [
     ["", "all", "with a text layer"],
     ["score", cell(entry.all), cell(entry.text_layer)],
+    ...(entry.coverage
+      ? [
+          [
+            "words carried",
+            carried(entry.coverage.all),
+            carried(entry.coverage.text_layer),
+          ],
+        ]
+      : []),
     ...names.map((name) => [
       `  ${name}`,
       cell(entry.all, name),
