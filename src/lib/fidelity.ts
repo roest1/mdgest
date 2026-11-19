@@ -16,8 +16,10 @@
  * Out of what a page is expected to carry:
  *  - a deleted block's words, by hand or by a furniture setting;
  *  - a block a person corrected, on both sides: its words are theirs now;
- *  - a list item's marker, which the markdown writes as the list it is --
- *    every ordered one as `1.`, `2.` -- and not as words.
+ *  - a list item's letter or numeral, `c.` or `iv.`: the markdown can
+ *    write an ordered item only as a number, its place in the list. A
+ *    numbered item's number is expected, and read off the list as the
+ *    pane draws it.
  * A hidden block's words stay expected: they are in the file, as a
  * comment. They are counted apart, so hiding too much shows. Text a person
  * inserted is no block's, and is not counted. */
@@ -76,7 +78,13 @@ export function fidelity(
     for (const block of page.blocks) {
       const placed = written.blocks[block.id];
       const corrected = edits?.blocks[block.id]?.text !== undefined;
-      unexpect(block.marker);
+      // A number is written as the list's own (`emit.ts`), and expected;
+      // a letter or numeral cannot be, and is not. A block a person made
+      // something other than a numbered item writes no number.
+      const role = edits?.blocks[block.id]?.role ?? block.role;
+      unexpect(
+        role === "numbered" ? block.marker.replace(/\d/g, "") : block.marker,
+      );
       if (placed?.deleted || corrected) unexpect(block.text);
       if (corrected) skipped.add(block.id);
     }

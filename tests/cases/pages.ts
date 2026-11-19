@@ -24,9 +24,9 @@ export const pages: Case[] = [
     markdown: `${prose(1, 0)[0]}\n\n---\n\n${prose(1, 1)[0]}\n`,
   },
   {
-    name: "pages-list-restarts",
+    name: "pages-list-goes-on",
     about:
-      "A numbered list carried onto the next page restarts its count there: each page is counted on its own.",
+      "A numbered list carried onto the next page goes on counting there, from the number the page printed (#98).",
     pages: [
       (pen) => pen.lines(X, TOP, [`1. ${ITEMS[0]}`, `2. ${ITEMS[1]}`]),
       (pen) => pen.lines(X, TOP, [`3. ${ITEMS[2]}`, `4. ${ITEMS[3]}`]),
@@ -44,8 +44,8 @@ export const pages: Case[] = [
       "",
       "---",
       "",
-      `1. ${ITEMS[2]}`,
-      `2. ${ITEMS[3]}`,
+      `3. ${ITEMS[2]}`,
+      `4. ${ITEMS[3]}`,
       "",
     ].join("\n"),
   },

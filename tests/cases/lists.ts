@@ -39,11 +39,14 @@ function list(
 }
 
 /** The markdown of a flat list, counted from 1 or bulleted. */
-function md(n: number, ordered: boolean, from = 0): string[] {
+/** Items `from` on as the markdown writes them: an ordered one by its
+ *  place in the list as printed, from `first` -- which for a numbered list
+ *  `list` prints from `from + 1` is that. */
+function md(n: number, ordered: boolean, from = 0, first = from + 1): string[] {
   return Array.from(
     { length: n },
     (_, i) =>
-      `${ordered ? `${i + 1}.` : "-"} ${ITEMS[(from + i) % ITEMS.length]}`,
+      `${ordered ? `${first + i}.` : "-"} ${ITEMS[(from + i) % ITEMS.length]}`,
   );
 }
 
@@ -130,7 +133,7 @@ export const lists: Case[] = [
   {
     name: "lists-numbered",
     about:
-      "Numbers of one to three digits with . or ) or in parentheses are numbered items, counted from 1 in the markdown whatever was printed.",
+      "Numbers of one to three digits with . or ) or in parentheses are numbered items, written as the number printed. One printed out of turn (10 after 3) starts a list of its own, by the other delimiter, or the list would show it as 4.",
     pages: [
       (pen) => list(pen, ["1. ", "2) ", "(3) ", "10. ", "100. ", "999) "]),
     ],
@@ -142,7 +145,19 @@ export const lists: Case[] = [
       `numbered 100. ${ITEMS[4]}`,
       `numbered 999) ${ITEMS[5]}`,
     ],
-    markdown: `${md(6, true).join("\n")}\n`,
+    markdown: `${[...md(3, true), `10) ${ITEMS[3]}`, `100. ${ITEMS[4]}`, `999) ${ITEMS[5]}`].join("\n")}\n`,
+  },
+  {
+    name: "lists-numbered-from-113",
+    about:
+      "A list printed from 113 -- a page of references -- is written from 113, which CommonMark takes as the list's start, so the numbers reach the markdown (#98).",
+    pages: [(pen) => list(pen, ["113. ", "114. ", "115. "])],
+    blocks: [
+      `numbered 113. ${ITEMS[0]}`,
+      `numbered 114. ${ITEMS[1]}`,
+      `numbered 115. ${ITEMS[2]}`,
+    ],
+    markdown: `${md(3, true, 0, 113).join("\n")}\n`,
   },
   {
     name: "lists-numbered-lookalikes",
@@ -202,9 +217,14 @@ export const lists: Case[] = [
       `alpha B) ${ITEMS[5]}`,
       `alpha (C) ${ITEMS[6]}`,
     ],
-    markdown: [...md(4, true), "", prose(1)[0], "", ...md(3, true, 4), ""].join(
-      "\n",
-    ),
+    markdown: [
+      ...md(4, true),
+      "",
+      prose(1)[0],
+      "",
+      ...md(3, true, 4, 1),
+      "",
+    ].join("\n"),
   },
   {
     name: "lists-lettered-past-h",
@@ -461,7 +481,7 @@ export const lists: Case[] = [
   {
     name: "lists-numbering-restarts",
     about:
-      "A paragraph between two runs of items ends the list: the second run counts from 1 again, whatever was printed.",
+      "A paragraph between two runs of items ends the list, and the second starts at the number it printed: 3, where the first left off.",
     pages: [
       (pen) => {
         const y = list(pen, ["1. ", "2. "]);

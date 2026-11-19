@@ -15,7 +15,12 @@ import { blankEdits, type BlockEdit, type Edits } from "src/lib/edits";
 import { emit } from "src/lib/emit";
 import { measure } from "src/lib/measure";
 
-function block(id: string, text: string, role: Role = "para"): Block {
+function block(
+  id: string,
+  text: string,
+  role: Role = "para",
+  marker = role === "numbered" ? "1." : "",
+): Block {
   return {
     id,
     kind: role === "image" ? "image" : "text",
@@ -28,7 +33,7 @@ function block(id: string, text: string, role: Role = "para"): Block {
     depth: 0,
     bold: false,
     italic: false,
-    marker: role === "numbered" ? "1." : "",
+    marker,
     size: 10,
     font: "Body",
     picture: role === "image" ? 0 : -1,
@@ -58,7 +63,7 @@ const doc: Analysis = {
     page(1, [
       block("p1b0", "Pumps", "heading"),
       block("p1b1", "Grease them.", "numbered"),
-      block("p1b2", "Log it.", "numbered"),
+      block("p1b2", "Log it.", "numbered", "2."),
       block("p1b3", "   "),
     ]),
     page(2, [block("p2i0", "", "image"), block("p2b0", "Done.")], 1),
@@ -167,7 +172,7 @@ test("a hidden block is a comment on its line, numbered on with the rest", () =>
       "<!-- # Pumps -->",
       "",
       "1. Grease them.",
-      "   <!-- 1. Log it. -->",
+      "   <!-- 2. Log it. -->",
       "",
       "---",
       "",
@@ -249,7 +254,7 @@ test("a deleted block is written nowhere, gives up its number, and keeps its pla
     [
       "# Pumps",
       "",
-      "1. Log it.",
+      "2. Log it.",
       "",
       "---",
       "",
@@ -321,7 +326,7 @@ const quotable: Analysis = {
     page(1, [
       block("p1b0", "Pumps", "heading"),
       block("p1b1", "Grease them.", "numbered"),
-      block("p1b2", "Log it.", "numbered"),
+      block("p1b2", "Log it.", "numbered", "2."),
       block("p1b3", "Then rest."),
     ]),
     page(2, [block("p2b0", "Done.")]),
@@ -354,14 +359,14 @@ test("quoted blocks next to each other are one quote, a list in it whole", () =>
   );
 });
 
-test("a list going out of a quote is a new list, counted from 1", () => {
+test("a list going out of a quote is a new list, from the number it printed", () => {
   expect(quoting({ p1b0: { quote: true }, p1b1: { quote: true } })).toBe(
     [
       "> # Pumps",
       ">",
       "> 1. Grease them.",
       "",
-      "1. Log it.",
+      "2. Log it.",
       "",
       "Then rest.",
       "",
@@ -383,7 +388,7 @@ test("a hidden quoted block is its comment, quoted, and counted as one", () => {
     p1b1: { quote: true, hidden: true },
     p1b2: { quote: true },
   });
-  expect(text).toContain("> <!-- 1. Grease them. -->\n>\n> 1. Log it.\n");
+  expect(text).toContain("> <!-- 1. Grease them. -->\n>\n> 2. Log it.\n");
   expect(measure(text).commentLines).toBe(1);
 });
 
@@ -395,9 +400,34 @@ test("a list item is written no deeper than one under the item before it", () =>
     "doc.assets/",
     withEdits({ p1b1: { depth: 2 }, p1b2: { depth: 3 } }),
   );
-  expect(md.text).toContain("1. Grease them.\n   1. Log it.\n");
+  expect(md.text).toContain("1. Grease them.\n   2. Log it.\n");
   expect(md.blocks.p1b1.item).toEqual({ depth: 0, after: null });
   expect(md.blocks.p1b2.item).toEqual({ depth: 1, after: "p1b1" });
   // A heading, picture or paragraph is no list item.
   expect(md.blocks.p1b0.item).toBeUndefined();
+});
+
+test("an ordered item is written as its place in the list as printed: c. is 3, iv. is 4", () => {
+  const items = (role: Role, markers: string[]) =>
+    emit(
+      {
+        ...doc,
+        pages: [
+          page(
+            1,
+            markers.map((marker, i) =>
+              block(`p1b${i}`, `Item ${i}.`, role, marker),
+            ),
+          ),
+        ],
+      },
+      "doc.assets/",
+    ).text;
+  expect(items("alpha", ["c.", "(d)"])).toBe("3. Item 0.\n4. Item 1.\n");
+  expect(items("roman", ["iv.", "v)", "IX."])).toBe(
+    "4. Item 0.\n5. Item 1.\n9) Item 2.\n",
+  );
+  // A marker that says no place, as on a block made an item by hand, is
+  // counted on from the item before.
+  expect(items("numbered", ["7.", ""])).toBe("7. Item 0.\n8. Item 1.\n");
 });
