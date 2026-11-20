@@ -46,8 +46,8 @@ const handlers: Handlers = {
   renameWorkspace: ({ name }) => stage.renameWorkspace(name),
   source: ({ docId }) => stage.source(docId),
   analysis: ({ docId }) => stage.analysis(docId),
-  convert: ({ docId, analysis, figures }) =>
-    stage.convert(docId, analysis, figures),
+  convert: ({ docId, analysis, figures, dropEdits }) =>
+    stage.convert(docId, analysis, figures, dropEdits),
   edits: ({ docId }) => stage.edits(docId),
   saveEdits: ({ docId, edits, markdown }) =>
     stage.saveEdits(docId, edits, markdown),

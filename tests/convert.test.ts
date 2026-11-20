@@ -20,13 +20,15 @@ import {
   convert,
   ensureRead,
   forgetReading,
+  readAgain,
   readDone,
 } from "src/lib/convert";
+import { commitEdits, saved } from "src/lib/editing";
 import { blankEdits, type Edits } from "src/lib/edits";
 import { emit } from "src/lib/emit";
 import { engine } from "src/lib/engine";
 import { openPdf, type PDFPageProxy } from "src/lib/pdf";
-import { useEditor } from "src/lib/store";
+import { useEditor, type Reading } from "src/lib/store";
 import { assetsPrefix, cacheDir, markdownPath } from "src/lib/workspace";
 import { buildPdf } from "./fixtures/pdf";
 import { prose, TOP, X } from "./cases/text";
@@ -326,6 +328,146 @@ test("an analysis an older reader made is kept, not read again, while there are 
   expect(read).toBe(0);
   expect(again.analysis.reader).toBe(READER - 1);
   expect(again.markdown.text).toContain(HIDDEN);
+});
+
+/** `pumps/a` read, `hiding` saved on it, and its analysis made out to be an
+ *  older reader's: a document its edits hold on an old read. */
+async function heldOnOlderRead(pages: PDFPageProxy[]): Promise<Edits> {
+  const first = await convert("pumps/a", pages);
+  const edits = hiding(first.analysis);
+  await engine.saveEdits(
+    "pumps/a",
+    edits,
+    emit(first.analysis, assetsPrefix("pumps/a"), edits).text,
+  );
+  await opfs(
+    "writeText",
+    [...cacheDir("pumps/a"), "analysis.json"],
+    JSON.stringify({ ...first.analysis, reader: READER - 1 }),
+  );
+  return edits;
+}
+
+type Shown = Extract<Reading, { status: "ready" }>;
+const shownAs = () => useEditor.getState().readings["pumps/a"];
+
+/** Until the store shows `pumps/a` as `status`. */
+const until = (status: Reading["status"]) =>
+  vi.waitFor(() => expect(shownAs()?.status).toBe(status), WAIT);
+
+test("read again on a person's ask: off its pages, by the current reader, its edits gone and its selection let go", async () => {
+  const pages = await committed();
+  await heldOnOlderRead(pages);
+  const state = useEditor.getState;
+  try {
+    ensureRead("pumps/a", pages);
+    await until("ready");
+    const old = shownAs() as Shown;
+    expect(old.analysis.reader).toBe(READER - 1);
+    expect(old.markdown.text).toContain(HIDDEN);
+    const block = old.analysis.pages[0].blocks[0].id;
+    state().pick("pumps/a", block, { range: false, toggle: false }, "page");
+    expect(state().selection?.ids).toEqual([block]);
+
+    // Asked: the store tells the pane holding the pages, which reads them.
+    // Nothing else moves until it does.
+    const asked = state().rereads["pumps/a"] ?? 0;
+    readAgain("pumps/a");
+    expect(state().rereads["pumps/a"]).toBe(asked + 1);
+    expect(shownAs()).toBe(old);
+    ensureRead("pumps/a", pages);
+    expect(shownAs()?.status).toBe("reading");
+    expect(state().selection).toBeNull();
+    // Joined, to count the pages it reads.
+    let read = 0;
+    await convert("pumps/a", pages, () => read++);
+    await until("ready");
+    expect(read).toBe(1);
+
+    const now = shownAs() as Shown;
+    expect(now.analysis.reader).toBe(READER);
+    expect(now.edits).toEqual(blankEdits());
+    expect(now.markdown.text).toBe(MARKDOWN);
+    // And so it is kept: the next opening is from the cache, as it is.
+    expect(await engine.edits("pumps/a")).toBeNull();
+    expect((await engine.analysis("pumps/a"))?.reader).toBe(READER);
+    expect(await opfs("readText", markdownPath("pumps/a"))).toBe(MARKDOWN);
+  } finally {
+    forgetReading("pumps/a");
+  }
+});
+
+test("a read again is written down after the edits' last save, which would put them back", async () => {
+  const pages = await committed();
+  await heldOnOlderRead(pages);
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  const save = engine.saveEdits.bind(engine);
+  const saving = vi
+    .spyOn(engine, "saveEdits")
+    .mockImplementation(async (...args) => {
+      await held;
+      return save(...args);
+    });
+  const writing = vi.spyOn(engine, "convert");
+  try {
+    ensureRead("pumps/a", pages);
+    await until("ready");
+    // An edit, its save held on the way; then the ask.
+    commitEdits("pumps/a", (edits) => ({ ...edits, page_numbers: "hide" }));
+    readAgain("pumps/a");
+    ensureRead("pumps/a", pages);
+    // The pages are read, and the write waits on the save.
+    await vi.waitFor(
+      () => expect((shownAs() as { page?: number })?.page).toBe(1),
+      WAIT,
+    );
+    expect(writing.mock.calls.length).toBe(0);
+    release();
+    await saved("pumps/a");
+    await until("ready");
+    expect(writing.mock.calls.length).toBe(1);
+    expect(await engine.edits("pumps/a")).toBeNull();
+    expect((shownAs() as Shown).edits).toEqual(blankEdits());
+  } finally {
+    release();
+    forgetReading("pumps/a");
+    saving.mockRestore();
+    writing.mockRestore();
+  }
+});
+
+test("a read again that fails says so, and leaves the old read and its edits as they were", async () => {
+  const pages = await committed();
+  const edits = await heldOnOlderRead(pages);
+  const { release, spy } = holdWrite(new Error("disk full"));
+  release();
+  try {
+    ensureRead("pumps/a", pages);
+    await until("ready");
+    readAgain("pumps/a");
+    ensureRead("pumps/a", pages);
+    await until("failed");
+    expect(shownAs()).toMatchObject({ problem: /disk full/ });
+    expect(await engine.edits("pumps/a")).toEqual(edits);
+    expect((await engine.analysis("pumps/a"))?.reader).toBe(READER - 1);
+    expect(await opfs("readText", markdownPath("pumps/a"))).toContain(HIDDEN);
+  } finally {
+    forgetReading("pumps/a");
+    spy.mockRestore();
+  }
+});
+
+test("the tab closed before the pages are read again takes the ask back", async () => {
+  const pages = await committed();
+  const edits = await heldOnOlderRead(pages);
+  readAgain("pumps/a");
+  forgetReading("pumps/a");
+  let read = 0;
+  const again = await convert("pumps/a", pages, () => read++);
+  expect(read).toBe(0);
+  expect(again.analysis.reader).toBe(READER - 1);
+  expect(again.edits).toEqual(edits);
 });
 
 test("an edits.json that does not read fails the reading with what is wrong with it", async () => {

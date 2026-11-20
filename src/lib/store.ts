@@ -56,6 +56,11 @@ interface EditorState {
   readings: ById<Reading>;
   /** Set, or with undefined forget, a document's reading. */
   setReading: (docId: string, reading: Reading | undefined) => void;
+  /** How many times each document was asked to be read again: what tells
+   *  the page pane, which holds the pages, to read them (`readAgain` in
+   *  convert.ts). */
+  rereads: ById<number>;
+  reread: (docId: string) => void;
   /** What the page pane draws over every document's pages: how the page is
    *  looked at, not edits to it, so one setting for the editor rather than
    *  one per document, kept across a switch of tab. */
@@ -97,6 +102,13 @@ export const useEditor = create<EditorState>()((set, get) => ({
       const selection =
         s.selection?.docId === docId && !same ? null : s.selection;
       return { readings, selection };
+    }),
+  rereads: byId(),
+  reread: (docId) =>
+    set((s) => {
+      const rereads = byId(s.rereads);
+      rereads[docId] = (rereads[docId] ?? 0) + 1;
+      return { rereads };
     }),
   boxes: { text: true, images: true },
   setBoxes: (boxes) => set((s) => ({ boxes: { ...s.boxes, ...boxes } })),

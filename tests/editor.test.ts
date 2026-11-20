@@ -12,15 +12,18 @@ import { page, userEvent } from "vitest/browser";
 import { createRoot, type Root } from "react-dom/client";
 import { createElement } from "react";
 import { RouterProvider, createMemoryRouter } from "react-router";
+import { READER } from "src/lib/analysis";
 import { commitEdits, saved } from "src/lib/editing";
 import { engine } from "src/lib/engine";
+import type * as Opfs from "src/lib/opfs";
 import { useEditor, type Reading } from "src/lib/store";
+import { cacheDir } from "src/lib/workspace";
 import { ACTIONS_OUT as OUT } from "src/components/editor/blocks";
 import { inView, layout } from "src/components/editor/column";
 import Editor from "src/routes/Editor";
 // The app's own layout: which panes are hidden, and what scrolls.
 import "src/index.css";
-import { pdfOf, type PdfExtras } from "./harness";
+import { Client, pdfOf, type PdfExtras } from "./harness";
 import { prose, TOP, X } from "./cases/text";
 import { buildPdf, PARAGRAPH, type Pen } from "./fixtures/pdf";
 
@@ -1677,6 +1680,76 @@ test("undo, redo and revert to original, from the tool bar and the keys, kept wi
   await undoButton().click();
   await expect.poll(() => placedOf(title)?.deleted).toBe(false);
   expect(placedOf(para.id)?.hidden).toBe(true);
+});
+
+// ---- read again -------------------------------------------------------------
+
+/** Writes beside the engine, into the same OPFS, the way another tab would. */
+const opfs = new Client(new URL("./worker.ts", import.meta.url)).bind<
+  typeof Opfs
+>("opfs");
+const readAgainButton = () =>
+  page.getByRole("button", { name: "Read again", exact: true });
+
+test("a document its edits hold on an older reader's read can be read again, once a person says the edits may go", async () => {
+  const { para } = await openedToEdit();
+  // Read by this reader: nothing to offer.
+  expect(readAgainButton().query()).toBeNull();
+  await userEvent.click(boxOf(para.id));
+  pointAt(boxOf(para.id));
+  await page.getByRole("button", { name: "Hide" }).click();
+  await expect.poll(() => placedOf(para.id)?.hidden).toBe(true);
+  await saved("a");
+
+  // Closed, its read made out to be an older reader's, and opened again:
+  // the edits hold it there.
+  await page.getByRole("button", { name: "Close a" }).click();
+  await expect.poll(() => readingOf()).toBeUndefined();
+  root!.unmount();
+  host!.remove();
+  const analysis = [...cacheDir("a"), "analysis.json"];
+  const old = JSON.parse((await opfs("readText", analysis))!) as {
+    reader: number;
+  };
+  await opfs(
+    "writeText",
+    analysis,
+    JSON.stringify({ ...old, reader: READER - 1 }),
+  );
+  mount("/edit/a");
+  expect((await ready()).analysis.reader).toBe(READER - 1);
+  await pagesDrawn();
+  expect(placedOf(para.id)?.hidden).toBe(true);
+
+  // Asked first, and Keep keeps it all.
+  await readAgainButton().click();
+  await expect
+    .element(page.getByText(/Its edits and their history go/))
+    .toBeVisible();
+  await page.getByRole("button", { name: "Keep" }).click();
+  await expect.element(readAgainButton()).toBeVisible();
+  expect(readingOf()?.status).toBe("ready");
+  expect(placedOf(para.id)?.hidden).toBe(true);
+
+  // Read again: by this reader, the edits and their history gone, and
+  // nothing more to offer.
+  await userEvent.click(boxOf(para.id));
+  expect(selectedIds()).toEqual([para.id]);
+  await readAgainButton().click();
+  await page.getByRole("button", { name: "Read again", exact: true }).click();
+  await expect.poll(selectedIds).toEqual([]);
+  await expect
+    .poll(
+      () =>
+        readingOf()?.status === "ready" &&
+        (readingOf() as Extract<Reading, { status: "ready" }>).analysis.reader,
+      { timeout: 15_000 },
+    )
+    .toBe(READER);
+  await expect.poll(() => placedOf(para.id)?.hidden).toBe(false);
+  await expect.element(undoButton()).toBeDisabled();
+  expect(readAgainButton().query()).toBeNull();
+  expect(await engine.edits("a")).toBeNull();
 });
 
 // ---- formatting -------------------------------------------------------------

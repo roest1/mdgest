@@ -10,9 +10,11 @@
  * on the workspace, so a switched-away document is not held in memory for
  * that. The panes
  * see it through the store (`ensureRead`); its tab closing gives it up
- * (`forgetReading`). */
+ * (`forgetReading`). A person can ask for a document to be read again with
+ * the current reader, its edits dropped (`readAgain`). */
 
 import { READER, UNUSABLE_ANALYSIS, type Analysis } from "./analysis";
+import { saved } from "./editing";
 import { blankEdits, isBlank, type Edits } from "./edits";
 import { emit, type Markdown } from "./emit";
 import { engine } from "./engine";
@@ -47,6 +49,11 @@ interface Running {
 
 const running = new Map<string, Running>();
 
+/** The documents a person asked to be read again: the next reading of each
+ *  reads its pages whatever is cached, and drops its edits when it writes
+ *  the read down. Taken by the reading it starts. */
+const again = new Set<string>();
+
 /** What a given-up reading ends with: not a failure of the document. */
 export const CANCELED = "ReadingCanceled";
 
@@ -80,7 +87,8 @@ function reading(docId: string, pages: PDFPageProxy[]): Running {
     let off!: () => void;
     const offPages = new Promise<void>((r) => (off = r));
     const mine = { hear, canceled: false, offPages } as Running;
-    mine.job = run(docId, pages, mine, off, (page, of) => {
+    const fresh = again.delete(docId);
+    mine.job = run(docId, pages, mine, off, fresh, (page, of) => {
       for (const h of hear) h(page, of);
     });
     void mine.job.then(noop, noop).then(() => {
@@ -120,26 +128,27 @@ async function run(
   pages: PDFPageProxy[],
   job: { canceled: boolean },
   offPages: () => void,
+  fresh: boolean,
   onPage?: (page: number, pages: number) => void,
 ): Promise<Converted> {
   // The edits with the analysis: an `edits.json` that does not read fails
   // the reading with what is wrong with it, rather than opening as none and
-  // being written over by the next edit.
-  let [analysis, edits] = await Promise.all([
-    engine.analysis(docId).catch(rereadable),
-    engine.edits(docId),
-  ]);
+  // being written over by the next edit. Neither is asked for when the
+  // document is to be read again: the read is replaced, and the edits go
+  // with it.
+  let [analysis, edits] = fresh
+    ? [null, null]
+    : await Promise.all([
+        engine.analysis(docId).catch(rereadable),
+        engine.edits(docId),
+      ]);
   if (job.canceled) throw canceled();
   // One an older reader made is read again, the way a `READER` bump says:
   // its blocks may not be this reader's. Not while there are edits, though:
   // they name the blocks of this analysis, and a reading again numbers them
   // afresh, so the edits would land on other blocks or on none. Those keep
   // the read they were made on until a person says to read it again.
-  if (
-    analysis &&
-    analysis.reader !== READER &&
-    (edits === null || isBlank(edits))
-  )
+  if (analysis && outdated(analysis) && (edits === null || isBlank(edits)))
     analysis = null;
   if (!analysis) {
     const read: ReadPage[] = [];
@@ -154,8 +163,13 @@ async function run(
     offPages();
     analysis = structure(read);
     // The engine writes the markdown with the edits it holds, and answers
-    // them -- the same file read above, unless it changed in between.
-    edits = await engine.convert(docId, analysis, figures);
+    // them -- the same file read above, unless it changed in between. Read
+    // again on purpose, it drops them instead, in the same write -- after
+    // any save of them still on its way, which landing after would put
+    // them back, on blocks they never named. None starts once the reading
+    // is shown, since an edit needs a document that is ready.
+    if (fresh) await saved(docId);
+    edits = await engine.convert(docId, analysis, figures, fresh);
     // Given up under the write: it is in the cache, where the next reading
     // finds it, but this one shows nothing of it.
     if (job.canceled) throw canceled();
@@ -178,8 +192,8 @@ async function run(
 export function ensureRead(docId: string, pages: PDFPageProxy[]): void {
   const state = useEditor.getState;
   const now = running.get(docId);
-  if (state().readings[docId]?.status === "ready" || (now && !now.canceled))
-    return;
+  const ready = state().readings[docId]?.status === "ready";
+  if ((ready && !again.has(docId)) || (now && !now.canceled)) return;
   const mine = reading(docId, pages);
   const publish = (reading: Reading) => {
     if (!mine.canceled) state().setReading(docId, reading);
@@ -211,5 +225,29 @@ export function ensureRead(docId: string, pages: PDFPageProxy[]): void {
 export function forgetReading(docId: string): void {
   const now = running.get(docId);
   if (now) now.canceled = true;
+  again.delete(docId);
   useEditor.getState().setReading(docId, undefined);
+}
+
+/** Whether `analysis` was made by an older reader than this build's: what
+ *  reading the document again would change. A document with edits keeps
+ *  such a read until a person asks (`run`); one without is read again on
+ *  its own the next time it opens. */
+export function outdated(analysis: Analysis): boolean {
+  return analysis.reader !== READER;
+}
+
+/** Read `docId` again with the current reader, at a person's ask: its
+ *  pages read afresh, whatever is cached, and its edits and their history
+ *  dropped when the new read is written down -- not before, so a reading
+ *  that fails or is given up on the way leaves the old read and its edits
+ *  as they were. The pane holding its pages starts it (`ensureRead`, on
+ *  the store's `rereads`), and the store shows it page by page as any
+ *  reading. A reading under way is given up for it. Closing the tab first
+ *  takes the ask back (`forgetReading`). */
+export function readAgain(docId: string): void {
+  const now = running.get(docId);
+  if (now) now.canceled = true;
+  again.add(docId);
+  useEditor.getState().reread(docId);
 }
