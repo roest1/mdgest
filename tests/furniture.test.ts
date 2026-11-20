@@ -24,6 +24,7 @@ import {
   countFurniture,
   headersFooters,
   label,
+  pageNumberIds,
   pageNumbers,
   repeatedLines,
   wording,
@@ -167,6 +168,112 @@ describe("page numbers", () => {
     expect(() =>
       checkEdits({ ...blankEdits(), page_numbers: "mark" }, "its edits.json"),
     ).toThrow(/page_numbers/);
+  });
+});
+
+/** One page per entry, each printing the footer lines given for it in the
+ *  bottom band, over a line of body. */
+function footers(...pages: string[][]): Analysis {
+  return {
+    format: ANALYSIS_FORMAT,
+    reader: READER,
+    bodySize: 10,
+    pages: pages.map((lines, i) => {
+      const n = i + 1;
+      return {
+        n,
+        width: 600,
+        height: 800,
+        lines: [],
+        pictures: [],
+        blocks: [
+          block(`p${n}b0`, `Body text on page ${n}.`, 300, "", n),
+          ...lines.map((text, k) =>
+            block(`p${n}b${k + 1}`, text, 760 + 12 * k, "", n),
+          ),
+        ],
+      };
+    }),
+  };
+}
+
+/** What `pageNumberIds` takes for page numbers, as page:label. */
+const numbered = (doc: Analysis) =>
+  [...pageNumberIds(doc)].map(([id, n]) => `${id.split("b")[0]}:${n}`);
+
+describe("a page number counts up with the pages", () => {
+  test("arabic numbers rising page to page", () => {
+    expect(numbered(footers(["1"], ["2"], ["3"], ["4"]))).toEqual([
+      "p1:1",
+      "p2:2",
+      "p3:3",
+      "p4:4",
+    ]);
+  });
+
+  test("roman front matter, then arabic from 1 again", () => {
+    const doc = footers(["i"], ["ii"], ["iii"], ["1"], ["2"], ["3"]);
+    expect(numbered(doc)).toEqual([
+      "p1:i",
+      "p2:ii",
+      "p3:iii",
+      "p4:1",
+      "p5:2",
+      "p6:3",
+    ]);
+  });
+
+  test("a page with no number, and a run that starts far from page 1", () => {
+    // A chapter opener on page 3 prints no number; the PDF is a book's
+    // middle, so page 1 prints 213.
+    const doc = footers(["213"], ["214"], [], ["216"]);
+    expect(numbered(doc)).toEqual(["p1:213", "p2:214", "p4:216"]);
+  });
+
+  test("a year repeated in every footer stays text", () => {
+    const doc = footers(["2024", "1"], ["2024", "2"], ["2024", "3"]);
+    expect(numbered(doc)).toEqual(["p1:1", "p2:2", "p3:3"]);
+    const md = emit(
+      doc,
+      "a/",
+      setFurniture(blankEdits(), "page_numbers", "delete"),
+    );
+    expect(md.text.match(/^2024$/gm)).toHaveLength(3);
+    expect(md.blocks.p1b1.deleted).toBe(false);
+    expect(md.blocks.p1b2.deleted).toBe(true);
+  });
+
+  test("a year alone in every footer, with no page numbers at all", () => {
+    expect(numbered(footers(["2024"], ["2024"], ["2024"]))).toEqual([]);
+  });
+
+  test("a document of one page: a number must say what it is by itself", () => {
+    expect(numbered(footers(["2024"]))).toEqual([]);
+    expect(numbered(footers(["7"]))).toEqual([]);
+    expect(numbered(footers(["1"]))).toEqual(["p1:1"]);
+    expect(numbered(footers(["Page 7"]))).toEqual(["p1:7"]);
+    expect(numbered(footers(["7 of 12"]))).toEqual(["p1:7"]);
+    expect(numbered(footers(["p. 7"]))).toEqual(["p1:7"]);
+  });
+
+  test("one number in a long document's margins, not its page's own, stays text", () => {
+    expect(numbered(footers([], [], ["7"], []))).toEqual([]);
+  });
+
+  test("a roman part number in every running head is a repeated line, not a page number", () => {
+    const doc = footers(["IV", "1"], ["IV", "2"], ["IV", "3"]);
+    expect(numbered(doc)).toEqual(["p1:1", "p2:2", "p3:3"]);
+    expect([...headersFooters(doc)]).toEqual(["p1b1", "p2b1", "p3b1"]);
+  });
+
+  test("roman and arabic are separate runs", () => {
+    // vi on page 4 keeps the arabic run's offset (+2), but it is roman, and
+    // no other page prints a roman number to count it against.
+    expect(numbered(footers(["3"], ["4"], ["5"], ["vi"]))).toEqual([
+      "p1:3",
+      "p2:4",
+      "p3:5",
+    ]);
   });
 });
 
