@@ -69,16 +69,29 @@ async function say(line: string) {
 
 type Press = () => void;
 
+/** Until no pane is drawing anything in -- a page waiting, or drawn as it
+ *  was before the edit (`useProgressive`) -- checked each frame. */
+async function drawnIn(): Promise<void> {
+  while (document.querySelector('[aria-busy="true"]'))
+    await new Promise((r) => requestAnimationFrame(r));
+}
+
 /** `press` timed `RUNS` times: the call itself, the frame painted after it,
- *  the save behind it, and the longest task in the second after -- what
- *  follows the paint, like the scroll sync measuring again. */
+ *  the save behind it, every page drawn as it now is, and the longest task
+ *  in the second after -- what follows the paint, like the scroll sync
+ *  measuring again. The first press is given on its own as well: what it
+ *  draws is parsed for the first time, and later presses that take it back
+ *  and make it again find it parsed. */
 async function scenario(name: string, ids: string[], press: Press) {
   if (only && !only.test(name)) return;
   useEditor.setState({
     selection: { docId: DOC, ids, focus: ids[0], anchor: ids[0], from: "page" },
   });
   await idle(500);
-  const runs: Record<"call" | "paint" | "saved" | "longest", number>[] = [];
+  const runs: Record<
+    "call" | "paint" | "saved" | "drawn" | "longest",
+    number
+  >[] = [];
   for (let i = 0; i < RUNS; i++) {
     const longs: number[] = [];
     const po = new PerformanceObserver((l) =>
@@ -90,11 +103,19 @@ async function scenario(name: string, ids: string[], press: Press) {
     const call = performance.now() - t0;
     await painted();
     const paint = performance.now() - t0;
+    const drawing = drawnIn().then(() => performance.now() - t0);
     await saved(DOC);
     const done = performance.now() - t0;
+    const drawn = await drawing;
     await idle(1000);
     po.disconnect();
-    runs.push({ call, paint, saved: done, longest: Math.max(0, ...longs) });
+    runs.push({
+      call,
+      paint,
+      saved: done,
+      drawn,
+      longest: Math.max(0, ...longs),
+    });
   }
   const m = (k: keyof (typeof runs)[number]) =>
     Math.round(median(runs.map((r) => r[k])));
@@ -107,7 +128,9 @@ async function scenario(name: string, ids: string[], press: Press) {
       `${m("call")}`.padStart(6),
       `${m("paint")}`.padStart(6),
       `${m("saved")}`.padStart(6),
+      `${m("drawn")}`.padStart(6),
       `${m("longest")}`.padStart(8),
+      `${Math.round(runs[0].paint)}/${Math.round(runs[0].drawn)}`.padStart(12),
       over ? "  OVER" : "",
     ].join(""),
   );
@@ -195,7 +218,7 @@ test("edits on a long book", async () => {
   }
   await say(`emit alone: ${Math.round(median(emits))}ms`);
   await say(
-    `${"scenario (median ms)".padEnd(28)}${"call".padStart(6)}${"paint".padStart(6)}${"saved".padStart(6)}${"longest".padStart(8)}`,
+    `${"scenario (median ms)".padEnd(28)}${"call".padStart(6)}${"paint".padStart(6)}${"saved".padStart(6)}${"drawn".padStart(6)}${"longest".padStart(8)}${"first".padStart(12)}`,
   );
 
   // A block early in the book and one in the middle, both written: an

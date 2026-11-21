@@ -18,8 +18,14 @@ presses in ms:
 - **call**: the press itself, the markdown emitted and stored.
 - **paint**: from the press to the frame painted after it. The number to watch.
 - **saved**: until the edit is written to OPFS, in a worker.
+- **drawn**: until every page of the pane shows the edit. Pages in view
+  show it at paint; the rest are drawn again a batch at a time after it.
 - **longest**: the longest task in the second after, such as the scroll sync
   measuring again. 0 means none over 50ms.
+- **first**: paint/drawn of the first press alone. Its pages are parsed for
+  the first time; the presses after it take the edit back and make it again,
+  and find them parsed. A person's edit is usually a first press, so this is
+  the number a person feels.
 
 A production row over the budget, 50ms painted or a long task, says `OVER`.
 
@@ -45,9 +51,9 @@ On 2026-11-17 the two agreed within 3ms on every scenario.
 
 ## What an edit may cost
 
-An edit emits the whole markdown again (about 10ms for 792 pages), so every
-memoised piece of the panes is handed new objects. Each must draw again only
-for what it shows:
+An edit emits the whole markdown again (about 10ms for 792 pages, 190ms for
+a 1,404-page textbook), so every memoised piece of the panes is handed new
+objects. Each must draw again only for what it shows:
 
 - **Compare what is drawn, not who holds it.** A page of the markdown takes
   the whole map of placed blocks for its notes' numbers. Compared by
@@ -58,6 +64,18 @@ for what it shows:
   takes the number and an inner memo the lines: 42ms to 33ms for a delete,
   353ms to 225ms in dev. Writing the number to the DOM from an effect
   measured the same, so the React way won.
+- **Draw a page again as it was first drawn.** An edit can change every
+  page: hiding a 1,404-page book's page numbers drew all of them again in
+  one go, parsing each new page on the page's thread: 6.3s painted on the
+  first press, 1.2s on later ones. Now a changed page keeps what it showed
+  until its turn, those in view are drawn again before the paint, and the
+  rest are parsed in workers and drawn in batches (`progressive.ts`), with
+  "Updating pages…" at the foot of the pane meanwhile.
+- **Keep a component's type across renders.** A component made anew inside
+  a render is a new type to React, which then rebuilds everything under it
+  instead of updating it. Each page's block elements were made that way,
+  and an edit to every page rebuilt the book's DOM: 1,166ms to 949ms when
+  they were made once.
 - **Add a scenario with the feature.** Every edit gets a row here, early and
   mid book, in both views, with what takes it back: undo, redo and revert
   have theirs.

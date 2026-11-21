@@ -9,11 +9,13 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 
-/** One thing to draw: its key, and what it costs to draw, in any unit
- *  that grows with the work -- the markdown pane counts characters. */
-export interface Item {
+/** One thing to draw: its key, what it costs to draw, in any unit that
+ *  grows with the work -- the markdown pane counts characters -- and what
+ *  is drawn for it. */
+export interface Item<T> {
   key: number;
   cost: number;
+  value: T;
 }
 
 /** Work done for an item somewhere else before it is drawn -- the markdown
@@ -82,61 +84,134 @@ function inputPending(): boolean {
   return scheduling?.isInputPending?.() ?? false;
 }
 
-/** Which of `items` to draw now: the ones whose placeholders are in or
- *  near `root`'s view first, then the rest in order -- within `budget`,
- *  but always at least one of those `ready` says may be. */
-function take(
-  items: readonly Item[],
-  shown: ReadonlySet<number>,
+/** What to draw for each of `items` now, from what is drawn: an item drawn
+ *  as it is stays so; of the rest -- not drawn yet, or drawn as it was
+ *  before it changed -- those in or near `root`'s view first, then the
+ *  rest in order, within `budget`, but always at least one of those
+ *  `ready` says may be. One not taken stays as it was drawn, or waits in
+ *  its placeholder. An item no longer in `items` is let go. */
+export function step<T>(
+  items: readonly Item<T>[],
+  drawn: ReadonlyMap<number, T>,
   near: ReadonlySet<number>,
   budget: number,
+  same: (a: T, b: T) => boolean,
   ready: (key: number) => boolean = () => true,
-): Set<number> {
-  const out = new Set(shown);
-  let spent = 0;
-  const fits = (item: Item) => {
-    if (out.has(item.key)) return true;
+): { drawn: Map<number, T>; cost: number } {
+  const out = new Map<number, T>();
+  const pending: Item<T>[] = [];
+  for (const item of items) {
+    const was = drawn.get(item.key);
+    if (was === undefined) {
+      pending.push(item);
+      continue;
+    }
+    // Drawn as it is, if it would draw the same: handed what it is now.
+    if (was === item.value || same(was, item.value))
+      out.set(item.key, item.value);
+    else {
+      out.set(item.key, was);
+      pending.push(item);
+    }
+  }
+  let cost = 0;
+  const fits = (item: Item<T>) => {
     if (!ready(item.key)) return true;
-    if (spent > 0 && spent + item.cost > budget) return false;
-    out.add(item.key);
-    spent += item.cost;
+    if (cost > 0 && cost + item.cost > budget) return false;
+    out.set(item.key, item.value);
+    cost += item.cost;
     return true;
   };
-  for (const item of items) if (near.has(item.key) && !fits(item)) return out;
-  for (const item of items) if (!fits(item)) return out;
-  return out;
+  const taken = () => {
+    for (const item of pending) if (near.has(item.key) && !fits(item)) return;
+    for (const item of pending) if (!near.has(item.key) && !fits(item)) return;
+  };
+  taken();
+  return { drawn: out, cost };
 }
 
 /** Draw `items` a batch at a time, each batch inside a budget -- a frame's
  *  while a person's input waits, a few frames' while none does -- so a long
  *  document never holds the page for longer than that: what is in view
  *  first, the rest after, until all are drawn. What is not drawn yet
- *  stands in a placeholder given `wait(key)` as its ref, which is how this
- *  knows which are in view.
+ *  stands in a placeholder; every placeholder and every drawn item is
+ *  given `track(key)` as its ref, which is how this knows which are in
+ *  view.
  *
  * The budget is in ms; what it buys is learned as it goes, from how long
  * each batch took to render and commit, so the batches size themselves to
  * the machine. Keyed, so `items` may change -- the same document written
- * anew after an edit -- and what was drawn stays drawn.
+ * anew after an edit -- and what was drawn stays drawn: an item that would
+ * draw the same, by `same`, as it is drawn is handed its new value at once,
+ * and one that changed is drawn again as the first draw is, as much as
+ * fits in the render that brought it, near the view first, and the rest a
+ * batch at a time after. Until then it is drawn as it was: an edit that
+ * changes every page of a book -- its page numbers hidden -- shows on the
+ * pages in view as it is made, and on the rest a moment later, rather than
+ * holding the page while the book is drawn again in one go.
  *
  * Given `prepare`, a batch after the first draws only what it says is
  * ready, and the order it is prepared in is this one's: what is near the
  * view, then the rest. */
-export function useProgressive(
-  items: readonly Item[],
+export function useProgressive<T>(
+  items: readonly Item<T>[],
   root: RefObject<HTMLElement | null>,
-  prepare?: Prepare,
+  {
+    prepare,
+    same = Object.is,
+  }: {
+    prepare?: Prepare;
+    /** Whether an item drawn as `a` draws the same as `b`. */
+    same?: (a: T, b: T) => boolean;
+  } = {},
 ): {
-  shown: ReadonlySet<number>;
-  wait: (key: number) => RefCallback<HTMLElement>;
+  /** What to draw for each key: its value, or the one it had when it was
+   *  drawn, while it waits to be drawn again. A key not here waits in its
+   *  placeholder. */
+  drawn: ReadonlyMap<number, T>;
+  track: (key: number) => RefCallback<HTMLElement>;
+  /** Whether any item is not drawn as it is. */
   filling: boolean;
+  /** How many are drawn as they were, waiting to be drawn again. */
+  stale: number;
 } {
   const rate = useRef(GUESS_MS);
-  const [shown, setShown] = useState<ReadonlySet<number>>(() =>
-    take(items, new Set(), new Set(), FIRST_MS / GUESS_MS),
-  );
   const near = useRef(new Set<number>());
-  const placeholders = useRef(new Map<number, HTMLElement>());
+  const [state, setState] = useState(() => ({
+    items,
+    drawn: step(items, new Map(), new Set(), FIRST_MS / GUESS_MS, same)
+      .drawn as ReadonlyMap<number, T>,
+  }));
+  let current = state;
+  if (state.items !== items) {
+    // Changed: as much drawn again as the first draw may, in this render,
+    // so an edit to a short document -- or to the pages in view -- shows
+    // in the frame it is made in. Set while rendering, as React has state
+    // follow a prop: this render is thrown away and run again at once with
+    // it, before anything is committed. Committed first with the items
+    // drawn as they were, the list was rendered twice an edit, and what
+    // was asked to be prepared was asked of the list as it had been, with
+    // nothing left in it -- and was not asked again.
+    current = {
+      items,
+      drawn: step(
+        items,
+        state.drawn,
+        // Which are in view, and what a unit costs: only what is drawn
+        // first, never what is drawn.
+        // oxlint-disable-next-line react/refs
+        near.current,
+        // oxlint-disable-next-line react/refs
+        FIRST_MS / rate.current,
+        same,
+      ).drawn,
+    };
+    setState(current);
+  }
+  const { drawn } = current;
+  const elements = useRef(new Map<number, Set<HTMLElement>>());
+  const keyOf = useRef(new WeakMap<Element, number>());
+  const intersecting = useRef(new WeakSet<Element>());
   const observer = useRef<IntersectionObserver | null>(null);
   const refs = useRef(new Map<number, RefCallback<HTMLElement>>());
   const timing = useRef<{ start: number; cost: number } | null>(null);
@@ -145,10 +220,10 @@ export function useProgressive(
   /** Counted up when `prepare` says more is ready: a batch to try again. */
   const [woken, setWoken] = useState(0);
   // What `order` reads when it is asked, which is between renders.
-  const current = useRef({ items, shown });
+  const latest = useRef(current);
   useLayoutEffect(() => {
-    current.current = { items, shown };
-  }, [items, shown]);
+    latest.current = current;
+  });
 
   useEffect(() => {
     const el = root.current;
@@ -164,20 +239,32 @@ export function useProgressive(
     };
   }, [root]);
 
-  // The observer wants its root, which is set after the placeholders'
-  // refs run on the first commit: those found before it are observed now.
+  /** Whether any of `key`'s elements -- its placeholder, its drawing, or
+   *  both for the moment one takes the other's place -- is near the view. */
+  const recount = (key: number) => {
+    const els = elements.current.get(key);
+    if (els && [...els].some((el) => intersecting.current.has(el)))
+      near.current.add(key);
+    else near.current.delete(key);
+  };
+
+  // The observer wants its root, which is set after the refs run on the
+  // first commit: those found before it are observed now.
   useEffect(() => {
     const io = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
-          const key = Number((e.target as HTMLElement).dataset.wait);
-          if (e.isIntersecting) near.current.add(key);
-          else near.current.delete(key);
+          const key = keyOf.current.get(e.target);
+          if (key === undefined) continue;
+          if (e.isIntersecting) intersecting.current.add(e.target);
+          else intersecting.current.delete(e.target);
+          recount(key);
         }
       },
       { root: root.current, rootMargin: NEAR },
     );
-    for (const el of placeholders.current.values()) io.observe(el);
+    for (const els of elements.current.values())
+      for (const el of els) io.observe(el);
     observer.current = io;
     return () => {
       io.disconnect();
@@ -185,17 +272,22 @@ export function useProgressive(
     };
   }, [root]);
 
-  const wait = useCallback((key: number) => {
+  const track = useCallback((key: number) => {
     let ref = refs.current.get(key);
     if (!ref) {
       ref = (el) => {
         if (!el) return;
-        placeholders.current.set(key, el);
+        let els = elements.current.get(key);
+        if (!els) elements.current.set(key, (els = new Set()));
+        els.add(el);
+        keyOf.current.set(el, key);
         observer.current?.observe(el);
         return () => {
-          placeholders.current.delete(key);
-          near.current.delete(key);
+          els.delete(el);
+          if (els.size === 0) elements.current.delete(key);
+          intersecting.current.delete(el);
           observer.current?.unobserve(el);
+          recount(key);
         };
       };
       refs.current.set(key, ref);
@@ -211,18 +303,24 @@ export function useProgressive(
     if (!t || t.cost < TIMED_ABOVE) return;
     const measured = (performance.now() - t.start) / t.cost;
     rate.current = (rate.current + measured) / 2;
-  }, [shown]);
+  }, [drawn]);
 
-  const filling = items.some((item) => !shown.has(item.key));
+  let filling = false;
+  let stale = 0;
+  for (const item of items) {
+    const was = drawn.get(item.key);
+    if (was === item.value) continue;
+    filling = true;
+    if (was !== undefined) stale++;
+  }
 
   // What is still to draw, near the view first: the order it is prepared
   // in, asked each time more can be.
   const order = useCallback(function* () {
-    const { items, shown } = current.current;
-    for (const { key } of items)
-      if (!shown.has(key) && near.current.has(key)) yield key;
-    for (const { key } of items)
-      if (!shown.has(key) && !near.current.has(key)) yield key;
+    const { items, drawn } = latest.current;
+    const pending = items.filter((i) => drawn.get(i.key) !== i.value);
+    for (const { key } of pending) if (near.current.has(key)) yield key;
+    for (const { key } of pending) if (!near.current.has(key)) yield key;
   }, []);
   useEffect(() => {
     if (!filling || !prepare) return;
@@ -238,24 +336,22 @@ export function useProgressive(
       const busy =
         inputPending() || performance.now() - lastInput.current < RECENT_MS;
       const budget = busy ? BUSY_MS : IDLE_MS;
-      const next = take(
+      const next = step(
         items,
-        shown,
+        drawn,
         near.current,
         budget / rate.current,
+        same,
         prepare && ((key) => prepare.ready(key)),
       );
-      let cost = 0;
-      for (const item of items)
-        if (next.has(item.key) && !shown.has(item.key)) cost += item.cost;
       // Nothing ready: the next batch is when `prepare` wakes this.
-      if (next.size === shown.size) return;
-      timing.current = { start: performance.now(), cost };
+      if (next.cost === 0) return;
+      timing.current = { start: performance.now(), cost: next.cost };
       // Drawn now, in this task, so the time taken is the batch's own.
-      flushSync(() => setShown(next));
+      flushSync(() => setState({ items, drawn: next.drawn }));
     });
     return () => clearTimeout(id);
-  }, [items, shown, filling, prepare, woken]);
+  }, [items, drawn, filling, prepare, same, woken]);
 
-  return { shown, wait, filling };
+  return { drawn, track, filling, stale };
 }

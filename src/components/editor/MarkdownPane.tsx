@@ -14,6 +14,7 @@ import {
   type CSSProperties,
   type HTMLAttributes,
   type JSX,
+  type RefCallback,
 } from "react";
 import { Spinner } from "src/components/shared/Spinner";
 import type { Analysis } from "src/lib/analysis";
@@ -175,6 +176,15 @@ const Lit = createContext<{
  *  block too, and the item alone is lit. */
 const Within = createContext<string | undefined>(undefined);
 
+/** The page being drawn: which block wrote each of its source lines. Read
+ *  by the block elements through context rather than closed over, so they
+ *  are one set of components for every page and every edit. Made anew for
+ *  a page, they were new component types each time it was drawn, and React
+ *  rebuilt the page's every element rather than updating the one that
+ *  changed: on an edit that touches every page -- page numbers hidden --
+ *  the whole book's DOM, about a second on a 1,404-page book. */
+const LinesOf = createContext<Piece["lines"]>([]);
+
 /** The markdown's block elements, each marked with the block that wrote
  *  it: the parser records on every node the source line it starts on, and
  *  the emitter records which block wrote each line. What the scroll sync
@@ -183,49 +193,46 @@ const Within = createContext<string | undefined>(undefined);
  *  element itself, so a selection moves nothing, and the note in a slot of
  *  its own ahead of the children, so they are not remade with it. A piece
  *  is parsed alone, so its line 1 is its own first line. */
-function marked(piece: Piece): Components {
-  const blockAt = (line: number | undefined) =>
-    line === undefined
-      ? undefined
-      : (piece.lines[line - 1]?.block ?? undefined);
-  return Object.fromEntries(
-    BLOCKS.map((tag) => [
-      tag,
-      function Marked({
-        node,
-        className,
+const MARKED: Components = Object.fromEntries(
+  BLOCKS.map((tag) => [
+    tag,
+    function Marked({
+      node,
+      className,
+      children,
+      ...props
+    }: HTMLAttributes<HTMLElement> & ExtraProps) {
+      const lines = useContext(LinesOf);
+      const line = node?.position?.start.line;
+      const id =
+        line === undefined ? undefined : (lines[line - 1]?.block ?? undefined);
+      const lit = useContext(Lit);
+      const within = useContext(Within);
+      const at = id !== undefined && id !== within && lit.ids.has(id);
+      const element = createElement(
+        tag,
+        {
+          ...props,
+          className:
+            [className, at ? "selection" : ""].filter(Boolean).join(" ") ||
+            undefined,
+          "data-block": id,
+        },
+        at ? (
+          <span className="note" aria-hidden>
+            {lit.blocks[id]?.n}
+          </span>
+        ) : null,
         children,
-        ...props
-      }: HTMLAttributes<HTMLElement> & ExtraProps) {
-        const id = blockAt(node?.position?.start.line);
-        const lit = useContext(Lit);
-        const within = useContext(Within);
-        const at = id !== undefined && id !== within && lit.ids.has(id);
-        const element = createElement(
-          tag,
-          {
-            ...props,
-            className:
-              [className, at ? "selection" : ""].filter(Boolean).join(" ") ||
-              undefined,
-            "data-block": id,
-          },
-          at ? (
-            <span className="note" aria-hidden>
-              {lit.blocks[id]?.n}
-            </span>
-          ) : null,
-          children,
-        );
-        return tag === "li" && id !== undefined ? (
-          <Within.Provider value={id}>{element}</Within.Provider>
-        ) : (
-          element
-        );
-      },
-    ]),
-  );
-}
+      );
+      return tag === "li" && id !== undefined ? (
+        <Within.Provider value={id}>{element}</Within.Provider>
+      ) : (
+        element
+      );
+    },
+  ]),
+);
 
 /** One page of the markdown, drawn on its own from its tree -- parsed in a
  *  worker ahead of it, or here if it was not (`parse.ts`): drawn again only
@@ -240,6 +247,7 @@ const RenderedPiece = memo(
     height,
     selected,
     blocks,
+    watch,
   }: {
     docId: string;
     piece: Piece;
@@ -251,23 +259,24 @@ const RenderedPiece = memo(
     selected: ReadonlySet<string>;
     /** Every block, for the numbers on its selected ones' notes. */
     blocks: Record<string, Placed>;
+    /** Its ref, for `useProgressive` to know where the view is. */
+    watch: RefCallback<HTMLDivElement>;
   }) {
     const drawn = useMemo(
-      () =>
-        drawTree(treeOf(docId, piece.text), {
-          ...marked(piece),
-          ...components,
-        }),
-      [docId, piece, components],
+      () => drawTree(treeOf(docId, piece.text), { ...MARKED, ...components }),
+      [docId, piece.text, components],
     );
     const lit = useMemo(() => ({ ids: selected, blocks }), [selected, blocks]);
     return (
       <div
+        ref={watch}
         className="piece"
         data-piece={piece.page}
         style={{ containIntrinsicSize: `auto ${height}px` }}
       >
-        <Lit.Provider value={lit}>{drawn}</Lit.Provider>
+        <LinesOf.Provider value={piece.lines}>
+          <Lit.Provider value={lit}>{drawn}</Lit.Provider>
+        </LinesOf.Provider>
       </div>
     );
   },
@@ -277,6 +286,7 @@ const RenderedPiece = memo(
   (a, b) =>
     a.docId === b.docId &&
     a.components === b.components &&
+    a.watch === b.watch &&
     a.height === b.height &&
     a.selected === b.selected &&
     sameNotes(a.selected, a.blocks, b.blocks) &&
@@ -317,6 +327,52 @@ function useParsedAhead(docId: string, list: Piece[]): Prepare {
         ),
     };
   }, [docId, list]);
+}
+
+/** `f` of a piece, worked out once a piece. A page is given the height of
+ *  the piece it shows, which while it waits to be drawn again after an
+ *  edit is the one from before: given the new piece's, every page of a
+ *  book drew again for an edit that changed them all -- its repeated line
+ *  deleted -- the selection's context sent down through all of them, and
+ *  held the page for 600ms of the second the press took. */
+function byPiece(f: (piece: Piece) => number): (piece: Piece) => number {
+  const known = new WeakMap<Piece, number>();
+  return (piece) => {
+    let v = known.get(piece);
+    if (v === undefined) known.set(piece, (v = f(piece)));
+    return v;
+  };
+}
+
+/** The pieces as `useProgressive` draws them: by page, costing their
+ *  characters. */
+function itemsOf(list: Piece[]) {
+  return list.map((p) => ({ key: p.page, cost: p.text.length, value: p }));
+}
+
+/** Said while pages an edit changed are still drawn as they were: an edit
+ *  to every page of a book -- its page numbers hidden -- shows on the pages
+ *  in view at once and on the rest over the next second or so, as they are
+ *  parsed and drawn again. After the view's content -- the first thing in
+ *  the scroller is what the scroll sync watches -- and held to the bottom
+ *  of the view as it scrolls, taking no room; shown only after a moment,
+ *  so an edit drawn again in a batch or two does not flash it. The look is
+ *  `.updating` in index.css. */
+function Updating({ stale }: { stale: number }) {
+  if (stale === 0) return null;
+  return (
+    <div className="updating" role="status">
+      <span>
+        <Spinner className="h-3.5 w-3.5" />
+        Updating pages…
+        {/* Not read out: told as it counts down, it would be heard a
+            dozen times a second. */}
+        <span aria-hidden className="text-faint tabular-nums">
+          {stale} left
+        </span>
+      </span>
+    </div>
+  );
 }
 
 /** Where a page of the markdown will be, while it waits its turn to be
@@ -404,43 +460,48 @@ function Rendered({
     () => ({ a: Anchor, img: figureFor(docId, figureSizes(analysis)) }),
     [docId, analysis],
   );
-  const items = useMemo(
-    () => list.map((p) => ({ key: p.page, cost: p.text.length })),
-    [list],
-  );
-  const heights = useMemo(
-    () => list.map((p) => renderedHeight(p, analysis)),
-    [list, analysis],
+  const items = useMemo(() => itemsOf(list), [list]);
+  const heightOf = useMemo(
+    () => byPiece((p) => renderedHeight(p, analysis)),
+    [analysis],
   );
   const prepare = useParsedAhead(docId, list);
-  const { shown, wait, filling } = useProgressive(items, scroller, prepare);
+  const { drawn, track, filling, stale } = useProgressive(items, scroller, {
+    prepare,
+    same: samePiece,
+  });
   return (
-    <article
-      className="markdown mx-auto max-w-[72ch] px-8 pt-6 pb-24"
-      aria-busy={filling}
-    >
-      {list.map((piece, i) =>
-        shown.has(piece.page) ? (
-          <RenderedPiece
-            key={piece.page}
-            docId={docId}
-            piece={piece}
-            components={components}
-            height={heights[i]}
-            selected={selected(piece.page)}
-            blocks={blocks}
-          />
-        ) : (
-          <Waiting
-            key={piece.page}
-            page={piece.page}
-            height={heights[i]}
-            row={RENDERED_ROW}
-            ref={wait(piece.page)}
-          />
-        ),
-      )}
-    </article>
+    <>
+      <article
+        className="markdown mx-auto max-w-[72ch] px-8 pt-6 pb-24"
+        aria-busy={filling}
+      >
+        {list.map((piece) => {
+          const at = drawn.get(piece.page);
+          return at ? (
+            <RenderedPiece
+              key={piece.page}
+              docId={docId}
+              piece={at}
+              components={components}
+              height={heightOf(at)}
+              selected={selected(piece.page)}
+              blocks={blocks}
+              watch={track(piece.page)}
+            />
+          ) : (
+            <Waiting
+              key={piece.page}
+              page={piece.page}
+              height={heightOf(piece)}
+              row={RENDERED_ROW}
+              ref={track(piece.page)}
+            />
+          );
+        })}
+      </article>
+      <Updating stale={stale} />
+    </>
   );
 }
 
@@ -472,20 +533,28 @@ function kindOf(quoted: string): Kind {
 const RawPiece = memo(
   function RawPiece({
     piece,
+    from,
     height,
     selected,
+    watch,
   }: {
     piece: Piece;
+    /** Where its first line is among the markdown's now: the piece may be
+     *  the one drawn before an edit, waiting to be drawn again, and the
+     *  pages before it renumbered meanwhile. */
+    from: number;
     height: number;
     /** The ids selected on its page (`useSelected`). */
     selected: ReadonlySet<string>;
+    watch: RefCallback<HTMLOListElement>;
   }) {
     return (
       <ol
+        ref={watch}
         className="source piece"
         data-piece={piece.page}
         style={{
-          counterReset: `line ${piece.from}`,
+          counterReset: `line ${from}`,
           containIntrinsicSize: `auto ${height}px`,
         }}
       >
@@ -494,7 +563,8 @@ const RawPiece = memo(
     );
   },
   (a, b) =>
-    a.piece.from === b.piece.from &&
+    a.from === b.from &&
+    a.watch === b.watch &&
     a.height === b.height &&
     a.selected === b.selected &&
     samePiece(a.piece, b.piece),
@@ -553,39 +623,44 @@ function Raw({
   scroller: React.RefObject<HTMLDivElement | null>;
   selected: (page: number) => ReadonlySet<string>;
 }) {
-  const items = useMemo(
-    () => list.map((p) => ({ key: p.page, cost: p.text.length })),
-    [list],
-  );
-  const heights = useMemo(() => list.map(rawHeight), [list]);
-  const { shown, wait, filling } = useProgressive(items, scroller);
+  const items = useMemo(() => itemsOf(list), [list]);
+  const heightOf = useMemo(() => byPiece(rawHeight), []);
+  const { drawn, track, filling, stale } = useProgressive(items, scroller, {
+    same: samePiece,
+  });
   return (
-    <div
-      className="pt-2 pb-24"
-      aria-busy={filling}
-      style={
-        { "--digits": String(markdown.lines.length).length } as CSSProperties
-      }
-    >
-      {list.map((piece, i) =>
-        shown.has(piece.page) ? (
-          <RawPiece
-            key={piece.page}
-            piece={piece}
-            height={heights[i]}
-            selected={selected(piece.page)}
-          />
-        ) : (
-          <Waiting
-            key={piece.page}
-            page={piece.page}
-            height={heights[i]}
-            row={RAW_ROW}
-            ref={wait(piece.page)}
-          />
-        ),
-      )}
-    </div>
+    <>
+      <div
+        className="pt-2 pb-24"
+        aria-busy={filling}
+        style={
+          { "--digits": String(markdown.lines.length).length } as CSSProperties
+        }
+      >
+        {list.map((piece) => {
+          const at = drawn.get(piece.page);
+          return at ? (
+            <RawPiece
+              key={piece.page}
+              piece={at}
+              from={piece.from}
+              height={heightOf(at)}
+              selected={selected(piece.page)}
+              watch={track(piece.page)}
+            />
+          ) : (
+            <Waiting
+              key={piece.page}
+              page={piece.page}
+              height={heightOf(piece)}
+              row={RAW_ROW}
+              ref={track(piece.page)}
+            />
+          );
+        })}
+      </div>
+      <Updating stale={stale} />
+    </>
   );
 }
 
