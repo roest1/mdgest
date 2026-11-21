@@ -305,6 +305,19 @@ function threePages(): Analysis {
   };
 }
 
+test("what is found is found once a read, and a read of its own finds its own", () => {
+  const doc = footers(["Manual", "1"], ["Manual", "2"]);
+  // Emit asks on every edit: the same answer, not worked out again.
+  expect(pageNumberIds(doc)).toBe(pageNumberIds(doc));
+  expect(repeatedLines(doc)).toBe(repeatedLines(doc));
+  // The same pages read again are another read, found afresh.
+  const again = structuredClone(doc);
+  again.pages[1].blocks[1].text = "Field Manual";
+  expect(repeatedLines(again)).not.toBe(repeatedLines(doc));
+  expect(repeatedLines(again)).toEqual([]);
+  expect(repeatedLines(doc).map((l) => l.text)).toEqual(["Manual"]);
+});
+
 describe("headers and footers", () => {
   const doc3 = threePages();
   const found = headersFooters(doc3);
