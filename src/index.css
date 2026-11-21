@@ -343,6 +343,25 @@
     animation: piece-wait 1.6s linear infinite;
   }
 
+  /* Pages an edit changed still being drawn again (`Updating`,
+     MarkdownPane.tsx): a pill at the foot of the view, held there as it
+     scrolls by a sticky box of no height after the content, so the page's
+     length and the scroll sync's measures are as they were. Faded in after
+     a moment, so a redraw that is done by then never shows it. */
+  .updating {
+    position: sticky;
+    bottom: 12px;
+    height: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .updating > span {
+    @apply flex items-center gap-1.5 rounded-full border border-edge bg-raised px-3 py-1 text-xs text-muted shadow-md;
+    animation: fade-in 150ms ease-out 250ms both;
+  }
+
   /* `.source` is the raw view: an <ol>, one <li> a line, numbered by a CSS
      counter in a gutter drawn by the item's ::before. A counter and not text
      so that selecting the view and copying it gives the markdown alone. The
