@@ -65,28 +65,108 @@ const ROMAN = "(?=[ivxl])(?:xl|l?x{0,3})(?:ix|iv|v?i{0,3})";
 
 /** What a page prints where a page number goes. Bounded on purpose: enough
  *  for `12`, `iv`, `Page 12`, `12 of 40`, `- 12 -`, and not enough for a
- *  clause number or a line of prose that starts with a digit. */
+ *  clause number or a line of prose that starts with a digit. The groups
+ *  are the word before (`Page`, `p.`), the number, and the count after
+ *  (`of 40`, `/ 40`). */
 const PAGE_NUMBER = new RegExp(
   "^[\\s\\-–—|·.]*" +
-    "(?:page\\s+|p\\.\\s*)?" +
+    "(page\\s+|p\\.\\s*)?" +
     `(\\d{1,4}|${ROMAN})` +
-    `(?:\\s*(?:of|/)\\s*(?:\\d{1,4}|${ROMAN}))?` +
+    `(\\s*(?:of|/)\\s*(?:\\d{1,4}|${ROMAN}))?` +
     "[\\s\\-–—|·.]*$",
   "i",
 );
 
 /** The page number `text` prints -- `12`, `iv` -- or null if it prints
- *  something else. Position is not checked here: see `pageNumberOf`. */
+ *  something else. Neither position nor sequence is checked here: see
+ *  `pageNumberIds`. */
 export function label(text: string): string | null {
   const match = PAGE_NUMBER.exec(text.trim());
-  return match ? match[1].toLowerCase() : null;
+  return match ? match[2].toLowerCase() : null;
 }
 
-/** The page number `block` prints, when it is a text block in a margin band
- *  of `page` printing nothing else; null otherwise. */
-export function pageNumberOf(block: Block, page: Page): string | null {
-  if (block.kind !== "text" || !inMargin(block, page)) return null;
-  return label(printed(block));
+/** What a roman label counts: `xiv` is 14. Only ever given a label
+ *  `ROMAN` matched, so it is well formed. */
+function romanValue(roman: string): number {
+  const digit: Record<string, number> = { i: 1, v: 5, x: 10, l: 50 };
+  let total = 0;
+  for (let k = 0; k < roman.length; k++) {
+    const here = digit[roman[k]];
+    const next = digit[roman[k + 1]] ?? 0;
+    total += here < next ? -here : here;
+  }
+  return total;
+}
+
+/** A margin line that prints a page number's form, before the document
+ *  around it is asked whether it is one. */
+interface Candidate {
+  id: string;
+  page: number;
+  label: string;
+  /** Roman and arabic numbers are separate runs: front matter's `iii`
+   *  and the body's `3` are never one sequence. */
+  roman: boolean;
+  value: number;
+  /** The line says it is a page number in words -- `Page 12`, `p. 7`,
+   *  `12 of 40` -- not only by printing a number. */
+  says: boolean;
+}
+
+function candidates(analysis: Analysis): Candidate[] {
+  const out: Candidate[] = [];
+  for (const page of analysis.pages) {
+    for (const block of page.blocks) {
+      if (block.kind !== "text" || !inMargin(block, page)) continue;
+      const match = PAGE_NUMBER.exec(printed(block).trim());
+      if (!match) continue;
+      const label = match[2].toLowerCase();
+      const roman = !/^\d/.test(label);
+      out.push({
+        id: block.id,
+        page: page.n,
+        label,
+        roman,
+        value: roman ? romanValue(label) : Number(label),
+        says: match[1] !== undefined || match[3] !== undefined,
+      });
+    }
+  }
+  return out;
+}
+
+/** The page number each block of `analysis` prints, by block id, for the
+ *  text blocks in a margin band that print one and nothing else.
+ *
+ * A number's form is not enough: a footer that prints only the year,
+ *  `2024`, has the form of page 2024. What a page number has that a year
+ *  or a fixed code does not is a sequence -- it counts up with the pages.
+ *  So a number is a page number when another page's number keeps the
+ *  same distance from its own page: printed number minus page index is
+ *  one offset along a run. That takes in pages with no number (a blank
+ *  page, a chapter opener), front matter in roman and the body from 1
+ *  again in arabic (two runs, two offsets), and a book's middle cut out
+ *  as a PDF of its own (`Page 213` on page 1). A year printed on every
+ *  page stands at a new offset on each and is never in a run.
+ *
+ * A number with no run -- a one-page document, or the one number in a
+ *  margin -- has nothing to count against, so it must say what it is by
+ *  itself: in words (`Page 3`, `3 of 12`), or by being the page's own
+ *  index (`1` on page 1). A lone `2024` stays text, which keeps a
+ *  setting of `delete` from taking out what the page meant to say. */
+export function pageNumberIds(analysis: Analysis): Map<string, string> {
+  const found = candidates(analysis);
+  const runs = new Map<string, Set<number>>();
+  const run = (c: Candidate) => `${c.roman ? "r" : "a"}${c.value - c.page}`;
+  for (const c of found) {
+    if (!runs.has(run(c))) runs.set(run(c), new Set());
+    runs.get(run(c))!.add(c.page);
+  }
+  const out = new Map<string, string>();
+  for (const c of found)
+    if (runs.get(run(c))!.size >= 2 || c.says || c.value === c.page)
+      out.set(c.id, c.label);
+  return out;
 }
 
 // ---- headers and footers --------------------------------------------------
@@ -133,6 +213,7 @@ export function repeatedLines(analysis: Analysis): RepeatedLine[] {
     { text: string; pages: Set<number>; ids: string[]; top: number }
   >();
   const anywhere = new Map<string, Set<number>>();
+  const numbers = pageNumberIds(analysis);
   for (const page of analysis.pages) {
     for (const block of page.blocks) {
       if (block.kind !== "text") continue;
@@ -140,8 +221,7 @@ export function repeatedLines(analysis: Analysis): RepeatedLine[] {
       if (!key) continue;
       if (!anywhere.has(key)) anywhere.set(key, new Set());
       anywhere.get(key)!.add(page.n);
-      if (!inMargin(block, page) || pageNumberOf(block, page) !== null)
-        continue;
+      if (!inMargin(block, page) || numbers.has(block.id)) continue;
       if (!margin.has(key))
         margin.set(key, {
           text: printed(block).trim(),
@@ -193,10 +273,11 @@ export function pageNumbers(analysis: Analysis): {
   const labels: string[] = [];
   const pages: number[] = [];
   let top = 0;
+  const numbers = pageNumberIds(analysis);
   for (const page of analysis.pages) {
     for (const block of page.blocks) {
-      const n = pageNumberOf(block, page);
-      if (n === null) continue;
+      const n = numbers.get(block.id);
+      if (n === undefined) continue;
       labels.push(n);
       pages.push(page.n);
       if (block.box.y < page.height / 2) top++;
@@ -220,10 +301,11 @@ export function findFurniture(analysis: Analysis): Record<Furniture, Found> {
   const numbers: Found = { count: 0, sample: null };
   const repeated = headersFooters(analysis);
   const heads: Found = { count: repeated.size, sample: null };
+  const pageNumbered = pageNumberIds(analysis);
   for (const page of analysis.pages) {
     for (const block of page.blocks) {
-      const n = pageNumberOf(block, page);
-      if (n !== null) {
+      const n = pageNumbered.get(block.id);
+      if (n !== undefined) {
         numbers.count++;
         numbers.sample ??= { text: printed(block).trim(), hidden: `page ${n}` };
       } else if (repeated.has(block.id) && !heads.sample) {

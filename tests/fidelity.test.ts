@@ -163,10 +163,12 @@ test("a corrected block is left out on both sides", () => {
 });
 
 test("a page number the setting deletes is not expected; one it hides is", () => {
-  const folio = block("p1b2", "7", "para", {
+  // Page 1 printing 1: a lone number is a page number only as its own
+  // page's index (furniture.ts, `pageNumberIds`).
+  const folio = block("p1b2", "1", "para", {
     box: { x: 300, y: 760, w: 6, h: 8 },
   });
-  const layer = "Grease the pump weekly. Log every service. 7";
+  const layer = "Grease the pump weekly. Log every service. 1";
   const analysis = doc([PUMP, LOG, folio]);
   expect(score(layer, analysis).expected).toBe(35);
   const deleted = score(
