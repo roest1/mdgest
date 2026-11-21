@@ -10,7 +10,7 @@
 import { LIST_ROLES, type Analysis, type Block, type Page } from "./analysis";
 import { shape, type Edits } from "./edits";
 import {
-  pageNumberOf,
+  pageNumberIds,
   repeatedKeys,
   type Choice,
   type Furniture,
@@ -245,6 +245,12 @@ export function emit(
   const pageNumbers = edits?.page_numbers ?? "keep";
   const headers = edits?.headers_footers ?? "keep";
   const perLine = edits?.repeated_lines ?? {};
+  // Found once per document, and only under a setting that acts on them:
+  // a page number is known by the pages around it.
+  const numbered =
+    pageNumbers === "keep"
+      ? new Map<string, string>()
+      : pageNumberIds(analysis);
   // Found once per document, and only when it is asked for: it looks at
   // every page to know what repeats.
   const repeated =
@@ -289,8 +295,7 @@ export function emit(
       // under a setting that is not `keep`, so a block the setting names
       // is one the setting hides or deletes.
       const byHand = block.hidden || block.deleted;
-      const printed =
-        !byHand && pageNumbers !== "keep" ? pageNumberOf(raw, page) : null;
+      const printed = byHand ? null : (numbered.get(raw.id) ?? null);
       const line = byHand ? null : lineChoice(raw.id);
       const setting: Furniture | undefined =
         printed !== null

@@ -322,9 +322,11 @@ export function PdfPane({ docId }: { docId: string }) {
   // The document is read here, where its pages are open, and the markdown
   // pane shows the reading from the store. A reading outlives this pane --
   // the tab switched away from mid-read -- and the next pane finds it.
+  // Asked to read the document again, it reads these pages again.
+  const rereads = useEditor((s) => s.rereads[docId] ?? 0);
   useEffect(() => {
     if (loaded) ensureRead(docId, loaded.pages);
-  }, [docId, loaded]);
+  }, [docId, loaded, rereads]);
   // A document that does not open is not read either, and the markdown
   // pane says so rather than waiting on a reading that never starts.
   useEffect(() => {
