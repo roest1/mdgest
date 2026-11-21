@@ -90,7 +90,7 @@ function inputPending(): boolean {
  *  rest in order, within `budget`, but always at least one of those
  *  `ready` says may be. One not taken stays as it was drawn, or waits in
  *  its placeholder. An item no longer in `items` is let go. */
-function step<T>(
+export function step<T>(
   items: readonly Item<T>[],
   drawn: ReadonlyMap<number, T>,
   near: ReadonlySet<number>,

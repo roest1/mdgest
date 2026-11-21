@@ -1,13 +1,20 @@
 /** A long list drawn a batch at a time (`useProgressive`), and drawn again
  *  the same way when what it shows changes: each item as it was until its
- *  turn, the ones in view first. Every item here costs more than a batch
- *  may spend, so each batch draws exactly one, and the order they are
- *  drawn in is what is tested. */
+ *  turn, the ones in view first.
+ *
+ * How many a batch draws is learned from how long the batches before took,
+ * and which items count as near the view is the browser's to say -- both
+ * differ between machines, and an order asserted through them passed here
+ * and failed on CI. So the hook is held to what holds anywhere: nothing
+ * goes back to a placeholder, everything ends drawn as it now is, in order
+ * from the top; and which are drawn, given the budget and which are near,
+ * is held on `step` alone. */
 
 import { createElement, useLayoutEffect, useMemo, type RefObject } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, test } from "vitest";
 import {
+  step,
   useProgressive,
   type Item,
   type Prepare,
@@ -18,8 +25,8 @@ const COUNT = 20;
 const ROW = 100;
 const VIEW = 200;
 
-/** Items 1 to `COUNT`, each showing `version`, each too dear to share a
- *  batch. */
+/** Items 1 to `COUNT`, each showing `version`, each more than the first
+ *  batch may spend. */
 const itemsAt = (version: string): Item<string>[] =>
   Array.from({ length: COUNT }, (_, i) => ({
     key: i + 1,
@@ -130,46 +137,25 @@ const shown = () =>
     ],
   );
 
-/** Until an observer of the list's own -- made after the hook's, so told
- *  after it in the same round -- sees item `key` near the view: the hook
- *  has been told of the scroll, however long the browser takes to say. */
-function seenNear(key: number): Promise<void> {
-  const el = host!.querySelector(`[data-key="${key}"]`)!;
-  return new Promise((done) => {
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          io.disconnect();
-          done();
-        }
-      },
-      { root: host, rootMargin: "100% 0px" },
-    );
-    io.observe(el);
-  });
-}
-
 /** Whether every item is drawn, showing `version`. */
 const allAt = (version: string) =>
   shown().length === COUNT &&
   shown().every(([, v]) => v?.startsWith(`${version}-`));
 
-test("a change is drawn again a batch at a time, what is in view first, each item as it was until then", async () => {
+test("a change is drawn again a batch at a time, each item as it was until then", async () => {
   const render = mount();
   render(itemsAt("a"));
   await expect.poll(() => allAt("a")).toBe(true);
 
-  // Near the end, off the items' edges: 18 to 20 in view, and 16 and 17
-  // within a screen above it.
-  host!.scrollTop = 1750;
-  await seenNear(16);
-
   const order: number[] = [];
+  /** Items seen without a value since the change: a placeholder put back. */
+  const lost: number[] = [];
   const watch = new MutationObserver((changes) => {
     for (const c of changes) {
       const el = c.target as HTMLElement;
-      if (el.dataset.value?.startsWith("b-"))
-        order.push(Number(el.dataset.key));
+      const key = Number(el.dataset.key);
+      if (el.dataset.value === undefined) lost.push(key);
+      else if (el.dataset.value.startsWith("b-")) order.push(key);
     }
   });
   watch.observe(host!, {
@@ -179,26 +165,15 @@ test("a change is drawn again a batch at a time, what is in view first, each ite
   });
   try {
     render(itemsAt("b"));
-    // The render that brought the change drew one item again, near the
-    // view; every other item still shows what it did, none a placeholder.
-    await expect.poll(() => order.length).toBeGreaterThan(0);
-    expect(shown().every(([, v]) => v !== undefined)).toBe(true);
     await expect.poll(() => order.length, { timeout: 5_000 }).toBe(COUNT);
+    expect(lost).toEqual([]);
     expect(stale).toBe(0);
     expect(shown()).toEqual(
       Array.from({ length: COUNT }, (_, i) => [i + 1, `b-${i + 1}`]),
     );
-    // What is near the view first -- 18 and 19 among it, which are in it --
-    // then the rest in order. Which items at the edges count as near is the
-    // browser's to say: on CI, 20, half in view at the bottom, is not.
-    const first = order.slice(
-      0,
-      order.findIndex((key) => key < 15),
-    );
-    expect(first).toEqual(expect.arrayContaining([18, 19]));
-    expect(first.every((key) => key >= 15)).toBe(true);
-    const rest = order.slice(first.length);
-    expect(rest).toEqual([...rest].sort((x, y) => x - y));
+    // At the top, what is near the view comes first and the rest after it:
+    // in order, however many a batch drew.
+    expect(order).toEqual(Array.from({ length: COUNT }, (_, i) => i + 1));
   } finally {
     watch.disconnect();
   }
@@ -213,4 +188,72 @@ test("a change that must be prepared first is prepared and drawn, every item of 
   // left before the change, which is nothing.
   await expect.poll(() => allAt("b"), { timeout: 5_000 }).toBe(true);
   expect(stale).toBe(0);
+});
+
+// ---- which are drawn, given which are near the view -------------------------
+
+/** `count` items at `version`, each costing 1. */
+const cheap = (version: string, count = 10): Item<string>[] =>
+  Array.from({ length: count }, (_, i) => ({
+    key: i + 1,
+    cost: 1,
+    value: `${version}-${i + 1}`,
+  }));
+const drawnAs = (items: Item<string>[]) =>
+  new Map(items.map((i) => [i.key, i.value]));
+const changed = (m: Map<number, string>) =>
+  [...m].filter(([, v]) => v.startsWith("b-")).map(([k]) => k);
+
+test("those near the view are drawn again first, then the rest in order, within the budget", () => {
+  const { drawn, cost } = step(
+    cheap("b"),
+    drawnAs(cheap("a")),
+    new Set([7, 8]),
+    3,
+    Object.is,
+  );
+  expect(changed(drawn)).toEqual([1, 7, 8]);
+  expect(cost).toBe(3);
+  // The rest drawn as they were, none let go to a placeholder.
+  expect(drawn.size).toBe(10);
+  expect(drawn.get(2)).toBe("a-2");
+});
+
+test("an item that draws the same is handed its new value, costing nothing", () => {
+  const same = (a: string, b: string) => a.slice(2) === b.slice(2);
+  const { drawn, cost } = step(
+    cheap("b"),
+    drawnAs(cheap("a")),
+    new Set(),
+    0,
+    same,
+  );
+  expect(changed(drawn)).toHaveLength(10);
+  expect(cost).toBe(0);
+});
+
+test("one not ready waits; at least one ready is drawn however small the budget", () => {
+  const { drawn } = step(
+    cheap("b"),
+    drawnAs(cheap("a")),
+    new Set([5]),
+    0,
+    Object.is,
+    (key) => key !== 5,
+  );
+  expect(changed(drawn)).toEqual([1]);
+});
+
+test("an item no longer in the list is let go; one not drawn yet is drawn", () => {
+  const { drawn } = step(
+    cheap("a", 3),
+    new Map([
+      [1, "a-1"],
+      [9, "a-9"],
+    ]),
+    new Set(),
+    10,
+    Object.is,
+  );
+  expect([...drawn.keys()].sort()).toEqual([1, 2, 3]);
 });
