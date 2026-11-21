@@ -130,6 +130,26 @@ const shown = () =>
     ],
   );
 
+/** Until an observer of the list's own -- made after the hook's, so told
+ *  after it in the same round -- sees item `key` near the view. Two frames
+ *  after a scroll was not always enough on CI: the hook was told of the
+ *  scroll after the change below was drawn, and drew item 1 first. */
+function seenNear(key: number): Promise<void> {
+  const el = host!.querySelector(`[data-key="${key}"]`)!;
+  return new Promise((done) => {
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          io.disconnect();
+          done();
+        }
+      },
+      { root: host, rootMargin: "100% 0px" },
+    );
+    io.observe(el);
+  });
+}
+
 /** Whether every item is drawn, showing `version`. */
 const allAt = (version: string) =>
   shown().length === COUNT &&
@@ -143,9 +163,7 @@ test("a change is drawn again a batch at a time, what is in view first, each ite
   // Near the end, off the items' edges: 18 to 20 in view, and 16 and 17
   // within a screen above it.
   host!.scrollTop = 1750;
-  await new Promise((r) =>
-    requestAnimationFrame(() => requestAnimationFrame(r)),
-  );
+  await seenNear(16);
 
   const order: number[] = [];
   const watch = new MutationObserver((changes) => {
