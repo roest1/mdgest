@@ -129,11 +129,19 @@ export interface Engine {
   /** Keep a document's read, and write its markdown from it: the analysis
    *  to the cache, the figures beside the markdown, and `markdown/<id>.md`.
    *  The figures' buffers are handed over, not copied, and are empty on the
-   *  page afterwards. */
+   *  page afterwards. With `dropEdits`, the edits go with the read they
+   *  were made on, and the markdown is written without them: a person
+   *  asked for the document to be read again with the current reader. */
   convert: {
-    params: { docId: string; analysis: Analysis; figures: Figure[] };
+    params: {
+      docId: string;
+      analysis: Analysis;
+      figures: Figure[];
+      dropEdits?: boolean;
+    };
     /** The edits the markdown was written with: the ones already in the
-     *  cache, which a document read again keeps. */
+     *  cache, which a document read again keeps -- unless they were
+     *  dropped, and then none. */
     result: Edits | null;
   };
   /** A document's edits, as `.mdgest/<id>.pdf/edits.json` holds them, or

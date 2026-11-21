@@ -7,6 +7,7 @@ import {
   EyeOff,
   Image,
   Redo2,
+  RefreshCw,
   RotateCcw,
   SquareDashed,
   Tag,
@@ -23,6 +24,7 @@ import {
   type ReactNode,
 } from "react";
 import { useMenuDismiss } from "src/components/shared/useMenuDismiss";
+import { outdated, readAgain } from "src/lib/convert";
 import {
   redoEdit,
   revertEdits,
@@ -30,7 +32,7 @@ import {
   setLineEdit,
   undoEdit,
 } from "src/lib/editing";
-import { revertToOriginal } from "src/lib/edits";
+import { isBlank, revertToOriginal, type Edits } from "src/lib/edits";
 import {
   pageNumbers,
   repeatedLines,
@@ -81,6 +83,54 @@ function HistoryButton({
       className={iconButton}
     >
       <Icon className="h-4 w-4" />
+    </button>
+  );
+}
+
+/** Read the document again with the current reader, offered only when an
+ *  older one read it -- which, since a document with no edits is read again
+ *  on its own, is a document a person has edited. Its edits go with the
+ *  old read, and undo cannot bring them back, so that is asked first. */
+function ReadAgain({ docId, edits }: { docId: string; edits: Edits }) {
+  // Kept by document: a question asked about one tab's document is not
+  // left standing over the next one's.
+  const [asking, setAsking] = useState<string | null>(null);
+  const go = () => {
+    setAsking(null);
+    readAgain(docId);
+  };
+  if (asking === docId)
+    return (
+      <span className="flex shrink-0 items-center gap-2">
+        <span className="text-amber-400/90">
+          Read it again? Its edits and their history go, and undo can't bring
+          them back.
+        </span>
+        <button
+          type="button"
+          onClick={go}
+          className="cursor-pointer text-ink hover:underline"
+        >
+          Read again
+        </button>
+        <button
+          type="button"
+          onClick={() => setAsking(null)}
+          className="cursor-pointer text-faint hover:text-ink"
+        >
+          Keep
+        </button>
+      </span>
+    );
+  return (
+    <button
+      type="button"
+      title="Read again with the current reader: an older one read this document, and its edits hold it on that read"
+      onClick={() => (isBlank(edits) ? go() : setAsking(docId))}
+      className={barButton()}
+    >
+      <RefreshCw className="h-3.5 w-3.5" />
+      Read again
     </button>
   );
 }
@@ -532,6 +582,10 @@ export function Toolbar({ docId }: { docId: string }) {
           onClick={() => revertEdits(docId)}
         />
       </div>
+
+      {analysis && edits && outdated(analysis) && (
+        <ReadAgain docId={docId} edits={edits} />
+      )}
 
       <span className="h-5 w-px bg-edge" />
 

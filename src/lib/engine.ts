@@ -120,10 +120,15 @@ export const engine = {
   renameWorkspace: (name: string) => call("renameWorkspace", { name }),
   source: (docId: string) => call("source", { docId }),
   analysis: (docId: string) => call("analysis", { docId }),
-  convert: (docId: string, analysis: Analysis, figures: Figure[]) =>
+  convert: (
+    docId: string,
+    analysis: Analysis,
+    figures: Figure[],
+    dropEdits = false,
+  ) =>
     call(
       "convert",
-      { docId, analysis, figures },
+      { docId, analysis, figures, dropEdits },
       figures.map((f) => f.bytes),
     ),
   edits: (docId: string) => call("edits", { docId }),

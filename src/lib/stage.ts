@@ -1070,11 +1070,18 @@ export function analysis(docId: string): Promise<Analysis | null> {
  *  and a stale one would otherwise sit beside the new set. A document read
  *  again with its edits in the cache keeps them, and its markdown carries
  *  them; they are answered, which the page would otherwise come straight
- *  back for. */
+ *  back for.
+ *
+ * With `dropEdits` they are not kept: a person asked for the document to
+ *  be read again with the current reader, and its edits name the blocks
+ *  of the read this replaces. They go here, in the same write as the read
+ *  that replaces them, and not before: a reading that fails or is given
+ *  up on its way here leaves the old read and its edits whole. */
 export function convert(
   docId: string,
   analysis: Analysis,
   figures: Figure[],
+  dropEdits = false,
 ): Promise<Edits | null> {
   return locked(async () => {
     if ((await opfs.size(sourcePath(docId))) === null) {
@@ -1092,7 +1099,7 @@ export function convert(
     // is near enough for figuring room; a zero free means the browser would
     // not say, and `writeFile` still reports a real full disk in words if
     // it comes to that.
-    const edits = await readEdits(docId);
+    const edits = dropEdits ? null : await readEdits(docId);
     const markdown = emit(
       analysis,
       assetsPrefix(docId),
@@ -1113,8 +1120,12 @@ export function convert(
     // `analysis.json` is what says a document has been read, so it goes
     // first and comes back last: a write cut short anywhere between leaves
     // no analysis, and the next open reads the document again rather than
-    // trusting a read whose figures or markdown are not all there.
+    // trusting a read whose figures or markdown are not all there. Edits
+    // being dropped go next, before anything of the new read is written:
+    // left beside it, they would land on its blocks, which they never
+    // named.
     await opfs.remove([...cacheDir(docId), ANALYSIS]);
+    if (dropEdits) await opfs.remove([...cacheDir(docId), EDITS]);
     await opfs.remove(assetsDir(docId), true);
     for (const { name, bytes } of figures) {
       await opfs.writeFile([...assetsDir(docId), name], bytes);
