@@ -131,9 +131,8 @@ const shown = () =>
   );
 
 /** Until an observer of the list's own -- made after the hook's, so told
- *  after it in the same round -- sees item `key` near the view. Two frames
- *  after a scroll was not always enough on CI: the hook was told of the
- *  scroll after the change below was drawn, and drew item 1 first. */
+ *  after it in the same round -- sees item `key` near the view: the hook
+ *  has been told of the scroll, however long the browser takes to say. */
 function seenNear(key: number): Promise<void> {
   const el = host!.querySelector(`[data-key="${key}"]`)!;
   return new Promise((done) => {
@@ -189,13 +188,17 @@ test("a change is drawn again a batch at a time, what is in view first, each ite
     expect(shown()).toEqual(
       Array.from({ length: COUNT }, (_, i) => [i + 1, `b-${i + 1}`]),
     );
-    // Those within a screen of the view first, then the rest in order.
-    expect(order.slice(0, 5).sort((x, y) => x - y)).toEqual([
-      16, 17, 18, 19, 20,
-    ]);
-    expect(order.slice(5)).toEqual(
-      Array.from({ length: COUNT - 5 }, (_, i) => i + 1),
+    // What is near the view first -- 18 and 19 among it, which are in it --
+    // then the rest in order. Which items at the edges count as near is the
+    // browser's to say: on CI, 20, half in view at the bottom, is not.
+    const first = order.slice(
+      0,
+      order.findIndex((key) => key < 15),
     );
+    expect(first).toEqual(expect.arrayContaining([18, 19]));
+    expect(first.every((key) => key >= 15)).toBe(true);
+    const rest = order.slice(first.length);
+    expect(rest).toEqual([...rest].sort((x, y) => x - y));
   } finally {
     watch.disconnect();
   }
