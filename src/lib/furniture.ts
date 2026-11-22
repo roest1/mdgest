@@ -28,6 +28,19 @@ export type Furniture = (typeof FURNITURE)[number];
  *  furniture may sit in. */
 export const MARGIN_FRACTION = 0.12;
 
+/** `f` of an analysis, worked out once for each: emit asks on every edit,
+ *  and a book's repeated lines took 190ms of the 390ms an edit to it took
+ *  to emit. An analysis is not changed once made -- `structure.ts` builds
+ *  it, and edits are kept beside it -- so what is found in it holds for as
+ *  long as it is there, and goes with it. Read-only, being shared. */
+function once<T>(f: (analysis: Analysis) => T): (analysis: Analysis) => T {
+  const known = new WeakMap<Analysis, T>();
+  return (analysis) => {
+    if (!known.has(analysis)) known.set(analysis, f(analysis));
+    return known.get(analysis)!;
+  };
+}
+
 /** Whether `block` sits wholly in the top or bottom band of `page`. */
 export function inMargin(block: Block, page: Page): boolean {
   const band = page.height * MARGIN_FRACTION;
@@ -154,7 +167,9 @@ function candidates(analysis: Analysis): Candidate[] {
  *  itself: in words (`Page 3`, `3 of 12`), or by being the page's own
  *  index (`1` on page 1). A lone `2024` stays text, which keeps a
  *  setting of `delete` from taking out what the page meant to say. */
-export function pageNumberIds(analysis: Analysis): Map<string, string> {
+export const pageNumberIds = once(function pageNumberIds(
+  analysis: Analysis,
+): ReadonlyMap<string, string> {
   const found = candidates(analysis);
   const runs = new Map<string, Set<number>>();
   const run = (c: Candidate) => `${c.roman ? "r" : "a"}${c.value - c.page}`;
@@ -167,7 +182,7 @@ export function pageNumberIds(analysis: Analysis): Map<string, string> {
     if (runs.get(run(c))!.size >= 2 || c.says || c.value === c.page)
       out.set(c.id, c.label);
   return out;
-}
+});
 
 // ---- headers and footers --------------------------------------------------
 
@@ -207,7 +222,9 @@ export interface RepeatedLine {
 /** Every repeated header and footer of `analysis`, in the order each is
  *  first printed. A page number is not one -- it has its own setting --
  *  and a block in the body never is. */
-export function repeatedLines(analysis: Analysis): RepeatedLine[] {
+export const repeatedLines = once(function repeatedLines(
+  analysis: Analysis,
+): readonly RepeatedLine[] {
   const margin = new Map<
     string,
     { text: string; pages: Set<number>; ids: string[]; top: number }
@@ -248,7 +265,7 @@ export function repeatedLines(analysis: Analysis): RepeatedLine[] {
       });
   }
   return out;
-}
+});
 
 /** The ids of every block that is a repeated header or footer. */
 export function headersFooters(analysis: Analysis): Set<string> {
@@ -256,12 +273,14 @@ export function headersFooters(analysis: Analysis): Set<string> {
 }
 
 /** The wording each repeated header or footer block is kept under. */
-export function repeatedKeys(analysis: Analysis): Map<string, string> {
+export const repeatedKeys = once(function repeatedKeys(
+  analysis: Analysis,
+): ReadonlyMap<string, string> {
   const out = new Map<string, string>();
   for (const line of repeatedLines(analysis))
     for (const id of line.ids) out.set(id, line.key);
   return out;
-}
+});
 
 /** The printed page numbers of `analysis`, in page order: what each says,
  *  the page it is on, and the band most of them are in. */

@@ -247,15 +247,14 @@ test("edits on a long book", async () => {
   await scenario("rendered: hide page numbers", [early], pageNumbersHideKeep);
   // The book's first repeated header or footer, deleted then kept.
   const line = repeatedLines(r.analysis)[0];
-  if (line)
-    await scenario(
-      "rendered: delete a repeated line",
-      [early],
-      alternate(
-        () => setLineEdit(DOC, line.key, "delete"),
-        () => setLineEdit(DOC, line.key, "keep"),
-      ),
+  const lineDeleteKeep =
+    line &&
+    alternate(
+      () => setLineEdit(DOC, line.key, "delete"),
+      () => setLineEdit(DOC, line.key, "keep"),
     );
+  if (lineDeleteKeep)
+    await scenario("rendered: delete a repeated line", [early], lineDeleteKeep);
   if (!only || only.test("rendered: undo")) {
     await made([early], "del");
     await scenario("rendered: undo/redo delete", [early], undoRedo);
@@ -279,6 +278,8 @@ test("edits on a long book", async () => {
   await scenario("raw: delete mid", [mid], button("del"));
   await scenario("raw: H2/¶ early", [para], headingPara);
   await scenario("raw: hide page numbers", [early], pageNumbersHideKeep);
+  if (lineDeleteKeep)
+    await scenario("raw: delete a repeated line", [early], lineDeleteKeep);
   if (!only || only.test("raw: undo")) {
     await made([early], "del");
     await scenario("raw: undo/redo delete", [early], undoRedo);
