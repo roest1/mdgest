@@ -11,9 +11,21 @@ import {
   type Page,
   type Role,
 } from "src/lib/analysis";
-import { blankEdits, type BlockEdit, type Edits } from "src/lib/edits";
+import {
+  apply,
+  blankEdits,
+  redo,
+  revertToOriginal,
+  setFurniture,
+  setLine,
+  undo,
+  type BlockEdit,
+  type Change,
+  type Edits,
+} from "src/lib/edits";
 import { emit } from "src/lib/emit";
 import { measure } from "src/lib/measure";
+import { repeatedLines } from "src/lib/furniture";
 
 function block(
   id: string,
@@ -430,4 +442,114 @@ test("an ordered item is written as its place in the list as printed: c. is 3, i
   // A marker that says no place, as on a block made an item by hand, is
   // counted on from the item before.
   expect(items("numbered", ["7.", ""])).toBe("7. Item 0.\n8. Item 1.\n");
+});
+
+// ---- a page at a time ------------------------------------------------------
+
+/** Six pages of headings, lists and paragraphs, each with a running footer
+ *  and its number: something on every page for each edit to change. */
+function book(): Analysis {
+  return {
+    format: ANALYSIS_FORMAT,
+    reader: READER,
+    bodySize: 10,
+    pages: Array.from({ length: 6 }, (_, i) => {
+      const n = i + 1;
+      const at = (b: Block, y: number) => ({ ...b, box: { ...b.box, y } });
+      return page(n, [
+        at(block(`p${n}b0`, `Part ${n}`, "heading"), 100),
+        at(block(`p${n}b1`, "First.", "numbered", "1."), 200),
+        at(block(`p${n}b2`, "Second.", "numbered", "2."), 220),
+        at(block(`p${n}b3`, "A point.", "bullet"), 240),
+        at(block(`p${n}b4`, `Some text on page ${n}.`), 300),
+        at(block(`p${n}b5`, "Field Manual"), 760),
+        at(block(`p${n}b6`, String(n)), 775),
+      ]);
+    }),
+  };
+}
+
+test("a page an edit does not change is not written again: its lines and its blocks are the ones it had", () => {
+  const doc = book();
+  const before = emit(doc, "doc.assets/", blankEdits());
+  const page1 = before.lines.filter((l) => l.page === 1);
+  // A block on the last page hidden: no page moves, the rest are as they were.
+  const hidden = emit(
+    doc,
+    "doc.assets/",
+    withEdits({ p6b4: { hidden: true } }),
+  );
+  expect(hidden.lines.filter((l) => l.page === 1)).toEqual(page1);
+  hidden.lines
+    .filter((l) => l.page === 1)
+    .forEach((l, i) => expect(l).toBe(page1[i]));
+  expect(hidden.blocks.p3b4).toBe(before.blocks.p3b4);
+  expect(hidden.blocks.p6b4).not.toBe(before.blocks.p6b4);
+  // A block on the first page deleted: every page after it moves up its
+  // line, placed anew, and says what it said.
+  const deleted = emit(
+    doc,
+    "doc.assets/",
+    withEdits({ p1b4: { deleted: true } }),
+  );
+  const moved = before.blocks.p3b4.from - deleted.blocks.p3b4.from;
+  expect(moved).toBeGreaterThan(0);
+  expect(deleted.lines[deleted.blocks.p3b4.from - 1].text).toBe(
+    before.lines[before.blocks.p3b4.from - 1].text,
+  );
+});
+
+test("written a page at a time through a run of edits, the markdown is what a fresh read writes", () => {
+  const doc = book();
+  const ids = doc.pages.flatMap((p) => p.blocks);
+  const lines = repeatedLines(doc);
+  expect(lines.length).toBeGreaterThan(0);
+  let seed = 7;
+  const rand = () =>
+    (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rand() * xs.length)];
+  const changes: (() => Change)[] = [
+    () => ({ hidden: rand() < 0.7 }),
+    () => ({ deleted: rand() < 0.7 }),
+    () => ({ quote: rand() < 0.6 }),
+    () => ({ role: pick(["para", "heading", "bullet", "numbered"] as const) }),
+    () => ({ depth: Math.floor(rand() * 3) }),
+    () => ({ bold: rand() < 0.5 }),
+  ];
+  let edits = blankEdits();
+  for (let step = 0; step < 300; step++) {
+    const r = rand();
+    if (r < 0.08)
+      edits = setFurniture(
+        edits,
+        pick(["page_numbers", "headers_footers"] as const),
+        pick(["keep", "hide", "delete"] as const),
+      );
+    else if (r < 0.14)
+      edits = setLine(
+        edits,
+        pick(lines).key,
+        pick(["keep", "hide", "delete"] as const),
+      );
+    else if (r < 0.24) edits = rand() < 0.6 ? undo(edits) : redo(edits);
+    else if (r < 0.26) edits = revertToOriginal(edits);
+    else {
+      const at = Math.floor(rand() * ids.length);
+      const change = pick(changes)();
+      edits = apply(
+        edits,
+        ids.slice(at, at + 1 + Math.floor(rand() * 9)),
+        () => change,
+      );
+    }
+    // A copy of the read is another read: nothing of it written yet.
+    expect(emit(doc, "doc.assets/", edits)).toEqual(
+      emit(structuredClone(doc), "doc.assets/", edits),
+    );
+  }
+  // And edits read back from `edits.json`: the same, in new objects.
+  const back = JSON.parse(JSON.stringify(edits)) as Edits;
+  expect(emit(doc, "doc.assets/", back)).toEqual(
+    emit(structuredClone(doc), "doc.assets/", edits),
+  );
 });
