@@ -76,6 +76,13 @@ objects. Each must draw again only for what it shows:
   instead of updating it. Each page's block elements were made that way,
   and an edit to every page rebuilt the book's DOM: 1,166ms to 949ms when
   they were made once.
+- **Write again only the pages that changed.** Each page of the markdown is
+  written alone, so `emit` keeps every page as last written and writes one
+  again only when its blocks' edits or furniture choices change: an edit to
+  one block took emit from 190ms to 50ms on a 1,404-page book, and the
+  paint from about 280ms to 130ms. What is left is putting the pages
+  together: 200,000 lines and a record of 106,000 blocks. An edit to every
+  page writes every page, as before.
 - **Add a scenario with the feature.** Every edit gets a row here, early and
   mid book, in both views, with what takes it back: undo, redo and revert
   have theirs.

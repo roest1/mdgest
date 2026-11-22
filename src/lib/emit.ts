@@ -8,7 +8,7 @@
  * (`shape`), and the result is written the same way. */
 
 import { LIST_ROLES, type Analysis, type Block, type Page } from "./analysis";
-import { shape, type Edits } from "./edits";
+import { shape, type BlockEdit, type Edits } from "./edits";
 import {
   pageNumberIds,
   repeatedKeys,
@@ -205,57 +205,285 @@ function comment(text: string): string {
   return `<!-- ${text.replaceAll("-->", "-- >")} -->`;
 }
 
+/** What a page's blocks are written by, besides the page: each block's
+ *  edit, and what the furniture settings do to it -- the number it prints,
+ *  under a page-number setting that acts on them, and its repeated line's
+ *  choice. A page given what it was given the last time it was written
+ *  writes what it wrote then. Whatever else a page comes to be written by
+ *  -- the joins and cuts `Edits` can hold, once they are written -- goes in
+ *  here too, or the page is not written again when it changes. */
+interface Writing {
+  assets: string;
+  pageNumbers: Choice;
+  edits: (BlockEdit | undefined)[];
+  /** Null under settings that act on none of them. */
+  numbers: (string | undefined)[] | null;
+  lines: (Choice | null)[] | null;
+}
+
+/** One page as written: its lines, and its blocks placed where it was put
+ *  in the document the last time it was -- after `at` lines -- the same
+ *  objects for as long as it starts there. */
+interface Written {
+  writing: Writing;
+  lines: SourceLine[];
+  /** Its lines' text, joined: a book's two hundred thousand lines joined
+   *  anew for every edit were 30ms of it. */
+  text: string;
+  at: number;
+  placed: Placed[];
+}
+
+/** Each page as last written, by the page: an analysis is not changed once
+ *  made, and its pages go with it. */
+const written = new WeakMap<Page, Written>();
+
+function sameWriting(a: Writing, b: Writing): boolean {
+  if (a.assets !== b.assets || a.pageNumbers !== b.pageNumbers) return false;
+  if (!sameList(a.numbers, b.numbers) || !sameList(a.lines, b.lines))
+    return false;
+  for (let i = 0; i < a.edits.length; i++)
+    if (!sameEdit(a.edits[i], b.edits[i])) return false;
+  return true;
+}
+
+function sameList<T>(a: T[] | null, b: T[] | null): boolean {
+  if (a === null || b === null) return a === b;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** Whether two block edits say the same: an edit is not changed once made,
+ *  so the same object does, and one read again from `edits.json` does if
+ *  its fields do. */
+function sameEdit(a: BlockEdit | undefined, b: BlockEdit | undefined) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const [x, y] = [a, b] as Record<string, unknown>[];
+  const keys = Object.keys(x);
+  return (
+    keys.length === Object.keys(y).length && keys.every((k) => x[k] === y[k])
+  );
+}
+
+/** `page`'s markdown, as if it were the whole document, placed after `base`
+ *  lines. What it writes does not depend on the pages around it -- each
+ *  counts its own blocks and lists, and the next opens on a rule -- so a
+ *  document is its pages written alone and put together (`emit`). */
+function writePage(page: Page, w: Writing, base: number): Written {
+  const lines: SourceLine[] = [];
+  const placed: Placed[] = [];
+  /** The lines a quoted block wrote, 1-based: where `> ` opens them, and
+   *  what decides which blank lines between them carry a `>` too. */
+  const quoted = new Set<number>();
+  const last = () => lines[lines.length - 1];
+  /** Returns the 1-based line the text landed on in the document, which
+   *  has `base` lines before the page. */
+  const put = (text: string, block: string | null, page: number): number => {
+    lines.push({ text, block, page });
+    return base + lines.length;
+  };
+  const blank = (page: number) => {
+    if (lines.length && last().text !== "") put("", null, page);
+  };
+
+  let counters = new Counters();
+  let n = 0;
+  let inList = false;
+  /** Whether the last block written was quoted. */
+  let inQuote = false;
+  /** The last item written of the list now open, if one is. */
+  let lastItem: string | null = null;
+  /** How far the last list item's text is indented: where a comment
+   *  inside the list starts. */
+  let listIndent = "";
+  /** An image block as a markdown image, or null when its picture was
+   *  not kept. */
+  const figure = (block: Block): string | null => {
+    const pic = page.pictures[block.picture];
+    return pic
+      ? `![page ${page.n} figure ${block.picture + 1}](${linkTarget(w.assets + pic.path)})`
+      : null;
+  };
+  page.blocks.forEach((raw, i) => {
+    const block = shape(raw, w.edits[i]);
+    // A block with no words -- blank text, or a picture that was not
+    // kept -- is written nowhere, shown, hidden or deleted alike, and is
+    // in neither map.
+    const words = block.kind === "image" ? figure(block) : inline(block);
+    if (!words) return;
+    // Page furniture takes the document's setting, unless the block was
+    // hidden or deleted by hand -- that decision stands. Looked for only
+    // under a setting that is not `keep`, so a block the setting names
+    // is one the setting hides or deletes.
+    const byHand = block.hidden || block.deleted;
+    const printed = byHand ? null : (w.numbers?.[i] ?? null);
+    const line = byHand ? null : (w.lines?.[i] ?? null);
+    const setting: Furniture | undefined =
+      printed !== null
+        ? "page_numbers"
+        : line !== null && line !== "keep"
+          ? "headers_footers"
+          : undefined;
+    if (setting !== undefined) {
+      const choice = setting === "page_numbers" ? w.pageNumbers : line;
+      if (choice === "delete") block.deleted = true;
+      else block.hidden = true;
+    }
+    const by = setting === undefined ? {} : { furniture: setting };
+    if (block.deleted) {
+      placed.push({
+        id: block.id,
+        page: page.n,
+        n: 0,
+        from: 0,
+        to: 0,
+        hidden: false,
+        deleted: true,
+        ...by,
+      });
+      return;
+    }
+    if (block.hidden) {
+      // The line it would be, commented out: markup and all, so reading
+      // it back is reading any line. A list item takes the number it
+      // printed, or 1, since a comment is not counted in the list. A
+      // page number hidden by the setting is the number it prints.
+      const said =
+        printed !== null
+          ? `page ${printed}`
+          : block.kind === "image"
+            ? words
+            : block.role === "heading"
+              ? heading(block, words)
+              : block.role === "bullet"
+                ? `- ${words}`
+                : LIST_ROLES.includes(block.role)
+                  ? `${firstNumber(block)}. ${words}`
+                  : words;
+      const q = block.quote ? "> " : "";
+      // Inside a list the comment is indented into the item before it,
+      // so the list goes on past it rather than ending there.
+      let at: number;
+      if (inList) {
+        at = put(`${q}${listIndent}${comment(said)}`, block.id, page.n);
+      } else {
+        blank(page.n);
+        at = put(`${q}${comment(said)}`, block.id, page.n);
+        put("", null, page.n);
+      }
+      if (block.quote) quoted.add(at - base);
+      inQuote = block.quote;
+      n += 1;
+      placed.push({
+        id: block.id,
+        page: page.n,
+        n,
+        from: at,
+        to: at,
+        hidden: true,
+        deleted: false,
+        ...by,
+      });
+      return;
+    }
+    // A list that goes into a quote or comes out of one is two lists:
+    // the `>` cannot open or close partway through one.
+    if (inList && LIST_ROLES.includes(block.role) && block.quote !== inQuote) {
+      counters = new Counters();
+      inList = false;
+      lastItem = null;
+    }
+    const item = counters.itemFor(block);
+    const after = lastItem;
+    lastItem = item ? block.id : null;
+    const q = block.quote ? "> " : "";
+    // Each block is one line of the source; `at` is that line.
+    let at: number;
+    if (block.kind === "image") {
+      blank(page.n);
+      at = put(`${q}${words}`, block.id, page.n);
+      put("", null, page.n);
+      inList = false;
+    } else if (block.role === "heading") {
+      blank(page.n);
+      at = put(`${q}${heading(block, words)}`, block.id, page.n);
+      put("", null, page.n);
+      inList = false;
+    } else if (item) {
+      if (!inList) blank(page.n);
+      at = put(`${q}${item.indent}${item.marker} ${words}`, block.id, page.n);
+      listIndent = " ".repeat(item.indent.length + item.marker.length + 1);
+      inList = true;
+    } else {
+      blank(page.n);
+      at = put(`${q}${words}`, block.id, page.n);
+      put("", null, page.n);
+      inList = false;
+    }
+    if (block.quote) quoted.add(at - base);
+    inQuote = block.quote;
+    n += 1;
+    placed.push({
+      id: block.id,
+      page: page.n,
+      n,
+      from: at,
+      to: at,
+      hidden: false,
+      deleted: false,
+      ...(item ? { item: { depth: item.depth, after } } : {}),
+    });
+  });
+
+  // Quoted blocks next to each other are one quote: the blank lines
+  // between them are written `>`, since a blank line would end it. An
+  // unquoted block between them ends it all the same, and so does the rule
+  // the next page opens on. `quoted` holds 1-based lines, so
+  // `quoted.has(i)` asks of the line before `lines[i]`.
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].text !== "" || !quoted.has(i)) continue;
+    let j = i;
+    while (j < lines.length && lines[j].text === "") j++;
+    if (quoted.has(j + 1)) for (let k = i; k < j; k++) lines[k].text = ">";
+    i = j - 1;
+  }
+  return {
+    writing: w,
+    lines,
+    text: lines.map((l) => l.text).join("\n"),
+    at: base,
+    placed,
+  };
+}
+
 /** The markdown for a whole document, with `edits` made to it. `assets` is
  *  the path the figures are written under, relative to the markdown file:
  *  `<doc>.assets/`. Of the edits, what each block is overridden to, and
  *  the furniture settings, are written; the joins, cuts and inserted text
- *  an `Edits` can hold are not yet. */
+ *  an `Edits` can hold are not yet.
+ *
+ * Written a page at a time, and a page again only when what it is written
+ * by has changed since it last was (`Writing`): an edit to one block writes
+ * its page, and the rest are put together as they were. Written whole on
+ * every edit, a 1,404-page book took 190ms an edit. */
 export function emit(
   analysis: Analysis,
   assets: string,
   edits?: Edits,
 ): Markdown {
-  const lines: SourceLine[] = [];
-  const blocks: Record<string, Placed> = {};
-  const order: string[] = [];
-  /** The lines a quoted block wrote, 1-based: where `> ` opens them, and
-   *  what decides which blank lines between them carry a `>` too. */
-  const quoted = new Set<number>();
-
-  const last = () => lines[lines.length - 1];
-  /** Returns the 1-based line the text landed on. */
-  const put = (text: string, block: string | null, page: number): number => {
-    lines.push({ text, block, page });
-    return lines.length;
-  };
-  const blank = (page: number) => {
-    if (lines.length && last().text !== "") put("", null, page);
-  };
-  /** The `---` between two pages, set off by blank lines so it reads as a
-   *  rule and not as the underline of the line above. The blank before it
-   *  closes the page before and is that page's; the rule and the blank
-   *  after it are the page's the rule opens. */
-  const rule = (page: number) => {
-    blank(last()?.page ?? page);
-    if (lines.length === 0) return;
-    put("---", null, page);
-    put("", null, page);
-  };
-
   const pageNumbers = edits?.page_numbers ?? "keep";
   const headers = edits?.headers_footers ?? "keep";
   const perLine = edits?.repeated_lines ?? {};
   // Found once per document, and only under a setting that acts on them:
   // a page number is known by the pages around it.
-  const numbered =
-    pageNumbers === "keep"
-      ? new Map<string, string>()
-      : pageNumberIds(analysis);
+  const numbered: ReadonlyMap<string, string> =
+    pageNumbers === "keep" ? new Map() : pageNumberIds(analysis);
   // Found once per document, and only when it is asked for: it looks at
   // every page to know what repeats.
-  const repeated =
+  const repeated: ReadonlyMap<string, string> =
     headers === "keep" && Object.keys(perLine).length === 0
-      ? new Map<string, string>()
+      ? new Map()
       : repeatedKeys(analysis);
   /** What is done with repeated header or footer block `id`: its line's
    *  own choice, else the setting for them all. Null for any other. */
@@ -264,185 +492,69 @@ export function emit(
     return key === undefined ? null : (perLine[key] ?? headers);
   };
 
-  const emitPage = (page: Page) => {
-    let counters = new Counters();
-    let n = 0;
-    let inList = false;
-    /** Whether the last block written was quoted. */
-    let inQuote = false;
-    /** The last item written of the list now open, if one is. */
-    let lastItem: string | null = null;
-    /** How far the last list item's text is indented: where a comment
-     *  inside the list starts. */
-    let listIndent = "";
-    /** An image block as a markdown image, or null when its picture was
-     *  not kept. */
-    const figure = (block: Block): string | null => {
-      const pic = page.pictures[block.picture];
-      return pic
-        ? `![page ${page.n} figure ${block.picture + 1}](${linkTarget(assets + pic.path)})`
-        : null;
-    };
-    for (const raw of page.blocks) {
-      const block = shape(raw, edits?.blocks[raw.id]);
-      // A block with no words -- blank text, or a picture that was not
-      // kept -- is written nowhere, shown, hidden or deleted alike, and is
-      // in neither map.
-      const words = block.kind === "image" ? figure(block) : inline(block);
-      if (!words) continue;
-      // Page furniture takes the document's setting, unless the block was
-      // hidden or deleted by hand -- that decision stands. Looked for only
-      // under a setting that is not `keep`, so a block the setting names
-      // is one the setting hides or deletes.
-      const byHand = block.hidden || block.deleted;
-      const printed = byHand ? null : (numbered.get(raw.id) ?? null);
-      const line = byHand ? null : lineChoice(raw.id);
-      const setting: Furniture | undefined =
-        printed !== null
-          ? "page_numbers"
-          : line !== null && line !== "keep"
-            ? "headers_footers"
-            : undefined;
-      if (setting !== undefined) {
-        const choice = setting === "page_numbers" ? pageNumbers : line;
-        if (choice === "delete") block.deleted = true;
-        else block.hidden = true;
-      }
-      const by = setting === undefined ? {} : { furniture: setting };
-      if (block.deleted) {
-        blocks[block.id] = {
-          id: block.id,
-          page: page.n,
-          n: 0,
-          from: 0,
-          to: 0,
-          hidden: false,
-          deleted: true,
-          ...by,
-        };
-        order.push(block.id);
-        continue;
-      }
-      if (block.hidden) {
-        // The line it would be, commented out: markup and all, so reading
-        // it back is reading any line. A list item takes the number it
-        // printed, or 1, since a comment is not counted in the list. A
-        // page number hidden by the setting is the number it prints.
-        const said =
-          printed !== null
-            ? `page ${printed}`
-            : block.kind === "image"
-              ? words
-              : block.role === "heading"
-                ? heading(block, words)
-                : block.role === "bullet"
-                  ? `- ${words}`
-                  : LIST_ROLES.includes(block.role)
-                    ? `${firstNumber(block)}. ${words}`
-                    : words;
-        const q = block.quote ? "> " : "";
-        // Inside a list the comment is indented into the item before it,
-        // so the list goes on past it rather than ending there.
-        let at: number;
-        if (inList) {
-          at = put(`${q}${listIndent}${comment(said)}`, block.id, page.n);
-        } else {
-          blank(page.n);
-          at = put(`${q}${comment(said)}`, block.id, page.n);
-          put("", null, page.n);
-        }
-        if (block.quote) quoted.add(at);
-        inQuote = block.quote;
-        n += 1;
-        blocks[block.id] = {
-          id: block.id,
-          page: page.n,
-          n,
-          from: at,
-          to: at,
-          hidden: true,
-          deleted: false,
-          ...by,
-        };
-        order.push(block.id);
-        continue;
-      }
-      // A list that goes into a quote or comes out of one is two lists:
-      // the `>` cannot open or close partway through one.
-      if (
-        inList &&
-        LIST_ROLES.includes(block.role) &&
-        block.quote !== inQuote
-      ) {
-        counters = new Counters();
-        inList = false;
-        lastItem = null;
-      }
-      const item = counters.itemFor(block);
-      const after = lastItem;
-      lastItem = item ? block.id : null;
-      const q = block.quote ? "> " : "";
-      // Each block is one line of the source; `at` is that line.
-      let at: number;
-      if (block.kind === "image") {
-        blank(page.n);
-        at = put(`${q}${words}`, block.id, page.n);
-        put("", null, page.n);
-        inList = false;
-      } else if (block.role === "heading") {
-        blank(page.n);
-        at = put(`${q}${heading(block, words)}`, block.id, page.n);
-        put("", null, page.n);
-        inList = false;
-      } else if (item) {
-        if (!inList) blank(page.n);
-        at = put(`${q}${item.indent}${item.marker} ${words}`, block.id, page.n);
-        listIndent = " ".repeat(item.indent.length + item.marker.length + 1);
-        inList = true;
-      } else {
-        blank(page.n);
-        at = put(`${q}${words}`, block.id, page.n);
-        put("", null, page.n);
-        inList = false;
-      }
-      if (block.quote) quoted.add(at);
-      inQuote = block.quote;
-      n += 1;
-      blocks[block.id] = {
-        id: block.id,
-        page: page.n,
-        n,
-        from: at,
-        to: at,
-        hidden: false,
-        deleted: false,
-        ...(item ? { item: { depth: item.depth, after } } : {}),
-      };
-      order.push(block.id);
-    }
+  const lines: SourceLine[] = [];
+  const blocks: Record<string, Placed> = {};
+  const order: string[] = [];
+  /** The text, in runs: each page's joined, and the lines between them. */
+  const runs: string[] = [];
+  const last = () => lines[lines.length - 1];
+  const put = (text: string, page: number) => {
+    lines.push({ text, block: null, page });
+    runs.push(text);
+  };
+  /** The `---` between two pages, set off by blank lines so it reads as a
+   *  rule and not as the underline of the line above. The blank before it
+   *  closes the page before and is that page's; the rule and the blank
+   *  after it are the page's the rule opens. */
+  const rule = (page: number) => {
+    if (lines.length && last().text !== "") put("", last().page);
+    if (lines.length === 0) return;
+    put("---", page);
+    put("", page);
   };
 
   analysis.pages.forEach((page, i) => {
     if (i > 0) rule(page.n);
-    emitPage(page);
+    const w: Writing = {
+      assets,
+      pageNumbers,
+      edits: page.blocks.map((b) => edits?.blocks[b.id]),
+      numbers: numbered.size
+        ? page.blocks.map((b) => numbered.get(b.id))
+        : null,
+      lines: repeated.size ? page.blocks.map((b) => lineChoice(b.id)) : null,
+    };
+    const at = lines.length;
+    let was = written.get(page);
+    if (!was || !sameWriting(was.writing, w)) {
+      was = writePage(page, w, at);
+      written.set(page, was);
+    } else if (was.at !== at) {
+      // Moved, by lines added or taken out before it: placed anew.
+      const by = at - was.at;
+      was.at = at;
+      was.placed = was.placed.map((p) =>
+        p.deleted ? p : { ...p, from: p.from + by, to: p.to + by },
+      );
+    }
+    for (const line of was.lines) lines.push(line);
+    if (was.lines.length) runs.push(was.text);
+    for (const p of was.placed) {
+      blocks[p.id] = p;
+      order.push(p.id);
+    }
   });
 
-  // Quoted blocks next to each other are one quote: the blank lines
-  // between them are written `>`, since a blank line would end it. A rule
-  // or an unquoted block between them ends it all the same. `quoted`
-  // holds 1-based lines, so `quoted.has(i)` asks of the line before
-  // `lines[i]`.
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].text !== "" || !quoted.has(i)) continue;
-    let j = i;
-    while (j < lines.length && lines[j].text === "") j++;
-    if (quoted.has(j + 1)) for (let k = i; k < j; k++) lines[k].text = ">";
-    i = j - 1;
+  // The blank lines it ends on go, and with them as many line breaks from
+  // the end of its text: each blank line is one there.
+  let blanks = 0;
+  while (lines.length && last().text === "") {
+    lines.pop();
+    blanks++;
   }
-
-  while (lines.length && last().text === "") lines.pop();
+  const joined = runs.join("\n");
   return {
-    text: `${lines.map((l) => l.text).join("\n")}\n`,
+    text: lines.length ? `${joined.slice(0, joined.length - blanks)}\n` : "\n",
     lines,
     blocks,
     order,
